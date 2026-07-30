@@ -2,7 +2,7 @@ import { Drama, Landmark, Megaphone, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { VIDEO_MODES, type VideoMode } from "@/types";
 
-const MODE_ICONS: Record<VideoMode, LucideIcon> = {
+export const MODE_ICONS: Record<VideoMode, LucideIcon> = {
   "historical-documentary": Landmark,
   microdrama: Drama,
   "product-advertisement": Megaphone,

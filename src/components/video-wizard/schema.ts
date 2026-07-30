@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const wizardSchema = z
   .object({
+    startMode: z.enum(["scratch", "template"]),
+    templateId: z.string().nullable(),
     mode: z.enum(["historical-documentary", "microdrama", "product-advertisement"]),
 
     // Historical Documentary
@@ -65,7 +67,7 @@ export const wizardSchema = z
 export type WizardFormValues = z.infer<typeof wizardSchema>;
 
 export const STEP_FIELDS: Record<number, (keyof WizardFormValues)[]> = {
-  1: ["mode"],
+  1: ["startMode", "mode"],
   2: [
     "topic",
     "additionalDirection",
@@ -94,6 +96,8 @@ export const STEP_FIELDS: Record<number, (keyof WizardFormValues)[]> = {
 };
 
 export const WIZARD_DEFAULT_VALUES: WizardFormValues = {
+  startMode: "scratch",
+  templateId: null,
   mode: "historical-documentary",
   topic: "",
   additionalDirection: "",

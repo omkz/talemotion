@@ -12,6 +12,10 @@ export const VISUAL_STYLES = [
   "Stylized Animation",
   "Vintage Film",
   "Epic Fantasy",
+  "Epic Historical",
+  "Cinematic Drama",
+  "Dark Cinematic",
+  "Clean Commercial",
 ] as const;
 
 export const NARRATION_STYLES = [
@@ -20,6 +24,10 @@ export const NARRATION_STYLES = [
   "Warm & Friendly",
   "Energetic",
   "Calm & Reflective",
+  "Energetic Documentary",
+  "Emotional",
+  "Suspenseful",
+  "Promotional",
 ] as const;
 
 export const GENRES = [

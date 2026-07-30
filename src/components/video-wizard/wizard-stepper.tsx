@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const STEPS = ["Video Type", "Content", "Output Settings"];
+const STEPS = ["Starting Point", "Content", "Output Settings"];
 
 export function WizardStepper({ currentStep }: { currentStep: number }) {
   return (

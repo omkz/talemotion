@@ -14,9 +14,23 @@ import type { WizardFormValues } from "./schema";
 interface StepContentFormProps {
   mode: VideoMode;
   control: Control<WizardFormValues>;
+  guidance?: string;
 }
 
-export function StepContentForm({ mode, control }: StepContentFormProps) {
+export function StepContentForm({ mode, control, guidance }: StepContentFormProps) {
+  return (
+    <div className="grid gap-5">
+      {guidance && (
+        <p className="rounded-lg border border-accent/25 bg-accent/8 px-3.5 py-2.5 text-sm text-foreground/90">
+          {guidance}
+        </p>
+      )}
+      <StepContentFields mode={mode} control={control} />
+    </div>
+  );
+}
+
+function StepContentFields({ mode, control }: { mode: VideoMode; control: Control<WizardFormValues> }) {
   if (mode === "microdrama") {
     return (
       <div className="grid gap-5">

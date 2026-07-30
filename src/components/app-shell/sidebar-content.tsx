@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { NAV_ITEMS, PRODUCT_ICON, PRODUCT_NAME } from "./nav-items";
+import { Button } from "@/components/ui/button";
+import { NAV_ITEMS, NEW_VIDEO_ITEM, PRODUCT_ICON, PRODUCT_NAME } from "./nav-items";
 import {
   Tooltip,
   TooltipContent,
@@ -28,6 +29,28 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
           <span className="text-[15px] font-semibold tracking-tight text-foreground">
             {PRODUCT_NAME}
           </span>
+        )}
+      </div>
+
+      <div className={cn("px-2.5 pb-3", collapsed && "flex justify-center px-0")}>
+        {collapsed ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button asChild size="icon-sm" aria-label={NEW_VIDEO_ITEM.label}>
+                <Link href={NEW_VIDEO_ITEM.href} onClick={onNavigate}>
+                  <NEW_VIDEO_ITEM.icon className="size-4.5" />
+                </Link>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{NEW_VIDEO_ITEM.label}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Button asChild className="w-full justify-center">
+            <Link href={NEW_VIDEO_ITEM.href} onClick={onNavigate}>
+              <NEW_VIDEO_ITEM.icon className="size-4" />
+              {NEW_VIDEO_ITEM.label}
+            </Link>
+          </Button>
         )}
       </div>
 

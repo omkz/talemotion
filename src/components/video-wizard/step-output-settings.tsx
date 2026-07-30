@@ -1,5 +1,5 @@
 import type { Control } from "react-hook-form";
-import { RectangleVertical, RectangleHorizontal } from "lucide-react";
+import { RectangleVertical, RectangleHorizontal, RotateCcw, Sparkles } from "lucide-react";
 import {
   FormControl,
   FormField,
@@ -18,17 +18,38 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { LANGUAGES, NARRATION_STYLES, VISUAL_STYLES } from "@/lib/mock-data";
+import type { VideoTemplatePreset } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import type { WizardFormValues } from "./schema";
 
 interface StepOutputSettingsProps {
   control: Control<WizardFormValues>;
+  appliedTemplate?: VideoTemplatePreset | null;
+  onResetToTemplateDefaults?: () => void;
 }
 
-export function StepOutputSettings({ control }: StepOutputSettingsProps) {
+export function StepOutputSettings({
+  control,
+  appliedTemplate,
+  onResetToTemplateDefaults,
+}: StepOutputSettingsProps) {
   return (
     <div className="grid gap-6">
+      {appliedTemplate && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent/25 bg-accent/8 px-3.5 py-2.5">
+          <p className="flex items-center gap-2 text-sm text-foreground/90">
+            <Sparkles className="size-4 shrink-0 text-accent" />
+            Based on <span className="font-medium">{appliedTemplate.name}</span>
+          </p>
+          <Button type="button" variant="ghost" size="sm" onClick={onResetToTemplateDefaults}>
+            <RotateCcw className="size-3.5" />
+            Reset to template defaults
+          </Button>
+        </div>
+      )}
+
       <FormField
         control={control}
         name="title"

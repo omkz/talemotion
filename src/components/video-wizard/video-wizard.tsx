@@ -10,15 +10,17 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Form } from "@/components/ui/form";
 import { createProject } from "@/lib/mock-api";
+import { VIDEO_TEMPLATES, type VideoTemplatePreset } from "@/lib/mock-data";
+import type { VideoMode } from "@/types";
 import { WizardStepper } from "./wizard-stepper";
-import { StepModeSelect } from "./step-mode-select";
+import { StepStartingPoint } from "./step-starting-point";
 import { StepContentForm } from "./step-content-form";
 import { StepOutputSettings } from "./step-output-settings";
 import { STEP_FIELDS, WIZARD_DEFAULT_VALUES, wizardSchema, type WizardFormValues } from "./schema";
 import { mapWizardValuesToProjectInput } from "./map-to-project";
 
 const STEP_TITLES = [
-  "Choose a video type",
+  "How do you want to start?",
   "Add your content",
   "Output settings",
 ];
@@ -34,7 +36,10 @@ export function VideoWizard() {
     mode: "onChange",
   });
 
+  const startMode = form.watch("startMode");
+  const templateId = form.watch("templateId");
   const mode = form.watch("mode");
+  const appliedTemplate = VIDEO_TEMPLATES.find((t) => t.id === templateId) ?? null;
 
   const goNext = async () => {
     const valid = await form.trigger(STEP_FIELDS[step]);
@@ -42,6 +47,35 @@ export function VideoWizard() {
   };
 
   const goBack = () => setStep((s) => Math.max(1, s - 1));
+
+  const handleSelectScratch = () => {
+    form.setValue("startMode", "scratch", { shouldValidate: true });
+  };
+
+  const handleSelectMode = (value: VideoMode) => {
+    form.setValue("mode", value, { shouldValidate: true });
+  };
+
+  const applyTemplateDefaults = (template: VideoTemplatePreset) => {
+    form.setValue("duration", String(template.duration) as WizardFormValues["duration"]);
+    form.setValue("aspectRatio", template.aspectRatio);
+    form.setValue("sceneCount", String(template.sceneCount) as WizardFormValues["sceneCount"]);
+    form.setValue("visualStyle", template.visualStyle);
+    form.setValue("narrationStyle", template.narrationStyle);
+  };
+
+  const handleSelectTemplate = (template: VideoTemplatePreset) => {
+    form.setValue("startMode", "template", { shouldValidate: true });
+    form.setValue("templateId", template.id, { shouldValidate: true });
+    form.setValue("mode", template.mode, { shouldValidate: true });
+    applyTemplateDefaults(template);
+  };
+
+  const handleResetToTemplateDefaults = () => {
+    if (!appliedTemplate) return;
+    applyTemplateDefaults(appliedTemplate);
+    toast.success("Reset to template defaults");
+  };
 
   const onSubmit = async (values: WizardFormValues) => {
     setIsCreating(true);
@@ -86,13 +120,29 @@ export function VideoWizard() {
             </h2>
 
             {step === 1 && (
-              <StepModeSelect
-                value={mode}
-                onChange={(value) => form.setValue("mode", value, { shouldValidate: true })}
+              <StepStartingPoint
+                startMode={startMode}
+                mode={mode}
+                templateId={templateId}
+                onSelectScratch={handleSelectScratch}
+                onSelectMode={handleSelectMode}
+                onSelectTemplate={handleSelectTemplate}
               />
             )}
-            {step === 2 && <StepContentForm mode={mode} control={form.control} />}
-            {step === 3 && <StepOutputSettings control={form.control} />}
+            {step === 2 && (
+              <StepContentForm
+                mode={mode}
+                control={form.control}
+                guidance={appliedTemplate?.guidance}
+              />
+            )}
+            {step === 3 && (
+              <StepOutputSettings
+                control={form.control}
+                appliedTemplate={appliedTemplate}
+                onResetToTemplateDefaults={handleResetToTemplateDefaults}
+              />
+            )}
 
             <div className="mt-8 flex items-center justify-between border-t border-border pt-6">
               <Button

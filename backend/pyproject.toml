@@ -6,13 +6,11 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "alembic>=1.14,<2",
-    "boto3>=1.35,<2",
     "celery[redis]>=5.4,<6",
     "fastapi[standard]>=0.115,<1.0",
-    "genblaze-core>=0.3.1,<0.4",
-    "genblaze-openai>=0.3.1,<0.4",
     "psycopg[binary]>=3.2,<4",
     "pydantic-settings>=2.7,<3.0",
+    "redis>=5,<7",
     "sqlalchemy>=2.0,<3",
     "uvicorn[standard]>=0.34,<1.0",
 ]
@@ -27,6 +25,9 @@ dev = [
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "integration: requires separately running infrastructure or a worker",
+]
 
 [tool.ruff]
 target-version = "py312"

@@ -27,4 +27,4 @@ export function createConfiguredVideoProjectApi(): VideoProjectApi {
  * interface without enabling HTTP requests.
  */
 export const videoProjectApi: VideoProjectApi =
-  createConfiguredVideoProjectApi();
+  new MockVideoProjectApi();

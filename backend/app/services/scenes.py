@@ -11,8 +11,10 @@ class SceneService:
     def __init__(self, repository: ProjectRepository) -> None:
         self.repository = repository
 
-    def get_chapter(self, chapter_id: str) -> Chapter:
-        chapter = self.repository.get_chapter(chapter_id)
+    def get_chapter(
+        self, chapter_id: str, *, for_update: bool = False
+    ) -> Chapter:
+        chapter = self.repository.get_chapter(chapter_id, for_update=for_update)
         if chapter is None:
             raise ApiError(
                 status_code=404,
@@ -24,7 +26,7 @@ class SceneService:
         return chapter
 
     def add_scene(self, chapter_id: str, request: CreateSceneRequest) -> Scene:
-        chapter = self.get_chapter(chapter_id)
+        chapter = self.get_chapter(chapter_id, for_update=True)
         position = request.position or len(chapter.scenes) + 1
         if position > len(chapter.scenes) + 1:
             raise ApiError(
@@ -79,14 +81,16 @@ class SceneService:
 
     def delete_scene(self, scene_id: str) -> None:
         scene = self.get_scene(scene_id)
-        chapter = scene.chapter
+        chapter = self.get_chapter(scene.chapter_id, for_update=True)
+        scene = next(item for item in chapter.scenes if item.id == scene_id)
         chapter.scenes.remove(scene)
         self._normalize(chapter.scenes)
         self.repository.commit()
 
     def duplicate_scene(self, scene_id: str) -> Scene:
         source = self.get_scene(scene_id)
-        chapter = source.chapter
+        chapter = self.get_chapter(source.chapter_id, for_update=True)
+        source = next(item for item in chapter.scenes if item.id == scene_id)
         duplicate = Scene(
             title=f"{source.title} Copy",
             narration=source.narration,
@@ -106,7 +110,7 @@ class SceneService:
         chapter_id: str,
         scene_ids: list[str],
     ) -> Chapter:
-        chapter = self.get_chapter(chapter_id)
+        chapter = self.get_chapter(chapter_id, for_update=True)
         current = {scene.id: scene for scene in chapter.scenes}
         if len(scene_ids) != len(set(scene_ids)) or set(scene_ids) != set(current):
             raise ApiError(

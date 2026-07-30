@@ -14,6 +14,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.ids import new_resource_id, utc_now
@@ -30,12 +31,14 @@ class AssetType(StrEnum):
     VIDEO = "video"
     AUDIO = "audio"
     SUBTITLE = "subtitle"
-    FINAL_RENDER = "final_render"
+    MANIFEST = "manifest"
+    THUMBNAIL = "thumbnail"
+    FINAL_VIDEO = "final_video"
 
 
 class AssetStatus(StrEnum):
-    GENERATING = "generating"
-    READY = "ready"
+    PENDING = "pending"
+    AVAILABLE = "available"
     FAILED = "failed"
     ARCHIVED = "archived"
 
@@ -43,7 +46,9 @@ class AssetStatus(StrEnum):
 class Asset(Base):
     __tablename__ = "assets"
     __table_args__ = (
-        UniqueConstraint("scene_id", "version", name="asset_scene_version"),
+        UniqueConstraint(
+            "scene_id", "type", "version", name="asset_scene_type_version"
+        ),
     )
 
     id: Mapped[str] = mapped_column(
@@ -78,23 +83,33 @@ class Asset(Base):
             native_enum=False,
             length=16,
         ),
-        default=AssetStatus.GENERATING,
+        default=AssetStatus.PENDING,
     )
-    provider: Mapped[str] = mapped_column(String(100))
-    model: Mapped[str] = mapped_column(String(150))
+    provider: Mapped[str | None] = mapped_column(String(100))
+    model_name: Mapped[str | None] = mapped_column(String(150))
     prompt: Mapped[str | None] = mapped_column(Text)
-    generation_instruction: Mapped[str | None] = mapped_column(Text)
-    b2_bucket: Mapped[str] = mapped_column(String(255))
-    b2_object_key: Mapped[str] = mapped_column(String(1024), unique=True)
-    mime_type: Mapped[str] = mapped_column(String(100))
-    file_size_bytes: Mapped[int] = mapped_column(BigInteger)
-    sha256: Mapped[str] = mapped_column(String(64))
+    generation_parameters: Mapped[dict[str, object]] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
+    storage_bucket: Mapped[str | None] = mapped_column(String(255))
+    storage_object_key: Mapped[str | None] = mapped_column(
+        String(1024), unique=True
+    )
+    mime_type: Mapped[str | None] = mapped_column(String(100))
+    file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    sha256: Mapped[str | None] = mapped_column(String(64))
     provenance_object_key: Mapped[str | None] = mapped_column(String(1024))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     project: Mapped[Project] = relationship(back_populates="assets")
-    scene: Mapped[Scene | None] = relationship(back_populates="assets")
+    scene: Mapped[Scene | None] = relationship(
+        back_populates="assets", foreign_keys=[scene_id]
+    )
     parent_asset: Mapped[Asset | None] = relationship(remote_side=[id])

@@ -1,2 +1,1 @@
-"""Background-worker task entry points will live in this package."""
-"""Celery tasks for storyboard, media, and rendering queues."""
+"""Celery task package; currently exposes only a system diagnostic task."""

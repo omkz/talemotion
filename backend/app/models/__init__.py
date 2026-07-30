@@ -1,6 +1,6 @@
 from app.models.asset import Asset, AssetStatus, AssetType
 from app.models.base import Base
-from app.models.chapter import Chapter
+from app.models.chapter import Chapter, ChapterStatus
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import (
     AspectRatio,
@@ -18,6 +18,7 @@ __all__ = [
     "AspectRatio",
     "Base",
     "Chapter",
+    "ChapterStatus",
     "GenerationJob",
     "JobStatus",
     "JobType",

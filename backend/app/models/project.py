@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, Enum, Integer, String, Text
+from sqlalchemy import CheckConstraint, DateTime, Enum, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.ids import new_resource_id
@@ -28,8 +29,11 @@ class VideoMode(StrEnum):
 
 class ProjectStatus(StrEnum):
     DRAFT = "draft"
+    STORYBOARD_PENDING = "storyboard_pending"
+    STORYBOARD_GENERATING = "storyboard_generating"
     STORYBOARD_READY = "storyboard_ready"
-    GENERATING = "generating"
+    MEDIA_GENERATING = "media_generating"
+    RENDERING = "rendering"
     READY = "ready"
     FAILED = "failed"
     DELETED = "deleted"
@@ -37,7 +41,6 @@ class ProjectStatus(StrEnum):
 
 class AspectRatio(StrEnum):
     VERTICAL = "9:16"
-    LANDSCAPE = "16:9"
 
 
 class Project(Base, TimestampMixin):
@@ -79,9 +82,8 @@ class Project(Base, TimestampMixin):
     title: Mapped[str] = mapped_column(String(200))
     topic: Mapped[str] = mapped_column(Text)
     additional_direction: Mapped[str] = mapped_column(Text, default="")
-    source_notes: Mapped[str] = mapped_column(Text, default="")
     historical_accuracy_note: Mapped[str | None] = mapped_column(Text)
-    language: Mapped[str] = mapped_column(String(32), default="English")
+    language: Mapped[str] = mapped_column(String(32), default="en")
     duration_seconds: Mapped[int] = mapped_column(Integer)
     aspect_ratio: Mapped[AspectRatio] = mapped_column(
         Enum(
@@ -103,6 +105,7 @@ class Project(Base, TimestampMixin):
     captions_enabled: Mapped[bool] = mapped_column(default=True)
     music_enabled: Mapped[bool] = mapped_column(default=False)
     generation_progress: Mapped[int] = mapped_column(Integer, default=0)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     chapters: Mapped[list[Chapter]] = relationship(
         back_populates="project",

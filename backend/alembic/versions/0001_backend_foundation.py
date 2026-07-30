@@ -1,15 +1,23 @@
-"""Create the historical documentary MVP schema."""
+"""Create the persisted backend foundation."""
 
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision: str = "0001_historical_mvp"
+revision: str = "0001_backend_foundation"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+
+def timestamps() -> list[sa.Column]:
+    return [
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    ]
 
 
 def upgrade() -> None:
@@ -21,7 +29,6 @@ def upgrade() -> None:
         sa.Column("title", sa.String(200), nullable=False),
         sa.Column("topic", sa.Text(), nullable=False),
         sa.Column("additional_direction", sa.Text(), nullable=False),
-        sa.Column("source_notes", sa.Text(), nullable=False),
         sa.Column("historical_accuracy_note", sa.Text()),
         sa.Column("language", sa.String(32), nullable=False),
         sa.Column("duration_seconds", sa.Integer(), nullable=False),
@@ -31,11 +38,10 @@ def upgrade() -> None:
         sa.Column("captions_enabled", sa.Boolean(), nullable=False),
         sa.Column("music_enabled", sa.Boolean(), nullable=False),
         sa.Column("generation_progress", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        *timestamps(),
+        sa.Column("deleted_at", sa.DateTime(timezone=True)),
         sa.CheckConstraint(
-            "duration_seconds IN (30, 45)",
-            name="ck_projects_supported_duration",
+            "duration_seconds IN (30, 45)", name="ck_projects_supported_duration"
         ),
         sa.CheckConstraint(
             "generation_progress BETWEEN 0 AND 100",
@@ -54,14 +60,17 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("title", sa.String(200), nullable=False),
+        sa.Column("summary", sa.Text()),
         sa.Column("position", sa.Integer(), nullable=False),
+        sa.Column("target_duration_seconds", sa.Integer()),
+        sa.Column("status", sa.String(16), nullable=False),
+        *timestamps(),
         sa.UniqueConstraint(
-            "project_id",
-            "position",
-            name="chapter_position",
+            "project_id", "position", name="chapter_position"
         ),
     )
     op.create_index("ix_chapters_project_id", "chapters", ["project_id"])
+    op.create_index("ix_chapters_status", "chapters", ["status"])
 
     op.create_table(
         "scenes",
@@ -78,18 +87,14 @@ def upgrade() -> None:
         sa.Column("duration_seconds", sa.Integer(), nullable=False),
         sa.Column("position", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(32), nullable=False),
+        sa.Column("active_asset_id", sa.String(64)),
         sa.Column("active_asset_version", sa.Integer(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        *timestamps(),
         sa.CheckConstraint(
             "duration_seconds > 0 AND duration_seconds <= 60",
             name="ck_scenes_duration_range",
         ),
-        sa.UniqueConstraint(
-            "chapter_id",
-            "position",
-            name="scene_position",
-        ),
+        sa.UniqueConstraint("chapter_id", "position", name="scene_position"),
     )
     op.create_index("ix_scenes_chapter_id", "scenes", ["chapter_id"])
     op.create_index("ix_scenes_status", "scenes", ["status"])
@@ -114,32 +119,27 @@ def upgrade() -> None:
             sa.ForeignKey("generation_jobs.id", ondelete="SET NULL"),
         ),
         sa.Column("type", sa.String(32), nullable=False),
-        sa.Column("status", sa.String(16), nullable=False),
+        sa.Column("status", sa.String(24), nullable=False),
         sa.Column("progress", sa.Integer(), nullable=False),
         sa.Column("current_stage", sa.String(100)),
+        sa.Column("input_payload", postgresql.JSONB(), nullable=False),
+        sa.Column("result_payload", postgresql.JSONB()),
         sa.Column("error_code", sa.String(100)),
         sa.Column("error_message", sa.Text()),
-        sa.Column("input_data", sa.JSON(), nullable=False),
+        sa.Column("retry_count", sa.Integer(), nullable=False),
+        sa.Column("max_retries", sa.Integer(), nullable=False),
+        sa.Column("cancel_requested_at", sa.DateTime(timezone=True)),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("started_at", sa.DateTime(timezone=True)),
         sa.Column("completed_at", sa.DateTime(timezone=True)),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.CheckConstraint(
+            "progress BETWEEN 0 AND 100",
+            name="ck_generation_jobs_progress_range",
+        ),
     )
-    op.create_index(
-        "ix_generation_jobs_project_id",
-        "generation_jobs",
-        ["project_id"],
-    )
-    op.create_index(
-        "ix_generation_jobs_scene_id",
-        "generation_jobs",
-        ["scene_id"],
-    )
-    op.create_index(
-        "ix_generation_jobs_parent_job_id",
-        "generation_jobs",
-        ["parent_job_id"],
-    )
-    op.create_index("ix_generation_jobs_status", "generation_jobs", ["status"])
+    for column in ("project_id", "scene_id", "parent_job_id", "status", "created_at"):
+        op.create_index(f"ix_generation_jobs_{column}", "generation_jobs", [column])
 
     op.create_table(
         "assets",
@@ -161,27 +161,36 @@ def upgrade() -> None:
             sa.ForeignKey("assets.id", ondelete="SET NULL"),
         ),
         sa.Column("type", sa.String(24), nullable=False),
-        sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
-        sa.Column("provider", sa.String(100), nullable=False),
-        sa.Column("model", sa.String(150), nullable=False),
+        sa.Column("version", sa.Integer(), nullable=False),
+        sa.Column("provider", sa.String(100)),
+        sa.Column("model_name", sa.String(150)),
         sa.Column("prompt", sa.Text()),
-        sa.Column("generation_instruction", sa.Text()),
-        sa.Column("b2_bucket", sa.String(255), nullable=False),
-        sa.Column("b2_object_key", sa.String(1024), nullable=False),
-        sa.Column("mime_type", sa.String(100), nullable=False),
-        sa.Column("file_size_bytes", sa.BigInteger(), nullable=False),
-        sa.Column("sha256", sa.String(64), nullable=False),
+        sa.Column(
+            "generation_parameters", postgresql.JSONB(), nullable=False
+        ),
+        sa.Column("storage_bucket", sa.String(255)),
+        sa.Column("storage_object_key", sa.String(1024), unique=True),
+        sa.Column("mime_type", sa.String(100)),
+        sa.Column("file_size_bytes", sa.BigInteger()),
+        sa.Column("sha256", sa.String(64)),
         sa.Column("provenance_object_key", sa.String(1024)),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("scene_id", "version", name="asset_scene_version"),
+        *timestamps(),
+        sa.Column("archived_at", sa.DateTime(timezone=True)),
         sa.UniqueConstraint(
-            "b2_object_key",
-            name="uq_assets_b2_object_key",
+            "scene_id", "type", "version", name="asset_scene_type_version"
         ),
     )
     op.create_index("ix_assets_project_id", "assets", ["project_id"])
     op.create_index("ix_assets_scene_id", "assets", ["scene_id"])
+    op.create_foreign_key(
+        "fk_scenes_active_asset_id_assets",
+        "scenes",
+        "assets",
+        ["active_asset_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
 
     op.create_table(
         "renders",
@@ -192,27 +201,37 @@ def upgrade() -> None:
             sa.ForeignKey("projects.id", ondelete="CASCADE"),
             nullable=False,
         ),
+        sa.Column(
+            "job_id",
+            sa.String(64),
+            sa.ForeignKey("generation_jobs.id", ondelete="SET NULL"),
+        ),
         sa.Column("version", sa.Integer(), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
-        sa.Column("b2_object_key", sa.String(1024)),
+        sa.Column(
+            "asset_id",
+            sa.String(64),
+            sa.ForeignKey("assets.id", ondelete="SET NULL"),
+        ),
         sa.Column("duration_seconds", sa.Integer()),
         sa.Column("file_size_bytes", sa.BigInteger()),
-        sa.Column("resolution", sa.String(32), nullable=False),
-        sa.Column("captions_burned", sa.Boolean(), nullable=False),
-        sa.Column("music_included", sa.Boolean(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("started_at", sa.DateTime(timezone=True)),
         sa.Column("completed_at", sa.DateTime(timezone=True)),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint(
-            "project_id",
-            "version",
-            name="render_project_version",
+            "project_id", "version", name="render_project_version"
         ),
     )
     op.create_index("ix_renders_project_id", "renders", ["project_id"])
+    op.create_index("ix_renders_job_id", "renders", ["job_id"])
 
 
 def downgrade() -> None:
     op.drop_table("renders")
+    op.drop_constraint(
+        "fk_scenes_active_asset_id_assets", "scenes", type_="foreignkey"
+    )
     op.drop_table("assets")
     op.drop_table("generation_jobs")
     op.drop_table("scenes")

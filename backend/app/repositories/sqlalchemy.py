@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session, selectinload
 
-from app.models.asset import Asset, AssetStatus, AssetType
 from app.models.chapter import Chapter
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import Project, ProjectStatus, VideoMode
-from app.models.render import Render
 from app.models.scene import Scene
 
 
@@ -69,8 +67,10 @@ class ProjectRepository:
             )
         return list(self.session.scalars(statement).unique())
 
-    def get_chapter(self, chapter_id: str) -> Chapter | None:
-        return self.session.scalar(
+    def get_chapter(
+        self, chapter_id: str, *, for_update: bool = False
+    ) -> Chapter | None:
+        statement = (
             select(Chapter)
             .where(Chapter.id == chapter_id)
             .options(
@@ -79,6 +79,9 @@ class ProjectRepository:
                 selectinload(Chapter.scenes).selectinload(Scene.jobs),
             )
         )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
 
     def get_scene(self, scene_id: str) -> Scene | None:
         return self.session.scalar(
@@ -93,6 +96,9 @@ class ProjectRepository:
 
     def commit(self) -> None:
         self.session.commit()
+
+    def rollback(self) -> None:
+        self.session.rollback()
 
 
 class JobRepository:
@@ -130,123 +136,6 @@ class JobRepository:
                 selectinload(GenerationJob.scene).selectinload(Scene.chapter),
             )
         )
-
-    def commit(self) -> None:
-        self.session.commit()
-
-
-class AssetRepository:
-    def __init__(self, session: Session) -> None:
-        self.session = session
-
-    def add(self, asset: Asset) -> Asset:
-        self.session.add(asset)
-        self.session.flush()
-        return asset
-
-    def get(self, asset_id: str) -> Asset | None:
-        return self.session.scalar(
-            select(Asset)
-            .where(Asset.id == asset_id)
-            .options(
-                selectinload(Asset.project),
-                selectinload(Asset.scene).selectinload(Scene.chapter),
-            )
-        )
-
-    def list(
-        self,
-        *,
-        project_id: str | None = None,
-        scene_id: str | None = None,
-        asset_type: AssetType | None = None,
-        status: AssetStatus | None = None,
-        search: str | None = None,
-    ) -> list[Asset]:
-        statement = (
-            select(Asset)
-            .options(
-                selectinload(Asset.project),
-                selectinload(Asset.scene).selectinload(Scene.chapter),
-            )
-            .order_by(Asset.created_at.desc(), Asset.id.desc())
-        )
-        if project_id:
-            statement = statement.where(Asset.project_id == project_id)
-        if scene_id:
-            statement = statement.where(Asset.scene_id == scene_id)
-        if asset_type:
-            statement = statement.where(Asset.type == asset_type)
-        if status:
-            statement = statement.where(Asset.status == status)
-        if search:
-            term = f"%{search.strip()}%"
-            statement = statement.join(Project).where(
-                or_(Project.title.ilike(term), Asset.b2_object_key.ilike(term))
-            )
-        return list(self.session.scalars(statement).unique())
-
-    def next_version(self, scene_id: str) -> int:
-        latest = self.session.scalar(
-            select(func.max(Asset.version)).where(Asset.scene_id == scene_id)
-        )
-        return int(latest or 0) + 1
-
-    def get_scene_version(self, scene_id: str, version: int) -> Asset | None:
-        return self.session.scalar(
-            select(Asset).where(
-                Asset.scene_id == scene_id,
-                Asset.version == version,
-            )
-        )
-
-    def active_scene_assets(self, project_id: str) -> list[Asset]:
-        return list(
-            self.session.scalars(
-                select(Asset)
-                .join(Scene, Asset.scene_id == Scene.id)
-                .join(Chapter, Scene.chapter_id == Chapter.id)
-                .where(
-                    Asset.project_id == project_id,
-                    Asset.status == AssetStatus.READY,
-                    Asset.version == Scene.active_asset_version,
-                    Asset.type.in_([AssetType.IMAGE, AssetType.VIDEO]),
-                )
-                .order_by(Chapter.position, Scene.position)
-                .options(selectinload(Asset.scene))
-            )
-        )
-
-    def commit(self) -> None:
-        self.session.commit()
-
-
-class RenderRepository:
-    def __init__(self, session: Session) -> None:
-        self.session = session
-
-    def add(self, render: Render) -> Render:
-        self.session.add(render)
-        self.session.flush()
-        return render
-
-    def get(self, render_id: str) -> Render | None:
-        return self.session.get(Render, render_id)
-
-    def list_for_project(self, project_id: str) -> list[Render]:
-        return list(
-            self.session.scalars(
-                select(Render)
-                .where(Render.project_id == project_id)
-                .order_by(Render.version.desc())
-            )
-        )
-
-    def next_version(self, project_id: str) -> int:
-        latest = self.session.scalar(
-            select(func.max(Render.version)).where(Render.project_id == project_id)
-        )
-        return int(latest or 0) + 1
 
     def commit(self) -> None:
         self.session.commit()

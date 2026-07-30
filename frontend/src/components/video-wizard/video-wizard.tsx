@@ -9,11 +9,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Form } from "@/components/ui/form";
-import {
-  getConfiguredApiMode,
-  videoProjectApi,
-} from "@/lib/api/provider";
-import { pollJob } from "@/lib/api/poll-job";
+import { createProject } from "@/lib/mock-api";
 import { VIDEO_TEMPLATES, type VideoTemplatePreset } from "@/lib/mock-data";
 import type { VideoMode } from "@/types";
 import { WizardStepper } from "./wizard-stepper";
@@ -44,15 +40,12 @@ const INITIAL_WIZARD_VALUES: WizardFormValues = {
 
 export function VideoWizard() {
   const router = useRouter();
-  const realHistoricalOnly = getConfiguredApiMode() === "http";
   const [step, setStep] = useState(1);
   const [isCreating, setIsCreating] = useState(false);
 
   const form = useForm<WizardFormValues>({
     resolver: zodResolver(wizardSchema),
-    defaultValues: realHistoricalOnly
-      ? { ...INITIAL_WIZARD_VALUES, musicEnabled: false }
-      : INITIAL_WIZARD_VALUES,
+    defaultValues: INITIAL_WIZARD_VALUES,
     mode: "onChange",
   });
 
@@ -77,13 +70,6 @@ export function VideoWizard() {
     form.setValue("sceneCount", WIZARD_DEFAULT_VALUES.sceneCount);
     form.setValue("visualStyle", WIZARD_DEFAULT_VALUES.visualStyle);
     form.setValue("narrationStyle", WIZARD_DEFAULT_VALUES.narrationStyle);
-    if (realHistoricalOnly) {
-      form.setValue("sceneCount", "4");
-      form.setValue("language", "English");
-      form.setValue("aspectRatio", "9:16");
-      form.setValue("captionsEnabled", true);
-      form.setValue("musicEnabled", false);
-    }
   };
 
   const handleSelectMode = (value: VideoMode) => {
@@ -116,49 +102,13 @@ export function VideoWizard() {
   const onSubmit = async (values: WizardFormValues) => {
     setIsCreating(true);
     try {
-      const apiMode = getConfiguredApiMode();
-      if (apiMode === "http" && values.mode !== "historical-documentary") {
-        throw new Error(
-          "Microdrama and Product Advertisement are coming soon for real generation."
-        );
-      }
-      if (
-        apiMode === "http" &&
-        (values.language !== "English" ||
-          values.duration === "60" ||
-          values.aspectRatio !== "9:16" ||
-          values.sceneCount !== "4" ||
-          !values.captionsEnabled ||
-          values.musicEnabled)
-      ) {
-        throw new Error(
-          "The real MVP supports English, 30 or 45 seconds, 9:16, exactly 4 scenes, captions enabled, and no background music yet."
-        );
-      }
-      const project = await videoProjectApi.createProject(
-        mapWizardValuesToProjectInput(values)
-      );
-      const job = await videoProjectApi.generateStoryboard(project.id, {
-        sceneCount: 4,
-      });
-      const completed = await pollJob({
-        api: videoProjectApi,
-        jobId: job.id,
-      });
-      if (completed.stage === "failed") {
-        throw new Error(
-          completed.errorMessage ?? "Storyboard generation failed."
-        );
-      }
+      const project = await createProject(mapWizardValuesToProjectInput(values));
       toast.success("Storyboard created", {
         description: `${project.output.title} is ready for review.`,
       });
       router.push(`/projects/${project.id}`);
-    } catch (error) {
-      toast.error("Could not create the storyboard.", {
-        description:
-          error instanceof Error ? error.message : "Unknown API error.",
-      });
+    } catch {
+      toast.error("Something went wrong creating the storyboard.");
       setIsCreating(false);
     }
   };
@@ -199,7 +149,7 @@ export function VideoWizard() {
                 onSelectScratch={handleSelectScratch}
                 onSelectMode={handleSelectMode}
                 onSelectTemplate={handleSelectTemplate}
-                realHistoricalOnly={realHistoricalOnly}
+                realHistoricalOnly={false}
               />
             )}
             {step === 2 && (
@@ -214,7 +164,7 @@ export function VideoWizard() {
                 control={form.control}
                 appliedTemplate={appliedTemplate}
                 onResetToTemplateDefaults={handleResetToTemplateDefaults}
-                realHistoricalOnly={realHistoricalOnly}
+                realHistoricalOnly={false}
               />
             )}
 

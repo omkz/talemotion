@@ -1,234 +1,157 @@
 openapi: 3.1.0
 info:
-  title: TaleMotion Historical MVP API
+  title: TaleMotion Backend Foundation API
   version: 0.1.0
-  description: >-
-    Production-shaped API for the Historical Documentary vertical slice.
-    Generation runs asynchronously through Celery and never falls back to
-    hardcoded media.
+  description: PostgreSQL-backed project, scene, and job foundation.
 servers:
   - url: http://localhost:8000/api/v1
 paths:
   /health:
     get:
       tags: [Health]
-      summary: Get process health
+      summary: Get API process health
       responses:
         "200":
-          description: Process identity, not provider readiness proof
+          description: API is running
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/HealthResponse"
+              schema: {$ref: "#/components/schemas/HealthResponse"}
+  /health/dependencies:
+    get:
+      tags: [Health]
+      summary: Check PostgreSQL and Redis
+      responses:
+        "200":
+          description: Required dependencies are available
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/DependencyHealthResponse"}
+        "503":
+          description: A required dependency is unavailable
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ErrorResponse"}
   /projects:
     get:
       tags: [Projects]
       summary: List projects
       parameters:
-        - $ref: "#/components/parameters/ProjectStatus"
-        - $ref: "#/components/parameters/VideoMode"
-        - $ref: "#/components/parameters/Search"
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Cursor"
+        - {name: status, in: query, schema: {$ref: "#/components/schemas/ProjectStatus"}}
+        - {name: mode, in: query, schema: {$ref: "#/components/schemas/VideoMode"}}
+        - {name: search, in: query, schema: {type: string}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {name: cursor, in: query, schema: {type: [string, "null"]}}
       responses:
         "200":
           description: Cursor page
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectListResponse"
-        "400":
-          $ref: "#/components/responses/Error"
+              schema: {$ref: "#/components/schemas/ProjectListResponse"}
+        "400": {$ref: "#/components/responses/Error"}
     post:
       tags: [Projects]
-      summary: Create a Historical Documentary project
+      summary: Create a project and default Main chapter
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/CreateProjectRequest"
+            schema: {$ref: "#/components/schemas/CreateProjectRequest"}
       responses:
         "201":
-          description: Project with default Main chapter
+          description: Persisted project
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectResponse"
-        "409":
-          $ref: "#/components/responses/Error"
-        "422":
-          $ref: "#/components/responses/Error"
+              schema: {$ref: "#/components/schemas/ProjectResponse"}
+        "409": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
   /projects/{project_id}:
     parameters:
-      - $ref: "#/components/parameters/ProjectId"
+      - {$ref: "#/components/parameters/ProjectId"}
     get:
       tags: [Projects]
-      summary: Get a project with chapters and scenes
+      summary: Get project with chapters and scenes
       responses:
         "200":
           description: Project
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectResponse"
-        "404":
-          $ref: "#/components/responses/Error"
+              schema: {$ref: "#/components/schemas/ProjectResponse"}
+        "404": {$ref: "#/components/responses/Error"}
     patch:
       tags: [Projects]
-      summary: Update editable project fields
+      summary: Update safe user-controlled fields
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateProjectRequest"
+            schema: {$ref: "#/components/schemas/UpdateProjectRequest"}
       responses:
         "200":
           description: Updated project
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/ProjectResponse"
-        "404":
-          $ref: "#/components/responses/Error"
-        "422":
-          $ref: "#/components/responses/Error"
+              schema: {$ref: "#/components/schemas/ProjectResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
     delete:
       tags: [Projects]
       summary: Soft-delete a project
       responses:
-        "204":
-          description: Deleted
-        "404":
-          $ref: "#/components/responses/Error"
-  /projects/{project_id}/storyboard:
-    post:
-      tags: [Generation]
-      summary: Queue structured storyboard generation
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/GenerateStoryboardRequest"
-      responses:
-        "202":
-          description: Persisted asynchronous job
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenerationJobResponse"
-        "404":
-          $ref: "#/components/responses/Error"
-        "503":
-          $ref: "#/components/responses/Error"
-  /projects/{project_id}/renders:
-    get:
-      tags: [Renders]
-      summary: List render versions
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-      responses:
-        "200":
-          description: Project renders, newest version first
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RenderListResponse"
-        "404":
-          $ref: "#/components/responses/Error"
-    post:
-      tags: [Renders]
-      summary: Queue final narrated MP4 rendering
-      parameters:
-        - $ref: "#/components/parameters/ProjectId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CreateRenderRequest"
-      responses:
-        "202":
-          description: Persisted asynchronous job
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenerationJobResponse"
-        "409":
-          $ref: "#/components/responses/Error"
-        "503":
-          $ref: "#/components/responses/Error"
+        "204": {description: Project soft-deleted}
+        "404": {$ref: "#/components/responses/Error"}
   /chapters/{chapter_id}:
     get:
       tags: [Chapters]
-      summary: Get a chapter and its ordered scenes
+      summary: Get a chapter and ordered scenes
       parameters:
-        - $ref: "#/components/parameters/ChapterId"
+        - {$ref: "#/components/parameters/ChapterId"}
       responses:
         "200":
           description: Chapter
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/ChapterResponse"
-        "404":
-          $ref: "#/components/responses/Error"
+              schema: {$ref: "#/components/schemas/ChapterResponse"}
+        "404": {$ref: "#/components/responses/Error"}
   /chapters/{chapter_id}/scenes:
     post:
       tags: [Scenes]
-      summary: Add a scene
+      summary: Add or insert a scene
       parameters:
-        - $ref: "#/components/parameters/ChapterId"
+        - {$ref: "#/components/parameters/ChapterId"}
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/CreateSceneRequest"
+            schema: {$ref: "#/components/schemas/CreateSceneRequest"}
       responses:
         "201":
           description: Scene
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/SceneResponse"
-        "422":
-          $ref: "#/components/responses/Error"
+              schema: {$ref: "#/components/schemas/SceneResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
   /chapters/{chapter_id}/scenes/reorder:
     post:
       tags: [Scenes]
       summary: Reorder every scene in a chapter
       parameters:
-        - $ref: "#/components/parameters/ChapterId"
+        - {$ref: "#/components/parameters/ChapterId"}
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [scene_ids]
-              properties:
-                scene_ids:
-                  type: array
-                  items:
-                    type: string
+            schema: {$ref: "#/components/schemas/ReorderScenesRequest"}
       responses:
         "200":
-          description: Reordered chapter
+          description: Updated chapter
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/ChapterResponse"
-        "409":
-          $ref: "#/components/responses/Error"
+              schema: {$ref: "#/components/schemas/ChapterResponse"}
+        "409": {$ref: "#/components/responses/Error"}
   /scenes/{scene_id}:
     parameters:
-      - $ref: "#/components/parameters/SceneId"
+      - {$ref: "#/components/parameters/SceneId"}
     get:
       tags: [Scenes]
       summary: Get a scene
@@ -237,10 +160,8 @@ paths:
           description: Scene
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/SceneResponse"
-        "404":
-          $ref: "#/components/responses/Error"
+              schema: {$ref: "#/components/schemas/SceneResponse"}
+        "404": {$ref: "#/components/responses/Error"}
     patch:
       tags: [Scenes]
       summary: Update editable scene fields
@@ -248,804 +169,245 @@ paths:
         required: true
         content:
           application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateSceneRequest"
+            schema: {$ref: "#/components/schemas/UpdateSceneRequest"}
       responses:
         "200":
           description: Updated scene
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/SceneResponse"
-        "422":
-          $ref: "#/components/responses/Error"
+              schema: {$ref: "#/components/schemas/SceneResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
     delete:
       tags: [Scenes]
       summary: Delete a scene and normalize positions
       responses:
-        "204":
-          description: Deleted
-        "404":
-          $ref: "#/components/responses/Error"
+        "204": {description: Scene deleted}
+        "404": {$ref: "#/components/responses/Error"}
   /scenes/{scene_id}/duplicate:
     post:
       tags: [Scenes]
-      summary: Duplicate a scene
+      summary: Duplicate a scene after its source
       parameters:
-        - $ref: "#/components/parameters/SceneId"
+        - {$ref: "#/components/parameters/SceneId"}
       responses:
         "201":
-          description: New draft scene
+          description: Draft duplicate
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/SceneResponse"
-        "404":
-          $ref: "#/components/responses/Error"
-  /scenes/{scene_id}/generations:
-    post:
-      tags: [Generation]
-      summary: Queue real scene image generation
-      parameters:
-        - $ref: "#/components/parameters/SceneId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/GenerateSceneRequest"
-      responses:
-        "202":
-          description: Persisted media job
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenerationJobResponse"
-        "503":
-          $ref: "#/components/responses/Error"
-  /scenes/{scene_id}/regenerations:
-    post:
-      tags: [Generation]
-      summary: Queue the next scene asset version
-      parameters:
-        - $ref: "#/components/parameters/SceneId"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RegenerateSceneRequest"
-      responses:
-        "202":
-          description: Persisted regeneration job
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenerationJobResponse"
-        "503":
-          $ref: "#/components/responses/Error"
+              schema: {$ref: "#/components/schemas/SceneResponse"}
+        "404": {$ref: "#/components/responses/Error"}
   /jobs/{job_id}:
     get:
       tags: [Jobs]
-      summary: Poll persisted generation progress
+      summary: Inspect a persisted job
       parameters:
-        - name: job_id
-          in: path
-          required: true
-          schema:
-            type: string
+        - {$ref: "#/components/parameters/JobId"}
       responses:
         "200":
           description: Job
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/GenerationJobResponse"
-        "404":
-          $ref: "#/components/responses/Error"
-  /assets:
-    get:
-      tags: [Assets]
-      summary: List stored assets
-      parameters:
-        - name: project_id
-          in: query
-          schema:
-            type: string
-        - name: scene_id
-          in: query
-          schema:
-            type: string
-        - name: type
-          in: query
-          schema:
-            $ref: "#/components/schemas/AssetType"
-        - name: status
-          in: query
-          schema:
-            $ref: "#/components/schemas/AssetStatus"
-        - $ref: "#/components/parameters/Search"
-        - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Cursor"
-      responses:
-        "200":
-          description: Cursor page with total
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AssetListResponse"
-  /assets/{asset_id}:
-    get:
-      tags: [Assets]
-      summary: Get asset metadata
-      parameters:
-        - $ref: "#/components/parameters/AssetId"
-      responses:
-        "200":
-          description: Asset
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/AssetResponse"
-        "404":
-          $ref: "#/components/responses/Error"
-  /assets/{asset_id}/preview-url:
+              schema: {$ref: "#/components/schemas/GenerationJobResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+  /jobs/{job_id}/cancel:
     post:
-      tags: [Assets]
-      summary: Create a short-lived signed preview URL
+      tags: [Jobs]
+      summary: Request job cancellation
       parameters:
-        - $ref: "#/components/parameters/AssetId"
+        - {$ref: "#/components/parameters/JobId"}
       responses:
         "200":
-          description: Signed B2 URL
+          description: Job marked cancel_requested
           content:
             application/json:
-              schema:
-                $ref: "#/components/schemas/SignedAssetUrlResponse"
-  /assets/{asset_id}/download-url:
+              schema: {$ref: "#/components/schemas/GenerationJobResponse"}
+        "409": {$ref: "#/components/responses/Error"}
+  /jobs/{job_id}/retry:
     post:
-      tags: [Assets]
-      summary: Create a short-lived signed download URL
+      tags: [Jobs]
+      summary: Check retry eligibility
+      description: Eligible jobs return not_implemented until task dispatch exists.
       parameters:
-        - $ref: "#/components/parameters/AssetId"
+        - {$ref: "#/components/parameters/JobId"}
       responses:
-        "200":
-          description: Signed B2 URL with download disposition
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SignedAssetUrlResponse"
-  /renders/{render_id}:
-    get:
-      tags: [Renders]
-      summary: Get a render and signed preview
-      parameters:
-        - name: render_id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Render
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RenderResponse"
-        "404":
-          $ref: "#/components/responses/Error"
+        "409": {$ref: "#/components/responses/Error"}
+        "501": {$ref: "#/components/responses/Error"}
 components:
   parameters:
-    ProjectId:
-      name: project_id
-      in: path
-      required: true
-      schema:
-        type: string
-    ChapterId:
-      name: chapter_id
-      in: path
-      required: true
-      schema:
-        type: string
-    SceneId:
-      name: scene_id
-      in: path
-      required: true
-      schema:
-        type: string
-    AssetId:
-      name: asset_id
-      in: path
-      required: true
-      schema:
-        type: string
-    ProjectStatus:
-      name: status
-      in: query
-      schema:
-        $ref: "#/components/schemas/ProjectStatus"
-    VideoMode:
-      name: mode
-      in: query
-      schema:
-        $ref: "#/components/schemas/VideoMode"
-    Search:
-      name: search
-      in: query
-      schema:
-        type: string
-    Limit:
-      name: limit
-      in: query
-      schema:
-        type: integer
-        minimum: 1
-        maximum: 100
-        default: 20
-    Cursor:
-      name: cursor
-      in: query
-      schema:
-        type: string
+    ProjectId: {name: project_id, in: path, required: true, schema: {type: string}}
+    ChapterId: {name: chapter_id, in: path, required: true, schema: {type: string}}
+    SceneId: {name: scene_id, in: path, required: true, schema: {type: string}}
+    JobId: {name: job_id, in: path, required: true, schema: {type: string}}
   responses:
     Error:
-      description: Consistent API error
-      headers:
-        X-Request-ID:
-          schema:
-            type: string
+      description: Consistent error envelope
       content:
         application/json:
-          schema:
-            $ref: "#/components/schemas/ErrorResponse"
+          schema: {$ref: "#/components/schemas/ErrorResponse"}
   schemas:
     VideoMode:
       type: string
-      enum:
-        - historical_documentary
-        - microdrama
-        - product_advertisement
+      enum: [historical_documentary, microdrama, product_advertisement]
     ProjectStatus:
       type: string
-      enum: [draft, storyboard_ready, generating, ready, failed, deleted]
+      enum: [draft, storyboard_pending, storyboard_generating, storyboard_ready, media_generating, rendering, ready, failed, deleted]
+    ChapterStatus:
+      type: string
+      enum: [draft, ready, generating, completed, failed]
     SceneStatus:
       type: string
-      enum:
-        - draft
-        - queued
-        - generating_image
-        - generating_video
-        - generating_narration
-        - uploading_assets
-        - completed
-        - failed
+      enum: [draft, ready, queued, generating, completed, failed]
     JobType:
       type: string
-      enum:
-        - storyboard
-        - scene_generation
-        - scene_regeneration
-        - final_render
+      enum: [storyboard, scene_generation, scene_regeneration, project_generation, render]
     JobStatus:
       type: string
-      enum: [queued, running, completed, failed, cancelled]
-    AssetType:
-      type: string
-      enum: [image, video, audio, subtitle, final_render]
-    AssetStatus:
-      type: string
-      enum: [generating, ready, failed, archived]
-    RenderStatus:
-      type: string
-      enum: [queued, rendering, completed, failed, cancelled]
-    HistoricalDocumentaryBrief:
+      enum: [queued, running, completed, failed, cancel_requested, cancelled]
+    HealthResponse:
       type: object
-      additionalProperties: false
-      required: [mode, topic, additional_direction, source_notes]
+      required: [status, service, version]
       properties:
-        mode:
-          const: historical_documentary
-        topic:
-          type: string
-          minLength: 1
-        additional_direction:
-          type: string
-        source_notes:
-          type: string
-    OutputConfiguration:
+        status: {const: ok}
+        service: {type: string}
+        version: {type: string}
+    DependencyHealthResponse:
       type: object
-      additionalProperties: false
-      required:
-        - title
-        - language
-        - duration_seconds
-        - aspect_ratio
-        - visual_style
-        - narration_style
-        - scene_count
-        - captions_enabled
-        - background_music_enabled
+      required: [status, dependencies]
       properties:
-        title:
-          type: string
-          minLength: 1
-        language:
-          const: English
-        duration_seconds:
-          type: integer
-          enum: [30, 45]
-        aspect_ratio:
-          const: "9:16"
-        visual_style:
-          type: string
-        narration_style:
-          type: string
-        scene_count:
-          const: 4
-        captions_enabled:
-          const: true
-        background_music_enabled:
-          type: boolean
+        status: {type: string, enum: [ok, unavailable]}
+        dependencies:
+          type: object
+          required: [database, redis]
+          properties:
+            database: {type: string, enum: [ok, unavailable]}
+            redis: {type: string, enum: [ok, unavailable]}
     CreateProjectRequest:
       type: object
       additionalProperties: false
-      required: [mode, brief, output_config]
+      required: [mode, title, topic, duration_seconds, aspect_ratio]
       properties:
-        mode:
-          $ref: "#/components/schemas/VideoMode"
-        brief:
-          $ref: "#/components/schemas/HistoricalDocumentaryBrief"
-        output_config:
-          $ref: "#/components/schemas/OutputConfiguration"
-        template_id:
-          type: [string, "null"]
+        mode: {$ref: "#/components/schemas/VideoMode"}
+        title: {type: string, minLength: 1}
+        topic: {type: string, minLength: 1}
+        additional_direction: {type: string, default: ""}
+        language: {type: string, default: en}
+        duration_seconds: {type: integer, enum: [30, 45]}
+        aspect_ratio: {type: string, enum: ["9:16"]}
+        visual_style: {type: string}
+        narration_style: {type: string}
+        captions_enabled: {type: boolean, default: true}
+        music_enabled: {type: boolean, default: true}
+        historical_accuracy_note: {type: [string, "null"]}
     UpdateProjectRequest:
       type: object
       additionalProperties: false
       properties:
-        title:
-          type: [string, "null"]
-        brief:
-          $ref: "#/components/schemas/HistoricalDocumentaryBrief"
-        output_config:
-          $ref: "#/components/schemas/OutputConfiguration"
-        historical_accuracy_note:
-          type: [string, "null"]
+        title: {type: string, minLength: 1}
+        topic: {type: string, minLength: 1}
+        additional_direction: {type: string}
+        language: {type: string}
+        duration_seconds: {type: integer, enum: [30, 45]}
+        aspect_ratio: {type: string, enum: ["9:16"]}
+        visual_style: {type: string}
+        narration_style: {type: string}
+        captions_enabled: {type: boolean}
+        music_enabled: {type: boolean}
+        historical_accuracy_note: {type: [string, "null"]}
     ProjectResponse:
-      type: object
-      required:
-        - id
-        - mode
-        - status
-        - brief
-        - output_config
-        - chapters
-        - generation_progress
-        - created_at
-        - updated_at
-      properties:
-        id:
-          type: string
-        mode:
-          $ref: "#/components/schemas/VideoMode"
-        status:
-          $ref: "#/components/schemas/ProjectStatus"
-        brief:
-          $ref: "#/components/schemas/HistoricalDocumentaryBrief"
-        output_config:
-          $ref: "#/components/schemas/OutputConfiguration"
-        chapters:
-          type: array
-          items:
-            $ref: "#/components/schemas/ChapterResponse"
-        thumbnail_url:
-          type: [string, "null"]
-        historical_accuracy_note:
-          type: [string, "null"]
-        generation_progress:
-          type: integer
-          minimum: 0
-          maximum: 100
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
+      allOf:
+        - {$ref: "#/components/schemas/CreateProjectRequest"}
+        - type: object
+          required: [id, status, generation_progress, chapters, created_at, updated_at]
+          properties:
+            id: {type: string}
+            status: {$ref: "#/components/schemas/ProjectStatus"}
+            generation_progress: {type: integer, minimum: 0, maximum: 100}
+            chapters:
+              type: array
+              items: {$ref: "#/components/schemas/ChapterResponse"}
+            created_at: {type: string, format: date-time}
+            updated_at: {type: string, format: date-time}
     ProjectListResponse:
       type: object
       required: [items, next_cursor, has_more]
       properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/ProjectResponse"
-        next_cursor:
-          type: [string, "null"]
-        has_more:
-          type: boolean
+        items: {type: array, items: {$ref: "#/components/schemas/ProjectResponse"}}
+        next_cursor: {type: [string, "null"]}
+        has_more: {type: boolean}
     ChapterResponse:
       type: object
-      required: [id, project_id, title, position, scenes]
+      required: [id, project_id, title, position, status, scenes, created_at, updated_at]
       properties:
-        id:
-          type: string
-        project_id:
-          type: string
-        title:
-          type: string
-        position:
-          type: integer
-        scenes:
-          type: array
-          items:
-            $ref: "#/components/schemas/SceneResponse"
+        id: {type: string}
+        project_id: {type: string}
+        title: {type: string}
+        summary: {type: [string, "null"]}
+        position: {type: integer, minimum: 1}
+        target_duration_seconds: {type: [integer, "null"]}
+        status: {$ref: "#/components/schemas/ChapterStatus"}
+        scenes: {type: array, items: {$ref: "#/components/schemas/SceneResponse"}}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     CreateSceneRequest:
       type: object
       additionalProperties: false
       required: [title, narration, visual_prompt, duration_seconds]
       properties:
-        title:
-          type: string
-          minLength: 1
-        narration:
-          type: string
-        visual_prompt:
-          type: string
-        duration_seconds:
-          type: integer
-          minimum: 1
-          maximum: 60
-        position:
-          type: [integer, "null"]
-          minimum: 1
+        title: {type: string, minLength: 1}
+        narration: {type: string}
+        visual_prompt: {type: string}
+        duration_seconds: {type: integer, minimum: 1, maximum: 60}
+        position: {type: integer, minimum: 1}
     UpdateSceneRequest:
       type: object
       additionalProperties: false
       properties:
-        title:
-          type: [string, "null"]
-        narration:
-          type: [string, "null"]
-        visual_prompt:
-          type: [string, "null"]
-        duration_seconds:
-          type: [integer, "null"]
-          minimum: 1
-          maximum: 60
-    SceneVersionResponse:
+        title: {type: string, minLength: 1}
+        narration: {type: string}
+        visual_prompt: {type: string}
+        duration_seconds: {type: integer, minimum: 1, maximum: 60}
+    ReorderScenesRequest:
       type: object
-      required: [version, visual_prompt, instruction, asset, created_at]
+      required: [scene_ids]
       properties:
-        version:
-          type: integer
-        visual_prompt:
-          type: string
-        instruction:
-          type: [string, "null"]
-        asset:
-          oneOf:
-            - $ref: "#/components/schemas/AssetResponse"
-            - type: "null"
-        created_at:
-          type: string
-          format: date-time
+        scene_ids: {type: array, items: {type: string}}
     SceneResponse:
-      type: object
-      required:
-        - id
-        - chapter_id
-        - position
-        - title
-        - narration
-        - visual_prompt
-        - duration_seconds
-        - status
-        - active_version
-        - versions
-        - approved
-        - created_at
-        - updated_at
-      properties:
-        id:
-          type: string
-        chapter_id:
-          type: string
-        position:
-          type: integer
-        title:
-          type: string
-        narration:
-          type: string
-        visual_prompt:
-          type: string
-        duration_seconds:
-          type: integer
-        status:
-          $ref: "#/components/schemas/SceneStatus"
-        active_version:
-          type: integer
-        versions:
-          type: array
-          items:
-            $ref: "#/components/schemas/SceneVersionResponse"
-        current_job:
-          oneOf:
-            - $ref: "#/components/schemas/GenerationJobResponse"
-            - type: "null"
-        approved:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    GenerateStoryboardRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        scene_count:
-          type: [integer, "null"]
-          const: 4
-        additional_instruction:
-          type: [string, "null"]
-    GenerateSceneRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        stages:
-          type: array
-          items:
-            type: string
-          default: [image]
-        additional_instruction:
-          type: [string, "null"]
-    RegenerateSceneRequest:
-      type: object
-      additionalProperties: false
-      required: [additional_instruction]
-      properties:
-        additional_instruction:
-          type: string
-          minLength: 1
-        stages:
-          type: array
-          items:
-            type: string
-          default: [image]
+      allOf:
+        - {$ref: "#/components/schemas/CreateSceneRequest"}
+        - type: object
+          required: [id, chapter_id, position, status, active_asset_version, created_at, updated_at]
+          properties:
+            id: {type: string}
+            chapter_id: {type: string}
+            status: {$ref: "#/components/schemas/SceneStatus"}
+            active_asset_id: {type: [string, "null"]}
+            active_asset_version: {type: integer}
+            created_at: {type: string, format: date-time}
+            updated_at: {type: string, format: date-time}
     GenerationJobResponse:
       type: object
-      required:
-        - id
-        - type
-        - status
-        - progress
-        - child_job_ids
-        - created_at
+      required: [id, project_id, type, status, progress, input_payload, retry_count, max_retries, created_at, updated_at]
       properties:
-        id:
-          type: string
-        type:
-          $ref: "#/components/schemas/JobType"
-        status:
-          $ref: "#/components/schemas/JobStatus"
-        progress:
-          type: integer
-          minimum: 0
-          maximum: 100
-        current_stage:
-          type: [string, "null"]
-        project_id:
-          type: [string, "null"]
-        chapter_id:
-          type: [string, "null"]
-        scene_id:
-          type: [string, "null"]
-        parent_job_id:
-          type: [string, "null"]
-        child_job_ids:
-          type: array
-          items:
-            type: string
-        error:
-          type: [object, "null"]
-        created_at:
-          type: string
-          format: date-time
-        started_at:
-          type: [string, "null"]
-          format: date-time
-        completed_at:
-          type: [string, "null"]
-          format: date-time
-    AssetResponse:
-      type: object
-      required:
-        - id
-        - project_id
-        - project_title
-        - name
-        - type
-        - status
-        - version
-        - mime_type
-        - file_size_bytes
-        - storage_key
-        - bucket_display_name
-        - storage_state
-        - orchestration
-        - storage_provider
-        - manifest_status
-        - generation_stage
-        - prompt_saved
-        - created_at
-        - updated_at
-      properties:
-        id:
-          type: string
-        project_id:
-          type: string
-        project_title:
-          type: string
-        chapter_id:
-          type: [string, "null"]
-        scene_id:
-          type: [string, "null"]
-        scene_title:
-          type: [string, "null"]
-        name:
-          type: string
-        type:
-          $ref: "#/components/schemas/AssetType"
-        status:
-          $ref: "#/components/schemas/AssetStatus"
-        version:
-          type: integer
-        mime_type:
-          type: string
-        width:
-          type: [integer, "null"]
-        height:
-          type: [integer, "null"]
-        duration_seconds:
-          type: [number, "null"]
-        file_size_bytes:
-          type: integer
-        preview_url:
-          type: [string, "null"]
-        download_url:
-          type: [string, "null"]
-        url_expires_at:
-          type: [string, "null"]
-          format: date-time
-        storage_key:
-          type: string
-        bucket_display_name:
-          type: string
-        storage_state:
-          type: string
-          enum: [stored, uploading, unavailable, archived]
-        provider:
-          type: [string, "null"]
-        model:
-          type: [string, "null"]
-        orchestration:
-          const: genblaze
-        storage_provider:
-          const: backblaze_b2
-        manifest_status:
-          type: string
-          enum: [recorded, verified, pending, unavailable]
-        sha256:
-          type: [string, "null"]
-        generation_stage:
-          type: string
-        prompt_saved:
-          type: boolean
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    AssetListResponse:
-      type: object
-      required: [items, next_cursor, has_more, total]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/AssetResponse"
-        next_cursor:
-          type: [string, "null"]
-        has_more:
-          type: boolean
-        total:
-          type: integer
-    SignedAssetUrlResponse:
-      type: object
-      required: [url, expires_at]
-      properties:
-        url:
-          type: string
-          format: uri
-        expires_at:
-          type: string
-          format: date-time
-    CreateRenderRequest:
-      type: object
-      additionalProperties: false
-      properties:
-        captions_enabled:
-          const: true
-        background_music_enabled:
-          const: false
-        resolution:
-          type: string
-          default: 1080x1920
-    RenderResponse:
-      type: object
-      required:
-        - id
-        - project_id
-        - version
-        - status
-        - resolution
-        - duration_seconds
-        - file_size_bytes
-        - captions_burned
-        - music_included
-        - created_at
-        - updated_at
-      properties:
-        id:
-          type: string
-        project_id:
-          type: string
-        version:
-          type: integer
-        status:
-          $ref: "#/components/schemas/RenderStatus"
-        resolution:
-          type: string
-        duration_seconds:
-          type: integer
-        file_size_bytes:
-          type: integer
-        captions_burned:
-          type: boolean
-        music_included:
-          type: boolean
-        thumbnail_url:
-          type: [string, "null"]
-        preview_url:
-          type: [string, "null"]
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    RenderListResponse:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/RenderResponse"
-    HealthResponse:
-      type: object
-      required: [status, service, version]
-      properties:
-        status:
-          const: ok
-        service:
-          const: talemotion-backend
-        version:
-          type: string
+        id: {type: string}
+        project_id: {type: string}
+        scene_id: {type: [string, "null"]}
+        parent_job_id: {type: [string, "null"]}
+        type: {$ref: "#/components/schemas/JobType"}
+        status: {$ref: "#/components/schemas/JobStatus"}
+        progress: {type: integer, minimum: 0, maximum: 100}
+        current_stage: {type: [string, "null"]}
+        input_payload: {type: object}
+        result_payload: {type: [object, "null"]}
+        error_code: {type: [string, "null"]}
+        error_message: {type: [string, "null"]}
+        retry_count: {type: integer}
+        max_retries: {type: integer}
+        cancel_requested_at: {type: [string, "null"], format: date-time}
+        created_at: {type: string, format: date-time}
+        started_at: {type: [string, "null"], format: date-time}
+        completed_at: {type: [string, "null"], format: date-time}
+        updated_at: {type: string, format: date-time}
     ErrorResponse:
       type: object
       required: [error]
@@ -1054,12 +416,7 @@ components:
           type: object
           required: [code, message, details, request_id]
           properties:
-            code:
-              type: string
-            message:
-              type: string
-            details:
-              type: object
-              additionalProperties: true
-            request_id:
-              type: string
+            code: {type: string}
+            message: {type: string}
+            details: {type: object}
+            request_id: {type: string}

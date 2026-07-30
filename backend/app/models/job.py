@@ -4,7 +4,17 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.ids import new_resource_id, utc_now
@@ -20,7 +30,8 @@ class JobType(StrEnum):
     STORYBOARD = "storyboard"
     SCENE_GENERATION = "scene_generation"
     SCENE_REGENERATION = "scene_regeneration"
-    FINAL_RENDER = "final_render"
+    PROJECT_GENERATION = "project_generation"
+    RENDER = "render"
 
 
 class JobStatus(StrEnum):
@@ -28,11 +39,16 @@ class JobStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCEL_REQUESTED = "cancel_requested"
     CANCELLED = "cancelled"
 
 
 class GenerationJob(Base):
     __tablename__ = "generation_jobs"
+    __table_args__ = (
+        CheckConstraint("progress BETWEEN 0 AND 100", name="progress_range"),
+        Index("ix_generation_jobs_created_at", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(64),
@@ -73,13 +89,24 @@ class GenerationJob(Base):
     current_stage: Mapped[str | None] = mapped_column(String(100))
     error_code: Mapped[str | None] = mapped_column(String(100))
     error_message: Mapped[str | None] = mapped_column(Text)
-    input_data: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    input_payload: Mapped[dict[str, object]] = mapped_column(
+        JSONB, default=dict, server_default="{}"
+    )
+    result_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_retries: Mapped[int] = mapped_column(Integer, default=2)
+    cancel_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
     )
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
 
     project: Mapped[Project] = relationship(back_populates="jobs")
     scene: Mapped[Scene | None] = relationship(back_populates="jobs")

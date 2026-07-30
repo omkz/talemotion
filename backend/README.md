@@ -1,45 +1,72 @@
 # TaleMotion Backend
 
-FastAPI, PostgreSQL, Celery, Genblaze, Backblaze B2, and FFmpeg implementation
-for the Historical Documentary MVP. The implemented workflow is deliberately
-narrow: English, 30 or 45 seconds, vertical 9:16, four scenes, narration, and
-captions.
+This is the production-shaped backend foundation for TaleMotion. FastAPI and a
+separate Celery worker share synchronous SQLAlchemy repositories and services.
+PostgreSQL is the persistence layer; Redis is the Celery broker and result
+backend.
 
-## Local services
+## Configure native services
+
+Verify the existing Linux services:
 
 ```bash
-docker compose up -d postgres redis
-cd backend
-cp .env.example .env
+systemctl status postgresql
+systemctl status redis-server
+pg_isready
+redis-cli ping
+```
+
+Copy `.env.example` to `.env` and set local credentials. Both
+`DATABASE_URL` and a distinct `TEST_DATABASE_URL` are required. Tests refuse a
+test URL that matches the development URL or does not visibly name a test
+database.
+
+If needed, create the role and databases manually:
+
+```bash
+sudo -u postgres psql
+```
+
+```sql
+CREATE USER talemotion WITH PASSWORD 'development-password';
+CREATE DATABASE talemotion_dev OWNER talemotion;
+CREATE DATABASE talemotion_test OWNER talemotion;
+```
+
+Do not run these statements over existing resources.
+
+## Run and migrate
+
+```bash
 uv sync
 uv run alembic upgrade head
-uv run fastapi dev app/main.py
+uv run uvicorn app.main:app --reload
 ```
 
 Run the worker separately:
 
 ```bash
 uv run celery -A app.core.celery_app worker \
-  -Q storyboard,media,rendering --loglevel=info
+  -Q storyboard,media,rendering,system --loglevel=info
 ```
 
-Real generation requires `OPENAI_API_KEY` plus all `B2_*` values in `.env`.
-Missing configuration returns an explicit `503`; it never produces fake
-successful output. Secrets stay in the backend and must not use `NEXT_PUBLIC_`
-variables.
-
-## Verification
+Migration reversibility:
 
 ```bash
-uv sync
+uv run alembic downgrade base
+uv run alembic upgrade head
+```
+
+## Verify
+
+```bash
 uv run ruff check .
 uv run pytest
 ```
 
-Tests use isolated SQLAlchemy databases and injected fake external adapters.
-The FFmpeg test creates and probes a real local MP4. A PostgreSQL migration can
-be verified with `uv run alembic upgrade head`.
+The suite uses PostgreSQL JSONB and constraints through `talemotion_test`;
+SQLite is not supported. Set `RUN_CELERY_INTEGRATION=1` only while a worker is
+running to exercise the Redis → worker → PostgreSQL diagnostic path.
 
-Worker entrypoints live in `app/tasks/`, orchestration in `app/pipelines/`, and
-provider/storage/render adapters in `app/integrations/`. API and worker remain
-separate processes sharing this codebase.
+Genblaze, Backblaze B2, narration, media generation, and FFmpeg rendering are
+intentionally not implemented.

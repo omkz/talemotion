@@ -20,6 +20,8 @@ from app.models.base import Base
 from app.models.project import enum_values
 
 if TYPE_CHECKING:
+    from app.models.asset import Asset
+    from app.models.job import GenerationJob
     from app.models.project import Project
 
 
@@ -46,6 +48,9 @@ class Render(Base):
         ForeignKey("projects.id", ondelete="CASCADE"),
         index=True,
     )
+    job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("generation_jobs.id", ondelete="SET NULL"), index=True
+    )
     version: Mapped[int] = mapped_column(Integer)
     status: Mapped[RenderStatus] = mapped_column(
         Enum(
@@ -56,16 +61,21 @@ class Render(Base):
         ),
         default=RenderStatus.QUEUED,
     )
-    b2_object_key: Mapped[str | None] = mapped_column(String(1024))
+    asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("assets.id", ondelete="SET NULL")
+    )
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
-    resolution: Mapped[str] = mapped_column(String(32), default="1080x1920")
-    captions_burned: Mapped[bool] = mapped_column(default=True)
-    music_included: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
     )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
 
     project: Mapped[Project] = relationship(back_populates="renders")
+    job: Mapped[GenerationJob | None] = relationship()
+    asset: Mapped[Asset | None] = relationship()

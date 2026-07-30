@@ -26,11 +26,9 @@ if TYPE_CHECKING:
 
 class SceneStatus(StrEnum):
     DRAFT = "draft"
+    READY = "ready"
     QUEUED = "queued"
-    GENERATING_IMAGE = "generating_image"
-    GENERATING_VIDEO = "generating_video"
-    GENERATING_NARRATION = "generating_narration"
-    UPLOADING_ASSETS = "uploading_assets"
+    GENERATING = "generating"
     COMPLETED = "completed"
     FAILED = "failed"
 
@@ -69,6 +67,14 @@ class Scene(Base, TimestampMixin):
         default=SceneStatus.DRAFT,
         index=True,
     )
+    active_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey(
+            "assets.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_scenes_active_asset_id_assets",
+        )
+    )
     active_asset_version: Mapped[int] = mapped_column(Integer, default=0)
 
     chapter: Mapped[Chapter] = relationship(back_populates="scenes")
@@ -76,4 +82,5 @@ class Scene(Base, TimestampMixin):
     assets: Mapped[list[Asset]] = relationship(
         back_populates="scene",
         order_by="Asset.version",
+        foreign_keys="Asset.scene_id",
     )

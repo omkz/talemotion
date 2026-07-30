@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+from contextlib import contextmanager
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -18,4 +19,19 @@ SessionLocal = sessionmaker(
 
 def get_db() -> Iterator[Session]:
     with SessionLocal() as session:
-        yield session
+        try:
+            yield session
+        except Exception:
+            session.rollback()
+            raise
+
+
+@contextmanager
+def session_scope() -> Iterator[Session]:
+    """Provide a rollback-safe session for worker and service entry points."""
+    with SessionLocal() as session:
+        try:
+            yield session
+        except Exception:
+            session.rollback()
+            raise

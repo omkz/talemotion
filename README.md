@@ -1,80 +1,67 @@
 # TaleMotion
 
-TaleMotion is a cinematic video-production workspace. This repository now
-contains a production-shaped Historical Documentary vertical slice:
+TaleMotion is a cinematic video-production workspace organized as:
 
 ```text
-frontend/   Next.js application and HTTP/domain adapters
-backend/    FastAPI API, Celery worker, providers, storage, and rendering
-docs/       Implemented API contract and OpenAPI specification
+frontend/   Next.js application (currently uses mock services)
+backend/    FastAPI API, PostgreSQL persistence, and Celery worker
+docs/       API contract and OpenAPI specification
 ```
 
-The real slice supports English Historical Documentaries at 30 or 45 seconds,
-9:16, exactly four scenes, narration, and burned captions. Microdrama and
-Product Advertisement are Coming Soon and do not silently use backend mocks.
+The backend foundation persists projects, chapters, scenes, generation-job
+metadata, assets, and renders. It does **not** yet implement Genblaze,
+Backblaze B2, narration, scene media generation, FFmpeg rendering, or final
+video production.
 
-## Infrastructure
+## Native infrastructure
 
-Copy `backend/.env.example` to `backend/.env`, provide the required OpenAI and
-Backblaze B2 values, then start PostgreSQL and Redis:
+PostgreSQL and Redis run as native Linux services:
 
 ```bash
-docker compose up -d postgres redis
+systemctl status postgresql
+systemctl status redis-server
+psql --version
+pg_isready
+redis-cli ping
 ```
 
-Start the API and worker in separate terminals:
+Copy `backend/.env.example` to `backend/.env` and supply local credentials.
+When databases do not exist, create them manually without replacing existing
+roles or databases:
+
+```bash
+sudo -u postgres psql
+```
+
+```sql
+CREATE USER talemotion WITH PASSWORD 'development-password';
+CREATE DATABASE talemotion_dev OWNER talemotion;
+CREATE DATABASE talemotion_test OWNER talemotion;
+```
+
+The password above is an example for local development, not a committed
+credential.
+
+## Development
 
 ```bash
 cd backend
 uv sync
 uv run alembic upgrade head
-uv run fastapi dev app/main.py
+uv run uvicorn app.main:app --reload
 ```
+
+In another terminal:
 
 ```bash
 cd backend
 uv run celery -A app.core.celery_app worker \
-  -Q storyboard,media,rendering --loglevel=info
+  -Q storyboard,media,rendering,system --loglevel=info
 ```
 
-Alternatively, `docker compose up --build` runs PostgreSQL, Redis, API, and
-worker. FFmpeg is included in the backend container.
+The only task currently implemented is the safe
+`app.tasks.system.database_worker_health` diagnostic. Start the frontend
+separately with `cd frontend && pnpm dev`; it remains in mock API mode.
 
-## Frontend
-
-```bash
-cd frontend
-cp .env.example .env.local
-pnpm install
-pnpm dev
-```
-
-HTTP mode uses:
-
-```env
-NEXT_PUBLIC_API_MODE=http
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
-```
-
-There is no HTTP-to-mock fallback. API and generation errors are shown to the
-user.
-
-## Verification
-
-```bash
-cd backend
-uv sync
-uv run ruff check .
-uv run pytest
-```
-
-```bash
-cd frontend
-pnpm run lint
-npx tsc --noEmit
-pnpm build
-```
-
-See [docs/api-contract.md](docs/api-contract.md) and
-[docs/openapi.yaml](docs/openapi.yaml). Provider credentials, B2 keys, database
-passwords, and generated media are not committed.
+See [docs/api-contract.md](docs/api-contract.md) for implementation status and
+the testing workflow.

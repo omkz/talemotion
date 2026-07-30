@@ -1,8 +1,28 @@
-import { Clock, Layers, Rows3 } from "lucide-react";
+import {
+  BadgeDollarSign,
+  Clapperboard,
+  Clock,
+  Crown,
+  Layers,
+  Rows3,
+  ScrollText,
+  Search,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatMode } from "@/lib/format";
-import type { VideoTemplatePreset } from "@/lib/mock-data";
-import { MODE_ICONS } from "./step-mode-select";
+import type {
+  TemplateIconKey,
+  VideoTemplatePreset,
+} from "@/lib/mock-data";
+
+const TEMPLATE_ICONS: Record<TemplateIconKey, LucideIcon> = {
+  "historical-fact": ScrollText,
+  empire: Crown,
+  microdrama: Clapperboard,
+  mystery: Search,
+  "product-solution": BadgeDollarSign,
+};
 
 interface TemplateCardProps {
   template: VideoTemplatePreset;
@@ -11,7 +31,7 @@ interface TemplateCardProps {
 }
 
 export function TemplateCard({ template, selected, onSelect }: TemplateCardProps) {
-  const Icon = MODE_ICONS[template.mode];
+  const Icon = TEMPLATE_ICONS[template.icon];
 
   return (
     <button

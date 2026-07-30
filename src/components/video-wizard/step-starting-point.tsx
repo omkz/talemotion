@@ -1,6 +1,13 @@
-import { SquarePen } from "lucide-react";
-import { cn } from "@/lib/utils";
+"use client";
+
+import { useState } from "react";
 import { VIDEO_TEMPLATES, type VideoTemplatePreset } from "@/lib/mock-data";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
 import type { VideoMode } from "@/types";
 import { StepModeSelect } from "./step-mode-select";
 import { TemplateCard } from "./template-card";
@@ -22,68 +29,72 @@ export function StepStartingPoint({
   onSelectMode,
   onSelectTemplate,
 }: StepStartingPointProps) {
-  const scratchSelected = startMode === "scratch";
+  const [view, setView] = useState<"templates" | "custom">(
+    startMode === "template" ? "templates" : "custom"
+  );
+  const [lastTemplateId, setLastTemplateId] = useState(
+    templateId ?? VIDEO_TEMPLATES[0].id
+  );
+
+  const handleViewChange = (nextView: string) => {
+    if (nextView === "custom") {
+      setView("custom");
+      onSelectScratch();
+      return;
+    }
+
+    setView("templates");
+    const template =
+      VIDEO_TEMPLATES.find((candidate) => candidate.id === lastTemplateId) ??
+      VIDEO_TEMPLATES[0];
+    onSelectTemplate(template);
+  };
+
+  const handleSelectTemplate = (template: VideoTemplatePreset) => {
+    setLastTemplateId(template.id);
+    onSelectTemplate(template);
+  };
 
   return (
-    <div className="space-y-8">
-      <div className="space-y-3">
-        <button
-          type="button"
-          role="radio"
-          aria-checked={scratchSelected}
-          onClick={onSelectScratch}
-          className={cn(
-            "flex w-full items-center gap-3 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-            scratchSelected
-              ? "border-accent bg-accent/8"
-              : "border-border bg-card hover:border-muted-foreground/30 hover:bg-muted/40"
-          )}
-        >
-          <div
-            className={cn(
-              "flex size-10 shrink-0 items-center justify-center rounded-lg",
-              scratchSelected ? "bg-accent text-accent-foreground" : "bg-muted text-muted-foreground"
-            )}
-          >
-            <SquarePen className="size-5" strokeWidth={1.75} />
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-foreground">Start from scratch</p>
-            <p className="text-sm text-muted-foreground">
-              Configure the video type and settings yourself
-            </p>
-          </div>
-        </button>
+    <Tabs value={view} onValueChange={handleViewChange} className="gap-5">
+      <TabsList className="grid h-10 w-full grid-cols-2">
+        <TabsTrigger value="templates" className="h-full px-3">
+          Quick Templates
+        </TabsTrigger>
+        <TabsTrigger value="custom" className="h-full px-3">
+          Custom Setup
+        </TabsTrigger>
+      </TabsList>
 
-        {scratchSelected && (
-          <div className="pt-1">
-            <StepModeSelect value={mode} onChange={onSelectMode} />
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-3">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">Quick-start templates</h3>
-          <p className="text-sm text-muted-foreground">
-            Start from a preset with settings already tuned — you can change anything after.
-          </p>
-        </div>
+      <TabsContent value="templates" className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Start from tuned output settings, then adjust anything in the next
+          steps.
+        </p>
         <div
           role="radiogroup"
-          aria-label="Quick-start templates"
+          aria-label="Quick templates"
           className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
         >
           {VIDEO_TEMPLATES.map((template) => (
             <TemplateCard
               key={template.id}
               template={template}
-              selected={startMode === "template" && templateId === template.id}
-              onSelect={() => onSelectTemplate(template)}
+              selected={
+                startMode === "template" && templateId === template.id
+              }
+              onSelect={() => handleSelectTemplate(template)}
             />
           ))}
         </div>
-      </div>
-    </div>
+      </TabsContent>
+
+      <TabsContent value="custom" className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Choose a core video type and configure its settings yourself.
+        </p>
+        <StepModeSelect value={mode} onChange={onSelectMode} />
+      </TabsContent>
+    </Tabs>
   );
 }

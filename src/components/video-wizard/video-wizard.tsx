@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowLeft, ArrowRight, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
@@ -25,6 +25,19 @@ const STEP_TITLES = [
   "Output settings",
 ];
 
+const DEFAULT_TEMPLATE = VIDEO_TEMPLATES[0];
+const INITIAL_WIZARD_VALUES: WizardFormValues = {
+  ...WIZARD_DEFAULT_VALUES,
+  startMode: "template",
+  templateId: DEFAULT_TEMPLATE.id,
+  mode: DEFAULT_TEMPLATE.mode,
+  duration: String(DEFAULT_TEMPLATE.duration) as WizardFormValues["duration"],
+  aspectRatio: DEFAULT_TEMPLATE.aspectRatio,
+  sceneCount: String(DEFAULT_TEMPLATE.sceneCount) as WizardFormValues["sceneCount"],
+  visualStyle: DEFAULT_TEMPLATE.visualStyle,
+  narrationStyle: DEFAULT_TEMPLATE.narrationStyle,
+};
+
 export function VideoWizard() {
   const router = useRouter();
   const [step, setStep] = useState(1);
@@ -32,13 +45,14 @@ export function VideoWizard() {
 
   const form = useForm<WizardFormValues>({
     resolver: zodResolver(wizardSchema),
-    defaultValues: WIZARD_DEFAULT_VALUES,
+    defaultValues: INITIAL_WIZARD_VALUES,
     mode: "onChange",
   });
 
-  const startMode = form.watch("startMode");
-  const templateId = form.watch("templateId");
-  const mode = form.watch("mode");
+  const [startMode, templateId, mode] = useWatch({
+    control: form.control,
+    name: ["startMode", "templateId", "mode"],
+  });
   const appliedTemplate = VIDEO_TEMPLATES.find((t) => t.id === templateId) ?? null;
 
   const goNext = async () => {
@@ -50,9 +64,17 @@ export function VideoWizard() {
 
   const handleSelectScratch = () => {
     form.setValue("startMode", "scratch", { shouldValidate: true });
+    form.setValue("templateId", null, { shouldValidate: true });
+    form.setValue("duration", WIZARD_DEFAULT_VALUES.duration);
+    form.setValue("aspectRatio", WIZARD_DEFAULT_VALUES.aspectRatio);
+    form.setValue("sceneCount", WIZARD_DEFAULT_VALUES.sceneCount);
+    form.setValue("visualStyle", WIZARD_DEFAULT_VALUES.visualStyle);
+    form.setValue("narrationStyle", WIZARD_DEFAULT_VALUES.narrationStyle);
   };
 
   const handleSelectMode = (value: VideoMode) => {
+    form.setValue("startMode", "scratch", { shouldValidate: true });
+    form.setValue("templateId", null, { shouldValidate: true });
     form.setValue("mode", value, { shouldValidate: true });
   };
 

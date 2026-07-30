@@ -9,6 +9,7 @@ export interface VideoTemplatePreset {
   id: string;
   name: string;
   description: string;
+  icon: TemplateIconKey;
   mode: VideoMode;
   duration: Duration;
   aspectRatio: AspectRatio;
@@ -18,23 +19,19 @@ export interface VideoTemplatePreset {
   guidance: string;
 }
 
+export type TemplateIconKey =
+  | "historical-fact"
+  | "empire"
+  | "microdrama"
+  | "mystery"
+  | "product-solution";
+
 export const VIDEO_TEMPLATES: VideoTemplatePreset[] = [
-  {
-    id: "historical-documentary",
-    name: "Historical Documentary",
-    description: "A narrated documentary covering a historical topic, era, or figure.",
-    mode: "historical-documentary",
-    duration: 45,
-    aspectRatio: "9:16",
-    sceneCount: 5,
-    visualStyle: "Cinematic Realistic",
-    narrationStyle: "Documentary",
-    guidance: "Describe the historical topic, era, or figure you want to bring to life.",
-  },
   {
     id: "historical-fact-short",
     name: "Historical Fact Short",
     description: "A fast-paced short spotlighting a single surprising historical fact.",
+    icon: "historical-fact",
     mode: "historical-documentary",
     duration: 30,
     aspectRatio: "9:16",
@@ -47,6 +44,7 @@ export const VIDEO_TEMPLATES: VideoTemplatePreset[] = [
     id: "rise-and-fall-of-an-empire",
     name: "Rise and Fall of an Empire",
     description: "An epic arc covering an empire's origin, peak, decline, and legacy.",
+    icon: "empire",
     mode: "historical-documentary",
     duration: 60,
     aspectRatio: "9:16",
@@ -60,6 +58,7 @@ export const VIDEO_TEMPLATES: VideoTemplatePreset[] = [
     id: "cinematic-microdrama",
     name: "Cinematic Microdrama",
     description: "A short, emotionally-driven drama scene built around one character.",
+    icon: "microdrama",
     mode: "microdrama",
     duration: 45,
     aspectRatio: "9:16",
@@ -73,6 +72,7 @@ export const VIDEO_TEMPLATES: VideoTemplatePreset[] = [
     id: "mystery-story",
     name: "Mystery Story",
     description: "A suspenseful microdrama built around an unresolved mystery.",
+    icon: "mystery",
     mode: "microdrama",
     duration: 45,
     aspectRatio: "9:16",
@@ -85,6 +85,7 @@ export const VIDEO_TEMPLATES: VideoTemplatePreset[] = [
     id: "product-problem-and-solution",
     name: "Product Problem and Solution",
     description: "A promotional spot framing a customer problem and your product's solution.",
+    icon: "product-solution",
     mode: "product-advertisement",
     duration: 30,
     aspectRatio: "9:16",

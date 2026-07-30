@@ -7,6 +7,7 @@ import {
   RotateCcw,
   Sparkles,
 } from "lucide-react";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -20,6 +21,8 @@ interface GenerationCardProps {
   scene: Scene;
   aspectRatio: AspectRatio;
   onRetry: () => void;
+  onGenerate: () => void;
+  canRetry?: boolean;
   onRegenerate: () => void;
   onEditPrompt: () => void;
   onApprove: () => void;
@@ -30,6 +33,8 @@ export function GenerationCard({
   scene,
   aspectRatio,
   onRetry,
+  onGenerate,
+  canRetry = true,
   onRegenerate,
   onEditPrompt,
   onApprove,
@@ -42,12 +47,38 @@ export function GenerationCard({
   return (
     <Card className="gap-0 overflow-hidden p-0 sm:flex-row">
       <div className="relative w-full shrink-0 sm:w-44">
-        <MediaPlaceholder
-          aspectRatio={aspectRatio}
-          icon={scene.status === "completed" ? Play : undefined}
-          className="h-full rounded-none border-0"
-        />
-        {scene.status === "completed" && (
+        {asset?.previewUrl ? (
+          <div
+            className={`relative min-h-44 overflow-hidden bg-black ${
+              aspectRatio === "9:16" ? "aspect-[9/16]" : "aspect-video"
+            }`}
+          >
+            {asset.kind === "video" ? (
+              <video
+                src={asset.previewUrl}
+                controls
+                preload="metadata"
+                aria-label={`${scene.title} generated video`}
+                className="size-full object-cover"
+              />
+            ) : (
+              <Image
+                src={asset.previewUrl}
+                alt={`${scene.title} generated keyframe`}
+                fill
+                unoptimized
+                className="object-cover"
+              />
+            )}
+          </div>
+        ) : (
+          <MediaPlaceholder
+            aspectRatio={aspectRatio}
+            icon={scene.status === "completed" ? Play : undefined}
+            className="h-full rounded-none border-0"
+          />
+        )}
+        {scene.status === "completed" && asset?.kind !== "video" && (
           <button
             type="button"
             onClick={onShowDetails}
@@ -107,7 +138,14 @@ export function GenerationCard({
         )}
 
         <div className="mt-auto flex flex-wrap items-center gap-1 pt-1">
-          {scene.status === "failed" && (
+          {scene.status === "draft" && (
+            <Button size="sm" onClick={onGenerate}>
+              <Sparkles className="size-3.5" />
+              Generate Scene
+            </Button>
+          )}
+
+          {scene.status === "failed" && canRetry && (
             <Button size="sm" variant="outline" onClick={onRetry}>
               <RotateCcw className="size-3.5" />
               Retry

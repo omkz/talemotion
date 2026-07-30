@@ -69,3 +69,32 @@ def get_dependency_health(
         status="ok" if healthy else "unavailable",
         dependencies=dependency_status,
     )
+
+
+class IntegrationHealthResponse(BaseModel):
+    status: Literal["ok"]
+    integrations: dict[str, bool]
+
+
+@router.get(
+    "/health/integrations",
+    response_model=IntegrationHealthResponse,
+    summary="Report whether media integrations are configured",
+)
+def get_integration_health() -> IntegrationHealthResponse:
+    missing = set(settings.missing_media_configuration())
+    return IntegrationHealthResponse(
+        status="ok",
+        integrations={
+            "b2_configured": not bool(
+                missing
+                & {
+                    "B2_REGION",
+                    "B2_BUCKET_NAME",
+                    "B2_KEY_ID",
+                    "B2_APPLICATION_KEY",
+                }
+            ),
+            "gmicloud_configured": "GMI_API_KEY" not in missing,
+        },
+    )

@@ -1,3 +1,6 @@
+from pathlib import Path
+
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +15,17 @@ class AppConfig(BaseSettings):
     celery_broker_url: str
     celery_result_backend: str
 
+    b2_region: str | None = None
+    b2_bucket_name: str | None = None
+    b2_key_id: SecretStr | None = None
+    b2_application_key: SecretStr | None = None
+    gmi_api_key: SecretStr | None = None
+    talemotion_image_model: str = "seedream-5.0-lite"
+    talemotion_video_model: str = "wan2.6-i2v"
+    talemotion_video_durations: str = "5"
+    genblaze_cache_dir: Path = Path(".cache/genblaze")
+    media_preview_ttl_seconds: int = 900
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -25,5 +39,27 @@ class AppConfig(BaseSettings):
             for origin in self.cors_origins.split(",")
             if origin.strip()
         ]
+
+    @property
+    def supported_video_durations(self) -> frozenset[int]:
+        try:
+            values = {
+                int(value.strip())
+                for value in self.talemotion_video_durations.split(",")
+                if value.strip()
+            }
+        except ValueError:
+            return frozenset()
+        return frozenset(value for value in values if 1 <= value <= 60)
+
+    def missing_media_configuration(self) -> list[str]:
+        configured = {
+            "B2_REGION": self.b2_region,
+            "B2_BUCKET_NAME": self.b2_bucket_name,
+            "B2_KEY_ID": self.b2_key_id,
+            "B2_APPLICATION_KEY": self.b2_application_key,
+            "GMI_API_KEY": self.gmi_api_key,
+        }
+        return [name for name, value in configured.items() if not value]
 
 settings = AppConfig()

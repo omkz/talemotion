@@ -1,9 +1,10 @@
 # TaleMotion Backend
 
-This is the production-shaped backend foundation for TaleMotion. FastAPI and a
-separate Celery worker share synchronous SQLAlchemy repositories and services.
-PostgreSQL is the persistence layer; Redis is the Celery broker and result
-backend.
+This backend now includes one real, provider-backed vertical slice: an
+existing TaleMotion scene can generate a GMICloud keyframe and animate it,
+while Genblaze stores the media and provenance manifests in Backblaze B2.
+The request streams TaleMotion-specific progress events directly from
+FastAPI; it does not create a database job or use Celery.
 
 ## Configure native services
 
@@ -34,6 +35,13 @@ CREATE DATABASE talemotion_test OWNER talemotion;
 ```
 
 Do not run these statements over existing resources.
+
+For real scene media, also configure `GMI_API_KEY`, `B2_REGION`,
+`B2_BUCKET_NAME`, `B2_KEY_ID`, and `B2_APPLICATION_KEY`. Model slugs and
+supported clip durations are configurable through `TALEMOTION_IMAGE_MODEL`,
+`TALEMOTION_VIDEO_MODEL`, and `TALEMOTION_VIDEO_DURATIONS`. The health endpoint
+starts without these keys; a generation request reports
+`missing_configuration` instead of inventing a successful result.
 
 ## Run and migrate
 
@@ -68,5 +76,21 @@ The suite uses PostgreSQL JSONB and constraints through `talemotion_test`;
 SQLite is not supported. Set `RUN_CELERY_INTEGRATION=1` only while a worker is
 running to exercise the Redis → worker → PostgreSQL diagnostic path.
 
-Genblaze, Backblaze B2, narration, media generation, and FFmpeg rendering are
-intentionally not implemented.
+## Real scene media endpoint
+
+`POST /api/v1/scene-runs/stream` accepts one scene prompt and returns
+`text/event-stream`. Events cover the run, image, and video lifecycle. Media
+is stored under:
+
+```text
+talemotion/projects/{safe_project}/scenes/{safe_scene}/runs/{run_id}/
+```
+
+`GET /api/v1/media/{encoded_key}/preview` validates that namespace and
+redirects to a short-lived signed B2 URL. Credentials and raw provider errors
+are never returned.
+
+Automatic storyboards, narration, music, full-project rendering, scene
+version history, and long-form generation remain unimplemented. Existing
+frontend project data remains mock-backed; only the flagged per-scene action
+uses this endpoint.

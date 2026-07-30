@@ -6,3 +6,4 @@ export * from "./generation";
 export * from "./render";
 export * from "./media-library-asset";
 export * from "./settings";
+export * from "./scene-run";

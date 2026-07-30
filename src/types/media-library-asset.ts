@@ -44,7 +44,7 @@ export interface MediaLibraryAsset {
   sha256?: string;
   generationStage: string;
   promptSaved: boolean;
-  signedUrlStatus: "simulated" | "unavailable";
+  signedUrlStatus: "simulated" | "available" | "unavailable";
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +60,8 @@ export interface MediaAssetFilters {
   search?: string;
   type?: MediaAssetType | "all";
   projectId?: string | "all";
+  chapterId?: string;
+  sceneId?: string;
   status?: MediaAssetStatus | "all";
   sort?: MediaAssetSort;
   cursor?: string | null;

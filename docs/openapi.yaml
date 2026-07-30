@@ -1,0 +1,1046 @@
+openapi: 3.1.0
+info:
+  title: TaleMotion API
+  version: 0.1.0
+  description: Contract for the future FastAPI service. No backend is implemented yet.
+servers:
+  - url: http://localhost:8000/api/v1
+    description: Local FastAPI development example
+security: []
+tags:
+  - name: Health
+  - name: Projects
+  - name: Storyboard
+  - name: Scenes
+  - name: Generation
+  - name: Jobs
+  - name: Assets
+  - name: Renders
+  - name: Settings
+paths:
+  /health:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      summary: Report API process and configuration health
+      responses:
+        "200":
+          description: Health snapshot; not proof that providers are operational
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /projects:
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: List projects
+      parameters:
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/ProjectStatus" }
+        - name: mode
+          in: query
+          schema: { $ref: "#/components/schemas/VideoMode" }
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Cursor-paged projects
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectListResponse"
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Create a project and its default Main chapter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateProjectRequest"
+      responses:
+        "201":
+          description: Project created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+        "422": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /projects/{project_id}:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+    get:
+      tags: [Projects]
+      operationId: getProject
+      summary: Get a project with chapters and scenes
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Projects]
+      operationId: updateProject
+      summary: Update client-editable project fields
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProjectRequest"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectResponse"
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Projects]
+      operationId: deleteProject
+      summary: Soft-delete a project
+      responses:
+        "204": { description: Deletion accepted }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/storyboard:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+    post:
+      tags: [Storyboard]
+      operationId: generateStoryboard
+      summary: Start storyboard generation or regeneration
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateStoryboardRequest"
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJobResponse"
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/generations:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+    post:
+      tags: [Generation]
+      operationId: generateAllScenes
+      summary: Start generation for all project scenes
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateAllScenesRequest"
+      responses:
+        "202":
+          description: Parent generation job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJobResponse"
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /scenes/{scene_id}:
+    parameters:
+      - { $ref: "#/components/parameters/SceneId" }
+    get:
+      tags: [Scenes]
+      operationId: getScene
+      summary: Get a scene
+      responses:
+        "200":
+          description: Scene
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SceneResponse"
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Scenes]
+      operationId: updateScene
+      summary: Update editable scene fields
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSceneRequest"
+      responses:
+        "200":
+          description: Updated scene
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SceneResponse"
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Scenes]
+      operationId: deleteScene
+      summary: Delete a scene
+      responses:
+        "204": { description: Scene deleted }
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /scenes/{scene_id}/duplicate:
+    parameters:
+      - { $ref: "#/components/parameters/SceneId" }
+    post:
+      tags: [Scenes]
+      operationId: duplicateScene
+      summary: Duplicate a scene after the source
+      responses:
+        "201":
+          description: Duplicated scene
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SceneResponse"
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /chapters/{chapter_id}/scenes:
+    parameters:
+      - { $ref: "#/components/parameters/ChapterId" }
+    post:
+      tags: [Scenes]
+      operationId: addScene
+      summary: Add a scene to a chapter
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSceneRequest"
+      responses:
+        "201":
+          description: Scene created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SceneResponse"
+        "422": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /chapters/{chapter_id}/scenes/reorder:
+    parameters:
+      - { $ref: "#/components/parameters/ChapterId" }
+    post:
+      tags: [Scenes]
+      operationId: reorderScenes
+      summary: Replace scene order with a complete ordered ID list
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReorderScenesRequest"
+      responses:
+        "200":
+          description: Updated chapter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChapterResponse"
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /scenes/{scene_id}/generations:
+    parameters:
+      - { $ref: "#/components/parameters/SceneId" }
+    post:
+      tags: [Generation]
+      operationId: generateScene
+      summary: Generate selected media stages for one scene
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateSceneRequest"
+      responses:
+        "202":
+          description: Scene generation job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJobResponse"
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /scenes/{scene_id}/regenerations:
+    parameters:
+      - { $ref: "#/components/parameters/SceneId" }
+    post:
+      tags: [Generation]
+      operationId: regenerateScene
+      summary: Generate a new scene asset version
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegenerateSceneRequest"
+      responses:
+        "202":
+          description: Regeneration job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJobResponse"
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /jobs/{job_id}:
+    parameters:
+      - { $ref: "#/components/parameters/JobId" }
+    get:
+      tags: [Jobs]
+      operationId: getJob
+      summary: Get job progress for polling
+      responses:
+        "200":
+          description: Job state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJobResponse"
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /jobs/{job_id}/retry:
+    parameters:
+      - { $ref: "#/components/parameters/JobId" }
+    post:
+      tags: [Jobs]
+      operationId: retryJob
+      summary: Retry a failed or cancelled job
+      responses:
+        "202":
+          description: Retry accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJobResponse"
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /jobs/{job_id}/cancel:
+    parameters:
+      - { $ref: "#/components/parameters/JobId" }
+    post:
+      tags: [Jobs]
+      operationId: cancelJob
+      summary: Request best-effort cancellation
+      responses:
+        "200":
+          description: Current job state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJobResponse"
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /assets:
+    get:
+      tags: [Assets]
+      operationId: listAssets
+      summary: List media-library assets
+      parameters:
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+        - { name: project_id, in: query, schema: { type: string } }
+        - { name: chapter_id, in: query, schema: { type: string } }
+        - { name: scene_id, in: query, schema: { type: string } }
+        - name: type
+          in: query
+          schema: { $ref: "#/components/schemas/AssetType" }
+        - name: status
+          in: query
+          schema: { $ref: "#/components/schemas/AssetStatus" }
+        - { name: search, in: query, schema: { type: string } }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [newest, oldest, name, largest, project]
+      responses:
+        "200":
+          description: Cursor-paged assets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetListResponse"
+        default: { $ref: "#/components/responses/Error" }
+  /assets/{asset_id}:
+    parameters:
+      - { $ref: "#/components/parameters/AssetId" }
+    get:
+      tags: [Assets]
+      operationId: getAsset
+      summary: Get asset metadata
+      responses:
+        "200":
+          description: Asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetResponse"
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [Assets]
+      operationId: deleteAsset
+      summary: Delete asset metadata and schedule object cleanup
+      responses:
+        "204": { description: Deletion accepted }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /assets/{asset_id}/archive:
+    parameters:
+      - { $ref: "#/components/parameters/AssetId" }
+    post:
+      tags: [Assets]
+      operationId: archiveAsset
+      summary: Archive an asset
+      responses:
+        "200":
+          description: Archived asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetResponse"
+        default: { $ref: "#/components/responses/Error" }
+  /assets/{asset_id}/restore:
+    parameters:
+      - { $ref: "#/components/parameters/AssetId" }
+    post:
+      tags: [Assets]
+      operationId: restoreAsset
+      summary: Restore an archived asset
+      responses:
+        "200":
+          description: Restored asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetResponse"
+        default: { $ref: "#/components/responses/Error" }
+  /assets/{asset_id}/preview-url:
+    parameters:
+      - { $ref: "#/components/parameters/AssetId" }
+    post:
+      tags: [Assets]
+      operationId: createAssetPreviewUrl
+      summary: Create a short-lived signed preview URL
+      responses:
+        "200":
+          description: Signed preview URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignedAssetUrlResponse"
+        default: { $ref: "#/components/responses/Error" }
+  /assets/{asset_id}/download-url:
+    parameters:
+      - { $ref: "#/components/parameters/AssetId" }
+    post:
+      tags: [Assets]
+      operationId: createAssetDownloadUrl
+      summary: Create a short-lived signed download URL
+      responses:
+        "200":
+          description: Signed download URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SignedAssetUrlResponse"
+        default: { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/renders:
+    parameters:
+      - { $ref: "#/components/parameters/ProjectId" }
+    get:
+      tags: [Renders]
+      operationId: listProjectRenders
+      summary: List project renders
+      parameters:
+        - { $ref: "#/components/parameters/Limit" }
+        - { $ref: "#/components/parameters/Cursor" }
+      responses:
+        "200":
+          description: Cursor-paged renders
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderListResponse"
+        default: { $ref: "#/components/responses/Error" }
+    post:
+      tags: [Renders]
+      operationId: createRender
+      summary: Start final rendering
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRenderRequest"
+      responses:
+        "202":
+          description: Render job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJobResponse"
+        "409": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /renders/{render_id}:
+    parameters:
+      - { $ref: "#/components/parameters/RenderId" }
+    get:
+      tags: [Renders]
+      operationId: getRender
+      summary: Get render metadata
+      responses:
+        "200":
+          description: Render
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RenderResponse"
+        "404": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /renders/{render_id}/thumbnail:
+    parameters:
+      - { $ref: "#/components/parameters/RenderId" }
+    post:
+      tags: [Renders]
+      operationId: generateRenderThumbnail
+      summary: Start thumbnail generation
+      parameters:
+        - { $ref: "#/components/parameters/IdempotencyKey" }
+      responses:
+        "202":
+          description: Thumbnail job accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerationJobResponse"
+        default: { $ref: "#/components/responses/Error" }
+  /settings:
+    get:
+      tags: [Settings]
+      operationId: getSettings
+      summary: Get local workspace settings
+      responses:
+        "200":
+          description: Settings without provider secrets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+        default: { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [Settings]
+      operationId: updateSettings
+      summary: Update local workspace settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSettingsRequest"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsResponse"
+        "422": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+components:
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      description: Page size
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque cursor returned by the previous page
+      schema: { type: [string, "null"] }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Prevents duplicate generation or rendering jobs
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: { type: string }
+    ChapterId:
+      name: chapter_id
+      in: path
+      required: true
+      schema: { type: string }
+    SceneId:
+      name: scene_id
+      in: path
+      required: true
+      schema: { type: string }
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema: { type: string }
+    AssetId:
+      name: asset_id
+      in: path
+      required: true
+      schema: { type: string }
+    RenderId:
+      name: render_id
+      in: path
+      required: true
+      schema: { type: string }
+  responses:
+    Error:
+      description: |
+        Consistent error response. Expected statuses include 400, 404, 409,
+        422, 429, 500, 502, and 503.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    VideoMode:
+      type: string
+      enum: [historical_documentary, microdrama, product_advertisement]
+    ProjectStatus:
+      type: string
+      enum: [draft, storyboard_ready, generating, ready, failed, deleted]
+    SceneStatus:
+      type: string
+      enum: [draft, queued, generating_image, generating_video, generating_narration, uploading_assets, completed, failed]
+    AssetType:
+      type: string
+      enum: [image, video, audio, subtitle, thumbnail, final_render]
+    AssetStatus:
+      type: string
+      enum: [generating, ready, failed, archived]
+    JobType:
+      type: string
+      enum: [storyboard, project_generation, scene_generation, scene_regeneration, final_render, thumbnail_generation]
+    JobStatus:
+      type: string
+      enum: [queued, running, completed, failed, cancelled]
+    RenderStatus:
+      type: string
+      enum: [queued, rendering, completed, failed, cancelled]
+    HistoricalDocumentaryBrief:
+      type: object
+      required: [mode, topic, additional_direction, source_notes]
+      properties:
+        mode: { const: historical_documentary }
+        topic: { type: string }
+        additional_direction: { type: string }
+        source_notes: { type: string }
+    MicrodramaBrief:
+      type: object
+      required: [mode, premise, main_character, genre, desired_ending]
+      properties:
+        mode: { const: microdrama }
+        premise: { type: string }
+        main_character: { type: string }
+        genre: { type: string }
+        desired_ending: { type: string }
+    ProductAdvertisementBrief:
+      type: object
+      required: [mode, product_name, product_description, main_benefit, target_audience, call_to_action]
+      properties:
+        mode: { const: product_advertisement }
+        product_name: { type: string }
+        product_description: { type: string }
+        main_benefit: { type: string }
+        target_audience: { type: string }
+        call_to_action: { type: string }
+    VideoBrief:
+      oneOf:
+        - { $ref: "#/components/schemas/HistoricalDocumentaryBrief" }
+        - { $ref: "#/components/schemas/MicrodramaBrief" }
+        - { $ref: "#/components/schemas/ProductAdvertisementBrief" }
+      discriminator:
+        propertyName: mode
+    OutputConfig:
+      type: object
+      required: [title, language, duration_seconds, aspect_ratio, visual_style, narration_style, scene_count, captions_enabled, background_music_enabled]
+      properties:
+        title: { type: string }
+        language: { type: string }
+        duration_seconds: { type: integer, enum: [30, 45, 60] }
+        aspect_ratio: { type: string, enum: ["9:16", "16:9"] }
+        visual_style: { type: string }
+        narration_style: { type: string }
+        scene_count:
+          oneOf:
+            - { const: auto }
+            - { type: integer, enum: [4, 5, 6] }
+        captions_enabled: { type: boolean }
+        background_music_enabled: { type: boolean }
+    CreateProjectRequest:
+      type: object
+      required: [mode, brief, output_config]
+      properties:
+        mode: { $ref: "#/components/schemas/VideoMode" }
+        brief: { $ref: "#/components/schemas/VideoBrief" }
+        output_config: { $ref: "#/components/schemas/OutputConfig" }
+        template_id: { type: [string, "null"] }
+    UpdateProjectRequest:
+      type: object
+      properties:
+        title: { type: string }
+        brief: { $ref: "#/components/schemas/VideoBrief" }
+        output_config: { $ref: "#/components/schemas/OutputConfig" }
+        historical_accuracy_note: { type: [string, "null"] }
+    ProjectResponse:
+      type: object
+      required: [id, mode, status, brief, output_config, chapters, thumbnail_url, historical_accuracy_note, generation_progress, created_at, updated_at]
+      properties:
+        id: { type: string }
+        mode: { $ref: "#/components/schemas/VideoMode" }
+        status: { $ref: "#/components/schemas/ProjectStatus" }
+        brief: { $ref: "#/components/schemas/VideoBrief" }
+        output_config: { $ref: "#/components/schemas/OutputConfig" }
+        chapters:
+          type: array
+          items: { $ref: "#/components/schemas/ChapterResponse" }
+        thumbnail_url: { type: [string, "null"], format: uri }
+        historical_accuracy_note: { type: [string, "null"] }
+        generation_progress: { type: integer, minimum: 0, maximum: 100 }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    ProjectListResponse:
+      type: object
+      required: [items, next_cursor, has_more]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ProjectResponse" }
+        next_cursor: { type: [string, "null"] }
+        has_more: { type: boolean }
+    ChapterResponse:
+      type: object
+      required: [id, project_id, title, position, scenes]
+      properties:
+        id: { type: string }
+        project_id: { type: string }
+        title: { type: string }
+        position: { type: integer, minimum: 1 }
+        scenes:
+          type: array
+          items: { $ref: "#/components/schemas/SceneResponse" }
+    SceneResponse:
+      type: object
+      required: [id, chapter_id, position, title, narration, visual_prompt, duration_seconds, status, active_version, versions, current_job, approved, created_at, updated_at]
+      properties:
+        id: { type: string }
+        chapter_id: { type: string }
+        position: { type: integer, minimum: 1 }
+        title: { type: string }
+        narration: { type: string }
+        visual_prompt: { type: string }
+        duration_seconds: { type: number, minimum: 0 }
+        status: { $ref: "#/components/schemas/SceneStatus" }
+        active_version: { type: integer, minimum: 1 }
+        versions:
+          type: array
+          items: { $ref: "#/components/schemas/SceneVersionResponse" }
+        current_job:
+          oneOf:
+            - { $ref: "#/components/schemas/GenerationJobResponse" }
+            - { type: "null" }
+        approved: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    SceneVersionResponse:
+      type: object
+      required: [version, visual_prompt, instruction, asset, created_at]
+      properties:
+        version: { type: integer, minimum: 1 }
+        visual_prompt: { type: string }
+        instruction: { type: [string, "null"] }
+        asset:
+          oneOf:
+            - { $ref: "#/components/schemas/AssetResponse" }
+            - { type: "null" }
+        created_at: { type: string, format: date-time }
+    CreateSceneRequest:
+      type: object
+      required: [title, narration, visual_prompt, duration_seconds]
+      properties:
+        title: { type: string }
+        narration: { type: string }
+        visual_prompt: { type: string }
+        duration_seconds: { type: number, minimum: 0 }
+        position: { type: integer, minimum: 1 }
+    UpdateSceneRequest:
+      type: object
+      properties:
+        title: { type: string }
+        narration: { type: string }
+        visual_prompt: { type: string }
+        duration_seconds: { type: number, minimum: 0 }
+        position: { type: integer, minimum: 1 }
+    ReorderScenesRequest:
+      type: object
+      required: [scene_ids]
+      properties:
+        scene_ids:
+          type: array
+          minItems: 1
+          items: { type: string }
+    GenerateStoryboardRequest:
+      type: object
+      properties:
+        scene_count: { type: integer, minimum: 1 }
+        additional_instruction: { type: [string, "null"] }
+    GenerateAllScenesRequest:
+      type: object
+      required: [scope]
+      properties:
+        scope: { const: all_scenes }
+    GenerateSceneRequest:
+      type: object
+      required: [stages]
+      properties:
+        stages:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [image, video, narration] }
+        additional_instruction: { type: [string, "null"] }
+    RegenerateSceneRequest:
+      allOf:
+        - { $ref: "#/components/schemas/GenerateSceneRequest" }
+        - type: object
+          required: [additional_instruction]
+    GenerationJobResponse:
+      type: object
+      required: [id, type, status, progress, current_stage, project_id, chapter_id, scene_id, parent_job_id, child_job_ids, error, created_at, started_at, completed_at]
+      properties:
+        id: { type: string }
+        type: { $ref: "#/components/schemas/JobType" }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        progress: { type: integer, minimum: 0, maximum: 100 }
+        current_stage: { type: [string, "null"] }
+        project_id: { type: [string, "null"] }
+        chapter_id: { type: [string, "null"] }
+        scene_id: { type: [string, "null"] }
+        parent_job_id: { type: [string, "null"] }
+        child_job_ids:
+          type: array
+          items: { type: string }
+        error:
+          oneOf:
+            - { $ref: "#/components/schemas/JobError" }
+            - { type: "null" }
+        created_at: { type: string, format: date-time }
+        started_at: { type: [string, "null"], format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+    JobError:
+      type: object
+      required: [code, message, details]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    AssetResponse:
+      type: object
+      required: [id, project_id, project_title, chapter_id, scene_id, scene_title, name, type, status, version, mime_type, width, height, duration_seconds, file_size_bytes, preview_url, download_url, url_expires_at, storage_key, bucket_display_name, storage_state, provider, model, orchestration, storage_provider, manifest_status, sha256, generation_stage, prompt_saved, created_at, updated_at]
+      properties:
+        id: { type: string }
+        project_id: { type: string }
+        project_title: { type: string }
+        chapter_id: { type: [string, "null"] }
+        scene_id: { type: [string, "null"] }
+        scene_title: { type: [string, "null"] }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/AssetType" }
+        status: { $ref: "#/components/schemas/AssetStatus" }
+        version: { type: integer, minimum: 1 }
+        mime_type: { type: string }
+        width: { type: [integer, "null"], minimum: 1 }
+        height: { type: [integer, "null"], minimum: 1 }
+        duration_seconds: { type: [number, "null"], minimum: 0 }
+        file_size_bytes: { type: integer, minimum: 0 }
+        preview_url: { type: [string, "null"], format: uri }
+        download_url: { type: [string, "null"], format: uri }
+        url_expires_at: { type: [string, "null"], format: date-time }
+        storage_key: { type: string }
+        bucket_display_name: { type: string }
+        storage_state: { type: string, enum: [stored, uploading, unavailable, archived] }
+        provider: { type: [string, "null"] }
+        model: { type: [string, "null"] }
+        orchestration: { const: genblaze }
+        storage_provider: { const: backblaze_b2 }
+        manifest_status: { type: string, enum: [verified, pending, unavailable] }
+        sha256: { type: [string, "null"] }
+        generation_stage: { type: string }
+        prompt_saved: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    AssetListResponse:
+      type: object
+      required: [items, next_cursor, has_more, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AssetResponse" }
+        next_cursor: { type: [string, "null"] }
+        has_more: { type: boolean }
+        total: { type: integer, minimum: 0 }
+    SignedAssetUrlResponse:
+      type: object
+      required: [url, expires_at]
+      properties:
+        url: { type: string, format: uri }
+        expires_at: { type: string, format: date-time }
+    CreateRenderRequest:
+      type: object
+      required: [captions_enabled, background_music_enabled, resolution]
+      properties:
+        captions_enabled: { type: boolean }
+        background_music_enabled: { type: boolean }
+        resolution: { type: string, example: 1080x1920 }
+    RenderResponse:
+      type: object
+      required: [id, project_id, version, status, resolution, duration_seconds, file_size_bytes, captions_burned, music_included, thumbnail_url, preview_url, created_at, updated_at]
+      properties:
+        id: { type: string }
+        project_id: { type: string }
+        version: { type: integer, minimum: 1 }
+        status: { $ref: "#/components/schemas/RenderStatus" }
+        resolution: { type: string }
+        duration_seconds: { type: number, minimum: 0 }
+        file_size_bytes: { type: integer, minimum: 0 }
+        captions_burned: { type: boolean }
+        music_included: { type: boolean }
+        thumbnail_url: { type: [string, "null"], format: uri }
+        preview_url: { type: [string, "null"], format: uri }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    RenderListResponse:
+      type: object
+      required: [items, next_cursor, has_more]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/RenderResponse" }
+        next_cursor: { type: [string, "null"] }
+        has_more: { type: boolean }
+    SettingsGeneral:
+      type: object
+      properties:
+        default_language: { type: string }
+        default_aspect_ratio: { type: string, enum: ["9:16", "16:9"] }
+        default_duration_seconds: { type: integer, enum: [30, 45, 60] }
+        captions_enabled: { type: boolean }
+        background_music_enabled: { type: boolean }
+    SettingsGeneration:
+      type: object
+      properties:
+        default_visual_style: { type: string }
+        default_narration_style: { type: string }
+        preferred_image_provider: { type: string }
+        preferred_video_provider: { type: string }
+        preferred_voice_provider: { type: string }
+        auto_retry_failed_generations: { type: boolean }
+        maximum_automatic_retries: { type: integer, minimum: 0, maximum: 5 }
+    SettingsIntegrations:
+      type: object
+      description: Display configuration only; never contains credentials.
+      properties:
+        genblaze_mode: { const: mock }
+        backblaze_mode: { const: mock }
+        b2_bucket_name: { type: string }
+        b2_region: { type: string }
+    SettingsResponse:
+      type: object
+      required: [general, generation, integrations, updated_at]
+      properties:
+        general: { $ref: "#/components/schemas/SettingsGeneral" }
+        generation: { $ref: "#/components/schemas/SettingsGeneration" }
+        integrations: { $ref: "#/components/schemas/SettingsIntegrations" }
+        updated_at: { type: string, format: date-time }
+    UpdateSettingsRequest:
+      type: object
+      properties:
+        general: { $ref: "#/components/schemas/SettingsGeneral" }
+        generation: { $ref: "#/components/schemas/SettingsGeneration" }
+        integrations: { $ref: "#/components/schemas/SettingsIntegrations" }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details, request_id]
+          properties:
+            code: { type: string }
+            message: { type: string }
+            details: { type: object, additionalProperties: true }
+            request_id: { type: string }
+    HealthResponse:
+      type: object
+      required: [status, version, services]
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        version: { type: string }
+        services:
+          type: object
+          required: [database, queue, backblaze_b2, genblaze]
+          properties:
+            database: { type: string, example: unknown }
+            queue: { type: string, example: unknown }
+            backblaze_b2: { type: string, example: not_configured }
+            genblaze: { type: string, example: not_configured }

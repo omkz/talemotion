@@ -58,6 +58,8 @@ export async function listAssets(
       (!filters.projectId ||
         filters.projectId === "all" ||
         asset.projectId === filters.projectId) &&
+      (!filters.chapterId || asset.chapterId === filters.chapterId) &&
+      (!filters.sceneId || asset.sceneId === filters.sceneId) &&
       (!filters.status ||
         filters.status === "all" ||
         asset.status === filters.status)

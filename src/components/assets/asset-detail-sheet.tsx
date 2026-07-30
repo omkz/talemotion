@@ -195,7 +195,9 @@ export function AssetDetailSheet({
               value={
                 asset.signedUrlStatus === "simulated"
                   ? "Available (simulated)"
-                  : "Unavailable"
+                  : asset.signedUrlStatus === "available"
+                    ? "Available"
+                    : "Unavailable"
               }
             />
           </MetadataSection>

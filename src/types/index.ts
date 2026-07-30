@@ -4,3 +4,4 @@ export * from "./scene";
 export * from "./asset";
 export * from "./generation";
 export * from "./render";
+export * from "./media-library-asset";

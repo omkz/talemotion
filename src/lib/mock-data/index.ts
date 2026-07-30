@@ -18,3 +18,4 @@ export function createInitialProjects(): VideoProject[] {
 export * from "./majapahit";
 export * from "./constants";
 export * from "./video-templates";
+export * from "./assets";

@@ -13,7 +13,7 @@ export interface Asset {
   model: string;
   orchestration: string;
   storageProvider: string;
-  manifestStatus: "pending" | "verified" | "failed";
+  manifestStatus: "pending" | "recorded" | "verified" | "failed";
   promptSaved: boolean;
   sha256: string;
   generationDurationMs: number;

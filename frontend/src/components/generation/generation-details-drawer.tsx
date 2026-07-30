@@ -51,7 +51,13 @@ export function GenerationDetailsDrawer({ asset, onOpenChange }: GenerationDetai
                 <DetailRow label="Storage" value={asset.storageProvider} />
                 <DetailRow
                   label="Manifest status"
-                  value={asset.manifestStatus === "verified" ? "Verified" : asset.manifestStatus}
+                  value={
+                    asset.manifestStatus === "verified"
+                      ? "Verified"
+                      : asset.manifestStatus === "recorded"
+                        ? "Recorded"
+                        : asset.manifestStatus
+                  }
                 />
                 <DetailRow label="Asset version" value={`v${asset.version}`} />
                 <DetailRow label="Prompt saved" value={asset.promptSaved ? "Yes" : "No"} />

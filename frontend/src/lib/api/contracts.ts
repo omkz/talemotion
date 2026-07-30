@@ -129,7 +129,7 @@ export interface AssetResponse {
   model: string | null;
   orchestration: "genblaze";
   storage_provider: "backblaze_b2";
-  manifest_status: "verified" | "pending" | "unavailable";
+  manifest_status: "recorded" | "verified" | "pending" | "unavailable";
   sha256: string | null;
   generation_stage: string;
   prompt_saved: boolean;
@@ -273,7 +273,9 @@ export interface RenderResponse {
   updated_at: string;
 }
 
-export type RenderListResponse = CursorPageDto<RenderResponse>;
+export interface RenderListResponse {
+  items: RenderResponse[];
+}
 
 export interface SettingsResponse {
   general: {

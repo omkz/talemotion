@@ -97,7 +97,12 @@ const assetResponseSchema = z.object({
   model: nullableString,
   orchestration: z.literal("genblaze"),
   storage_provider: z.literal("backblaze_b2"),
-  manifest_status: z.enum(["verified", "pending", "unavailable"]),
+  manifest_status: z.enum([
+    "recorded",
+    "verified",
+    "pending",
+    "unavailable",
+  ]),
   sha256: nullableString,
   generation_stage: z.string(),
   prompt_saved: z.boolean(),

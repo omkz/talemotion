@@ -1,15 +1,15 @@
-import type { CreateProjectInput } from "@/lib/mock-api";
+import type { CreateVideoProjectInput } from "@/lib/api/video-project-api";
 import type { Duration, SceneCountSetting } from "@/types";
 import type { WizardFormValues } from "./schema";
 
 export function mapWizardValuesToProjectInput(
   values: WizardFormValues
-): CreateProjectInput {
+): CreateVideoProjectInput {
   const duration = Number(values.duration) as Duration;
   const sceneCount: SceneCountSetting =
     values.sceneCount === "auto" ? "auto" : (Number(values.sceneCount) as 4 | 5 | 6);
 
-  const output: CreateProjectInput["output"] = {
+  const output: CreateVideoProjectInput["output"] = {
     title: values.title,
     language: values.language,
     duration,
@@ -32,6 +32,7 @@ export function mapWizardValuesToProjectInput(
         genre: values.genre ?? "",
         desiredEnding: values.desiredEnding ?? "",
       },
+      templateId: values.templateId,
     };
   }
 
@@ -47,6 +48,7 @@ export function mapWizardValuesToProjectInput(
         targetAudience: values.targetAudience ?? "",
         callToAction: values.callToAction ?? "",
       },
+      templateId: values.templateId,
     };
   }
 
@@ -59,5 +61,6 @@ export function mapWizardValuesToProjectInput(
       additionalDirection: values.additionalDirection ?? "",
       sourceNotes: values.sourceNotes ?? "",
     },
+    templateId: values.templateId,
   };
 }

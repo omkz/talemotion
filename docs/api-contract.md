@@ -1,195 +1,144 @@
-# TaleMotion API Contract
+# TaleMotion Historical MVP API
 
-## Purpose and boundaries
+## Scope
 
-This document defines the JSON contract between the Next.js frontend and the
-planned FastAPI service. The backend currently implements health plus
-in-memory Project, Chapter, and Scene resources. The application continues
-using local mock services; no frontend HTTP provider is active.
+The active backend slice supports one workflow:
 
-The API uses `/api/v1`, opaque string IDs, snake_case JSON fields, and ISO 8601
-UTC timestamps. Binary media is never embedded in JSON. Authentication is out
-of scope for v1; settings represent one local workspace until user/workspace
-identity exists.
+```text
+Historical topic → storyboard → scene images → B2 → narrated MP4
+```
 
-Frontend domain objects (`VideoProject`, `Chapter`, `Scene`, `Asset`, `Render`,
-`AppSettings`) remain camelCase and optimized for components. API DTOs represent
-the wire format. Explicit mappers isolate naming, enum, and lifecycle
-differences so UI components never depend on backend response shapes.
+Projects are restricted to Historical Documentary, English, 30 or 45 seconds,
+9:16, exactly four scenes, and captions enabled. Microdrama and Product
+Advertisement remain frontend Coming Soon options. The API uses `/api/v1`,
+opaque string IDs, snake_case JSON, and timezone-aware ISO 8601 timestamps.
+PostgreSQL is the source of truth; Redis/Celery runs generation outside the
+FastAPI request process.
 
-## Core model decisions
+## Domain and wire models
 
-Generation is asynchronous because provider calls, media transfer, and
-rendering can exceed normal request timeouts. Generation endpoints return a
-`GenerationJobResponse`; clients poll `GET /jobs/{job_id}` every 1–2 seconds for
-the MVP. WebSockets and SSE are not required.
+Frontend domain objects remain camelCase and presentation-oriented. API DTOs
+use snake_case and describe persisted backend resources. Explicit mappers in
+`frontend/src/lib/api/mappers.ts` prevent React components from depending on
+wire shapes.
 
-Every project contains chapters. A short-form project receives a default
-`Main` chapter at position 1, while the same structure later supports
-long-form projects, child jobs, and chapter-level coordination without a data
-migration.
+Every short project still owns a `Main` chapter at position 1. This internal
+level allows future long-form chapters without restructuring Project → Chapter
+→ Scene relationships.
 
-Project, chapter, and scene data currently lives in one process-local,
-lock-protected repository. Repository values cross the boundary as copies and
-all state is reset when the backend process restarts. This is a development
-implementation, not durable storage.
+## Implemented endpoints
 
-Storyboard regeneration uses the same
-`POST /projects/{project_id}/storyboard` endpoint. Supplying
-`additional_instruction` starts a new storyboard job; the backend retains
-previous project history according to its future persistence policy.
+All paths are relative to `/api/v1`.
 
-Scene regeneration uses a distinct `/regenerations` endpoint because it creates
-a new scene/asset version. Previous assets are not overwritten.
+| Method and path | Behavior |
+| --- | --- |
+| `GET /health` | Process identity; not provider health proof |
+| `GET`, `POST /projects` | List or create PostgreSQL projects |
+| `GET`, `PATCH`, `DELETE /projects/{id}` | Read, edit, or soft-delete |
+| `GET /chapters/{id}` | Chapter with ordered scenes |
+| `POST /projects/{id}/storyboard` | Queue structured Genblaze storyboard |
+| `GET`, `PATCH`, `DELETE /scenes/{id}` | Scene operations |
+| `POST /chapters/{id}/scenes` | Add a scene |
+| `POST /chapters/{id}/scenes/reorder` | Apply a complete scene order |
+| `POST /scenes/{id}/duplicate` | Duplicate a scene |
+| `POST /scenes/{id}/generations` | Queue real image generation |
+| `POST /scenes/{id}/regenerations` | Create the next asset version |
+| `GET /jobs/{id}` | Poll persisted job progress |
+| `GET /assets`, `GET /assets/{id}` | Read stored asset metadata |
+| `POST /assets/{id}/preview-url` | Short-lived signed B2 preview |
+| `POST /assets/{id}/download-url` | Short-lived signed B2 download |
+| `POST /projects/{id}/renders` | Queue narrated, captioned FFmpeg render |
+| `GET /projects/{id}/renders` | List project render versions |
+| `GET /renders/{id}` | Render metadata and signed preview |
 
-## Endpoints
+Archive/restore/delete asset mutations, project-wide generation jobs, job
+retry/cancel, settings HTTP persistence, and thumbnail generation remain
+planned and are not silently simulated by the HTTP adapter.
 
-All paths below are relative to `/api/v1`.
+## Asynchronous jobs
 
-| Resource | Method and path | Result |
-| --- | --- | --- |
-| Health | `GET /health` | Process health and build identity; not provider proof |
-| Projects | `GET /projects` | Cursor-paged projects |
-|  | `POST /projects` | Create project and default chapter |
-|  | `GET /projects/{project_id}` | Project with chapters and scenes |
-|  | `PATCH /projects/{project_id}` | Update client-editable metadata |
-|  | `DELETE /projects/{project_id}` | Soft-delete the in-memory project |
-| Chapters | `GET /chapters/{chapter_id}` | Chapter with ordered scenes |
-| Storyboard | `POST /projects/{project_id}/storyboard` | Start generation/regeneration job |
-| Scenes | `GET /scenes/{scene_id}` | Get scene |
-|  | `PATCH /scenes/{scene_id}` | Update title, narration, prompt, and duration |
-|  | `DELETE /scenes/{scene_id}` | Delete scene |
-|  | `POST /scenes/{scene_id}/duplicate` | Duplicate scene |
-|  | `POST /chapters/{chapter_id}/scenes` | Add scene |
-|  | `POST /chapters/{chapter_id}/scenes/reorder` | Apply complete ordered ID list |
-| Generation | `POST /projects/{project_id}/generations` | Generate all scenes |
-|  | `POST /scenes/{scene_id}/generations` | Generate selected media stages |
-|  | `POST /scenes/{scene_id}/regenerations` | Generate a new version |
-| Jobs | `GET /jobs/{job_id}` | Poll job |
-|  | `POST /jobs/{job_id}/retry` | Create/restart retry job |
-|  | `POST /jobs/{job_id}/cancel` | Best-effort cancellation |
-| Assets | `GET /assets` | Filtered cursor page |
-|  | `GET /assets/{asset_id}` | Asset metadata |
-|  | `POST /assets/{asset_id}/archive` | Archive asset |
-|  | `POST /assets/{asset_id}/restore` | Restore asset |
-|  | `DELETE /assets/{asset_id}` | Delete metadata; object cleanup may be async |
-| URLs | `POST /assets/{asset_id}/preview-url` | Short-lived preview URL |
-|  | `POST /assets/{asset_id}/download-url` | Short-lived download URL |
-| Renders | `POST /projects/{project_id}/renders` | Start final-render job |
-|  | `GET /projects/{project_id}/renders` | Cursor-paged renders |
-|  | `GET /renders/{render_id}` | Render metadata |
-|  | `POST /renders/{render_id}/thumbnail` | Start thumbnail job |
-| Settings | `GET /settings` | Workspace defaults |
-|  | `PATCH /settings` | Update workspace defaults |
+Provider calls, B2 transfers, and FFmpeg exceed safe request times. Generation
+requests return `202` with a job in `queued`; workers persist transitions
+through `running` to `completed` or `failed`. The frontend polls roughly every
+1.5 seconds. WebSockets and SSE are not required.
 
-Project list filters are `status`, `mode`, and `search`. Asset filters are
-`project_id`, `chapter_id`, `scene_id`, `type`, `status`, `search`, and `sort`.
-Asset sort values are `newest`, `oldest`, `name`, `largest`, and `project`.
-The backend default page size remains 20; the current media-library adapter
-explicitly requests 15 to preserve its existing UI behavior.
+Celery routes work to `storyboard`, `media`, and `rendering` queues. Job types
+currently implemented are `storyboard`, `scene_generation`,
+`scene_regeneration`, and `final_render`.
 
-## Pagination
+## Storyboard and asset versioning
 
-Collection endpoints accept `limit` (default 20, maximum 100) and an opaque
-`cursor`. Clients must not parse or construct cursors. Responses contain:
+Genblaze must return exactly four validated scenes. Their durations must
+approximately total the project duration; malformed structured output is
+retried a bounded number of times and never replaced with hardcoded scenes.
+
+Scene regeneration combines the stored visual prompt with the additional
+instruction. It preserves v1, uploads v2 under a new object key, links its
+parent asset, and advances `active_asset_version` only after storage and
+metadata succeed.
+
+Each generated scene asset has a B2 JSON manifest containing provider, model,
+prompt, parameters, timestamp, SHA-256, object key, and parent asset when
+applicable. The manifest records generation provenance; it does not prove
+historical accuracy or real-world truth.
+
+## Pagination and errors
+
+Project and asset collections accept `limit` (default 20, maximum 100) and an
+opaque cursor. Asset pages also return `total`.
 
 ```json
 {
   "items": [],
-  "next_cursor": "opaque_cursor_or_null",
-  "has_more": true
+  "next_cursor": null,
+  "has_more": false
 }
 ```
 
-Asset pages additionally return `total` for the media-library count. A changed
-search, filter, or sort starts again without a cursor.
-
-## Job lifecycle
-
-Job statuses are `queued → running → completed`, with terminal alternatives
-`failed` and `cancelled`. Job types are `storyboard`, `project_generation`,
-`scene_generation`, `scene_regeneration`, `final_render`, and
-`thumbnail_generation`. Progress is 0–100. `parent_job_id` and `child_job_ids`
-support project, chapter, and scene fan-out for future long-form work.
-
-Cancellation is best-effort: an external provider request may finish after the
-backend accepts cancellation. The backend must reconcile late results without
-changing a cancelled job back to running.
-
-## Idempotency
-
-Storyboard generation, all-scene generation, single-scene generation,
-regeneration, final rendering, and thumbnail generation accept
-`Idempotency-Key`. Repeating a request with the same key and equivalent payload
-must return the original job rather than create duplicate provider calls or
-assets. Keys are scoped and retained according to the backend implementation.
-The current frontend does not generate keys yet.
-
-## Errors
-
-Every non-2xx JSON error uses:
+All handled errors use one envelope and include the response `X-Request-ID`:
 
 ```json
 {
   "error": {
-    "code": "scene_generation_failed",
-    "message": "The video clip could not be generated.",
-    "details": { "scene_id": "scene_123" },
+    "code": "provider_not_configured",
+    "message": "OPENAI_API_KEY is required for this generation workflow.",
+    "details": { "provider": "openai", "orchestration": "genblaze" },
     "request_id": "req_abc123"
   }
 }
 ```
 
-Common statuses are 400 invalid request, 404 missing resource, 409 state
-conflict, 422 validation error, 429 rate/concurrency limit, 500 unexpected
-error, 502 provider failure, and 503 temporarily unavailable generation
-service. Frontend code should branch on `code`, show `message`, log
-`request_id`, and treat `details` as diagnostic context.
+Generation endpoints fail with an explicit `503` when required provider,
+storage, or renderer configuration is absent. HTTP mode never falls back to
+mock data.
 
-## Assets, URLs, and security
+## Storage and security
 
-Asset JSON may expose an object key, bucket display name, storage state,
-short-lived signed URL, and expiration timestamp. Preview/download URLs should
-be narrowly scoped and short lived. The API must never return Backblaze
-application keys, provider credentials, internal encryption keys, permanent
-bucket access, or unrestricted public URLs.
-
-Deleting an asset or project can later enqueue Backblaze B2 cleanup. A 204
-response confirms API acceptance, not necessarily immediate physical deletion.
-The health endpoint reports configuration/process state only and is not proof
-that Genblaze, B2, or any provider is operational.
-
-## Typical sequence
+B2 credentials and provider keys exist only in backend environment variables.
+JSON may expose an object key, bucket display name, checksum, and short-lived
+signed URL; it never exposes provider credentials, B2 application keys, or
+unrestricted bucket access. Object keys follow:
 
 ```text
-Create project
-→ Generate storyboard job
+projects/{project_id}/scenes/{scene_id}/images/v{version}.png
+projects/{project_id}/scenes/{scene_id}/manifests/v{version}.json
+projects/{project_id}/renders/v{version}.mp4
+```
+
+## End-to-end sequence
+
+```text
+Create historical project
+→ Queue storyboard
 → Poll job
-→ Fetch updated project
-→ Generate scene assets
-→ Poll parent and child jobs
-→ Render final video
-→ Request signed download URL
+→ Fetch four persisted scenes
+→ Queue each scene image
+→ Poll and request signed previews
+→ Regenerate selected scenes as new versions
+→ Queue final render
+→ Poll and fetch signed MP4 preview
 ```
 
-## Mock-to-HTTP migration
-
-`frontend/src/lib/api` contains DTOs, Zod validation for critical responses, domain
-mappers, `VideoProjectApi`, `MockVideoProjectApi`, `HttpVideoProjectApi`, and a
-polling helper. `videoProjectApi` explicitly uses the mock adapter. Existing
-components still import the established mock functions, so behavior and timer
-simulations remain unchanged.
-
-Migration can happen feature by feature: move a component/service call behind
-`VideoProjectApi`, verify parity in mock mode, then opt into a configured HTTP
-provider. The future environment example is:
-
-```bash
-NEXT_PUBLIC_API_MODE=mock
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
-```
-
-Mock mode is the default when variables are absent. HTTP mode performs no
-request until a method is called and must never fall back silently to mock
-data. Durable persistence, queues, provider integrations, authentication, and
-render workers remain future implementation work.
+`NEXT_PUBLIC_API_MODE=http` activates this slice with
+`NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1`. External Genblaze and
+Backblaze B2 success still depends on valid operator-supplied configuration.

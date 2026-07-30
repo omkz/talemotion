@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.errors import RequestIdMiddleware, register_error_handlers
-from app.repositories.memory import InMemoryProjectRepository
+from app.repositories.dispatch import CeleryJobDispatcher
 
 app = FastAPI(
     title="TaleMotion API",
@@ -21,5 +21,5 @@ app.add_middleware(
 app.add_middleware(RequestIdMiddleware)
 
 app.include_router(api_router, prefix="/api")
-app.state.project_repository = InMemoryProjectRepository()
+app.state.job_dispatcher = CeleryJobDispatcher()
 register_error_handlers(app)

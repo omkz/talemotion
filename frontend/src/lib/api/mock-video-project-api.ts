@@ -223,6 +223,18 @@ export class MockVideoProjectApi implements VideoProjectApi {
     return mockGetAsset(assetId);
   }
 
+  async getAssetPreviewUrl(assetId: string) {
+    const asset = await mockGetAsset(assetId);
+    if (!asset?.previewUrl) {
+      throw new Error(`Mock preview is unavailable for asset ${assetId}`);
+    }
+    return asset.previewUrl;
+  }
+
+  async getAssetDownloadUrl(assetId: string) {
+    return this.getAssetPreviewUrl(assetId);
+  }
+
   archiveAsset(assetId: string) {
     return mockArchiveAsset(assetId);
   }
@@ -279,6 +291,16 @@ export class MockVideoProjectApi implements VideoProjectApi {
         .map(buildInitialRender)
         .find((render) => render?.id === renderId) ?? null
     );
+  }
+
+  async listProjectRenders(projectId: string) {
+    const projectRenders = Array.from(renders.values()).filter(
+      (render) => render.projectId === projectId
+    );
+    if (projectRenders.length > 0) return projectRenders;
+    const project = await mockGetProject(projectId);
+    const initial = project ? buildInitialRender(project) : null;
+    return initial ? [initial] : [];
   }
 
   getSettings() {

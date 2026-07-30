@@ -11,9 +11,14 @@ export const MODE_ICONS: Record<VideoMode, LucideIcon> = {
 interface StepModeSelectProps {
   value: VideoMode;
   onChange: (mode: VideoMode) => void;
+  historicalOnly?: boolean;
 }
 
-export function StepModeSelect({ value, onChange }: StepModeSelectProps) {
+export function StepModeSelect({
+  value,
+  onChange,
+  historicalOnly = false,
+}: StepModeSelectProps) {
   return (
     <div
       role="radiogroup"
@@ -23,16 +28,22 @@ export function StepModeSelect({ value, onChange }: StepModeSelectProps) {
       {VIDEO_MODES.map((mode) => {
         const Icon = MODE_ICONS[mode.id];
         const isSelected = value === mode.id;
+        const disabled =
+          historicalOnly && mode.id !== "historical-documentary";
         return (
           <button
             key={mode.id}
             type="button"
             role="radio"
             aria-checked={isSelected}
+            aria-disabled={disabled}
+            disabled={disabled}
             onClick={() => onChange(mode.id)}
             className={cn(
               "flex flex-col items-start gap-3 rounded-xl border p-5 text-left transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-              isSelected
+              disabled
+                ? "cursor-not-allowed border-border bg-card opacity-55"
+                : isSelected
                 ? "border-accent bg-accent/8"
                 : "border-border bg-card hover:border-muted-foreground/30 hover:bg-muted/40"
             )}
@@ -46,7 +57,14 @@ export function StepModeSelect({ value, onChange }: StepModeSelectProps) {
               <Icon className="size-5" strokeWidth={1.75} />
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-semibold text-foreground">{mode.label}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-semibold text-foreground">{mode.label}</p>
+                {disabled && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    Coming Soon
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-muted-foreground">{mode.description}</p>
             </div>
             <p className="mt-auto text-xs text-muted-foreground/80 italic">{mode.example}</p>

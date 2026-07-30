@@ -11,8 +11,10 @@ import type {
   GenerationJobResponse,
   ProjectListResponse,
   ProjectResponse,
+  RenderListResponse,
   RenderResponse,
   SettingsResponse,
+  SignedAssetUrlResponse,
 } from "./contracts";
 import { ApiError } from "./errors";
 import {
@@ -285,6 +287,22 @@ export class HttpVideoProjectApi implements VideoProjectApi {
     }
   }
 
+  async getAssetPreviewUrl(assetId: string, context?: RequestContext) {
+    const response = await this.client.post<SignedAssetUrlResponse>(
+      `/assets/${assetId}/preview-url`,
+      { signal: context?.signal }
+    );
+    return response.url;
+  }
+
+  async getAssetDownloadUrl(assetId: string, context?: RequestContext) {
+    const response = await this.client.post<SignedAssetUrlResponse>(
+      `/assets/${assetId}/download-url`,
+      { signal: context?.signal }
+    );
+    return response.url;
+  }
+
   async archiveAsset(assetId: string, context?: RequestContext) {
     const response = await this.client.post<AssetResponse>(
       `/assets/${assetId}/archive`,
@@ -340,6 +358,17 @@ export class HttpVideoProjectApi implements VideoProjectApi {
       if (isNotFound(error)) return null;
       throw error;
     }
+  }
+
+  async listProjectRenders(
+    projectId: string,
+    context?: RequestContext
+  ) {
+    const response = await this.client.get<RenderListResponse>(
+      `/projects/${projectId}/renders`,
+      { signal: context?.signal }
+    );
+    return response.items.map(mapRenderResponseToDomain);
   }
 
   async getSettings(context?: RequestContext) {

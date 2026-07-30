@@ -1,30 +1,45 @@
 # TaleMotion Backend
 
-Python 3.12 FastAPI foundation for TaleMotion. It currently exposes health
-plus in-memory project, chapter, and scene resources under `/api/v1`.
-Repository state is process-local and resets on restart. No database, queue,
-AI provider, storage provider, or rendering pipeline is implemented.
+FastAPI, PostgreSQL, Celery, Genblaze, Backblaze B2, and FFmpeg implementation
+for the Historical Documentary MVP. The implemented workflow is deliberately
+narrow: English, 30 or 45 seconds, vertical 9:16, four scenes, narration, and
+captions.
 
-## Development
+## Local services
+
+```bash
+docker compose up -d postgres redis
+cd backend
+cp .env.example .env
+uv sync
+uv run alembic upgrade head
+uv run fastapi dev app/main.py
+```
+
+Run the worker separately:
+
+```bash
+uv run celery -A app.core.celery_app worker \
+  -Q storyboard,media,rendering --loglevel=info
+```
+
+Real generation requires `OPENAI_API_KEY` plus all `B2_*` values in `.env`.
+Missing configuration returns an explicit `503`; it never produces fake
+successful output. Secrets stay in the backend and must not use `NEXT_PUBLIC_`
+variables.
+
+## Verification
 
 ```bash
 uv sync
 uv run ruff check .
 uv run pytest
-uv run fastapi dev app/main.py
 ```
 
-Production-style server command:
+Tests use isolated SQLAlchemy databases and injected fake external adapters.
+The FFmpeg test creates and probes a real local MP4. A PostgreSQL migration can
+be verified with `uv run alembic upgrade head`.
 
-```bash
-uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-Copy `.env.example` to `.env` for local overrides.
-
-## Server and worker convention
-
-The API server and future background worker will share this Python codebase
-but run as separate processes. Worker tasks belong in `app/tasks/`, generation
-and rendering pipelines in `app/pipelines/`, and external-service adapters in
-`app/integrations/`. Do not create a separate worker application.
+Worker entrypoints live in `app/tasks/`, orchestration in `app/pipelines/`, and
+provider/storage/render adapters in `app/integrations/`. API and worker remain
+separate processes sharing this codebase.

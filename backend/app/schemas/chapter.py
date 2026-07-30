@@ -1,24 +1,21 @@
-from datetime import datetime
-
-from pydantic import Field
-
-from app.models.chapter import Chapter, ChapterStatus
+from app.models.chapter import Chapter
 from app.schemas.common import StrictSchema
-from app.schemas.scene import SceneResponse
+from app.schemas.scene import SceneResponse, scene_to_response
 
 
 class ChapterResponse(StrictSchema):
-    id: str = Field(description="Opaque chapter identifier.")
+    id: str
     project_id: str
     title: str
-    summary: str | None
     position: int
-    target_duration_seconds: int
-    status: ChapterStatus
-    scenes: list[SceneResponse] = Field(description="Scenes ordered by position.")
-    created_at: datetime
-    updated_at: datetime
+    scenes: list[SceneResponse]
 
 
 def chapter_to_response(chapter: Chapter) -> ChapterResponse:
-    return ChapterResponse.model_validate(chapter.model_dump())
+    return ChapterResponse(
+        id=chapter.id,
+        project_id=chapter.project_id,
+        title=chapter.title,
+        position=chapter.position,
+        scenes=[scene_to_response(scene) for scene in chapter.scenes],
+    )

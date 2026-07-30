@@ -103,6 +103,14 @@ export interface VideoProjectApi {
     assetId: string,
     context?: RequestContext
   ): Promise<MediaAssetPage["items"][number] | null>;
+  getAssetPreviewUrl(
+    assetId: string,
+    context?: RequestContext
+  ): Promise<string>;
+  getAssetDownloadUrl(
+    assetId: string,
+    context?: RequestContext
+  ): Promise<string>;
   archiveAsset(
     assetId: string,
     context?: RequestContext
@@ -122,6 +130,10 @@ export interface VideoProjectApi {
     renderId: string,
     context?: RequestContext
   ): Promise<Render | null>;
+  listProjectRenders(
+    projectId: string,
+    context?: RequestContext
+  ): Promise<Render[]>;
 
   getSettings(context?: RequestContext): Promise<AppSettings>;
   updateSettings(

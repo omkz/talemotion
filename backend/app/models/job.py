@@ -1,0 +1,90 @@
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+from typing import TYPE_CHECKING
+
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.ids import new_resource_id, utc_now
+from app.models.base import Base
+from app.models.project import enum_values
+
+if TYPE_CHECKING:
+    from app.models.project import Project
+    from app.models.scene import Scene
+
+
+class JobType(StrEnum):
+    STORYBOARD = "storyboard"
+    SCENE_GENERATION = "scene_generation"
+    SCENE_REGENERATION = "scene_regeneration"
+    FINAL_RENDER = "final_render"
+
+
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class GenerationJob(Base):
+    __tablename__ = "generation_jobs"
+
+    id: Mapped[str] = mapped_column(
+        String(64),
+        primary_key=True,
+        default=lambda: new_resource_id("job"),
+    )
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        index=True,
+    )
+    scene_id: Mapped[str | None] = mapped_column(
+        ForeignKey("scenes.id", ondelete="CASCADE"),
+        index=True,
+    )
+    parent_job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("generation_jobs.id", ondelete="SET NULL"),
+        index=True,
+    )
+    type: Mapped[JobType] = mapped_column(
+        Enum(
+            JobType,
+            values_callable=enum_values,
+            native_enum=False,
+            length=32,
+        )
+    )
+    status: Mapped[JobStatus] = mapped_column(
+        Enum(
+            JobStatus,
+            values_callable=enum_values,
+            native_enum=False,
+            length=16,
+        ),
+        default=JobStatus.QUEUED,
+        index=True,
+    )
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    current_stage: Mapped[str | None] = mapped_column(String(100))
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    input_data: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    project: Mapped[Project] = relationship(back_populates="jobs")
+    scene: Mapped[Scene | None] = relationship(back_populates="jobs")
+    parent: Mapped[GenerationJob | None] = relationship(
+        remote_side=[id],
+        back_populates="children",
+    )
+    children: Mapped[list[GenerationJob]] = relationship(back_populates="parent")

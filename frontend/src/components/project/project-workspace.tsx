@@ -18,6 +18,8 @@ import { MAJAPAHIT_REGENERATION_EXAMPLE } from "@/lib/mock-data";
 import type { ModeBrief, Render, Scene, VideoProject } from "@/types";
 import { BriefSection } from "./brief-section";
 import { ProjectHeader, type SaveState } from "./project-header";
+import { HistoricalProjectWorkspace } from "./historical-project-workspace";
+import { getConfiguredApiMode } from "@/lib/api/provider";
 
 type WorkspaceTab = "brief" | "storyboard" | "generate" | "final";
 
@@ -29,6 +31,13 @@ function initialTabFor(project: VideoProject): WorkspaceTab {
 }
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
+  if (getConfiguredApiMode() === "http") {
+    return <HistoricalProjectWorkspace projectId={projectId} />;
+  }
+  return <MockProjectWorkspace projectId={projectId} />;
+}
+
+function MockProjectWorkspace({ projectId }: { projectId: string }) {
   const [project, setProject] = useState<VideoProject | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("brief");

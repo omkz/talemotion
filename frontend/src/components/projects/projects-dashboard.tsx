@@ -6,7 +6,7 @@ import { Film, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
-import { listProjects } from "@/lib/mock-api";
+import { videoProjectApi } from "@/lib/api/provider";
 import type { VideoProject } from "@/types";
 import { ProjectCard } from "./project-card";
 import { ProjectFilters, type ProjectFilter } from "./project-filters";
@@ -19,7 +19,8 @@ export function ProjectsDashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    listProjects()
+    videoProjectApi
+      .listProjects()
       .then((data) => {
         if (!cancelled) setProjects(data);
       })

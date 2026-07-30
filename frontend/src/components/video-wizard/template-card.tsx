@@ -28,9 +28,15 @@ interface TemplateCardProps {
   template: VideoTemplatePreset;
   selected: boolean;
   onSelect: () => void;
+  disabled?: boolean;
 }
 
-export function TemplateCard({ template, selected, onSelect }: TemplateCardProps) {
+export function TemplateCard({
+  template,
+  selected,
+  onSelect,
+  disabled = false,
+}: TemplateCardProps) {
   const Icon = TEMPLATE_ICONS[template.icon];
 
   return (
@@ -38,10 +44,14 @@ export function TemplateCard({ template, selected, onSelect }: TemplateCardProps
       type="button"
       role="radio"
       aria-checked={selected}
+      aria-disabled={disabled}
+      disabled={disabled}
       onClick={onSelect}
       className={cn(
         "flex flex-col items-start gap-3 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-        selected
+        disabled
+          ? "cursor-not-allowed border-border bg-card opacity-55"
+          : selected
           ? "border-accent bg-accent/8"
           : "border-border bg-card hover:border-muted-foreground/30 hover:bg-muted/40"
       )}
@@ -56,7 +66,7 @@ export function TemplateCard({ template, selected, onSelect }: TemplateCardProps
           <Icon className="size-4.5" strokeWidth={1.75} />
         </div>
         <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-          {formatMode(template.mode)}
+          {disabled ? "Coming Soon" : formatMode(template.mode)}
         </span>
       </div>
 

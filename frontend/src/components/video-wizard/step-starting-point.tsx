@@ -19,6 +19,7 @@ interface StepStartingPointProps {
   onSelectScratch: () => void;
   onSelectMode: (mode: VideoMode) => void;
   onSelectTemplate: (template: VideoTemplatePreset) => void;
+  realHistoricalOnly?: boolean;
 }
 
 export function StepStartingPoint({
@@ -28,6 +29,7 @@ export function StepStartingPoint({
   onSelectScratch,
   onSelectMode,
   onSelectTemplate,
+  realHistoricalOnly = false,
 }: StepStartingPointProps) {
   const [view, setView] = useState<"templates" | "custom">(
     startMode === "template" ? "templates" : "custom"
@@ -84,6 +86,12 @@ export function StepStartingPoint({
                 startMode === "template" && templateId === template.id
               }
               onSelect={() => handleSelectTemplate(template)}
+              disabled={
+                realHistoricalOnly &&
+                (template.mode !== "historical-documentary" ||
+                  template.duration === 60 ||
+                  template.sceneCount !== 4)
+              }
             />
           ))}
         </div>
@@ -93,7 +101,11 @@ export function StepStartingPoint({
         <p className="text-sm text-muted-foreground">
           Choose a core video type and configure its settings yourself.
         </p>
-        <StepModeSelect value={mode} onChange={onSelectMode} />
+        <StepModeSelect
+          value={mode}
+          onChange={onSelectMode}
+          historicalOnly={realHistoricalOnly}
+        />
       </TabsContent>
     </Tabs>
   );

@@ -13,6 +13,7 @@ export type MediaAssetStatus =
   | "archived";
 
 export type MediaAssetManifestStatus =
+  | "recorded"
   | "verified"
   | "pending"
   | "unavailable";

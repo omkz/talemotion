@@ -28,12 +28,14 @@ interface StepOutputSettingsProps {
   control: Control<WizardFormValues>;
   appliedTemplate?: VideoTemplatePreset | null;
   onResetToTemplateDefaults?: () => void;
+  realHistoricalOnly?: boolean;
 }
 
 export function StepOutputSettings({
   control,
   appliedTemplate,
   onResetToTemplateDefaults,
+  realHistoricalOnly = false,
 }: StepOutputSettingsProps) {
   return (
     <div className="grid gap-6">
@@ -71,14 +73,18 @@ export function StepOutputSettings({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Language</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select
+                value={field.value}
+                onValueChange={field.onChange}
+                disabled={realHistoricalOnly}
+              >
                 <FormControl>
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  {LANGUAGES.map((lang) => (
+                  {(realHistoricalOnly ? ["English"] : LANGUAGES).map((lang) => (
                     <SelectItem key={lang} value={lang}>
                       {lang}
                     </SelectItem>
@@ -146,17 +152,21 @@ export function StepOutputSettings({
           render={({ field }) => (
             <FormItem>
               <FormLabel>Scene count</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select
+                value={field.value}
+                onValueChange={field.onChange}
+                disabled={realHistoricalOnly}
+              >
                 <FormControl>
                   <SelectTrigger className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                 </FormControl>
                 <SelectContent>
-                  <SelectItem value="auto">Auto</SelectItem>
+                  {!realHistoricalOnly && <SelectItem value="auto">Auto</SelectItem>}
                   <SelectItem value="4">4 scenes</SelectItem>
-                  <SelectItem value="5">5 scenes</SelectItem>
-                  <SelectItem value="6">6 scenes</SelectItem>
+                  {!realHistoricalOnly && <SelectItem value="5">5 scenes</SelectItem>}
+                  {!realHistoricalOnly && <SelectItem value="6">6 scenes</SelectItem>}
                 </SelectContent>
               </Select>
               <FormMessage />
@@ -177,7 +187,10 @@ export function StepOutputSettings({
                 onValueChange={field.onChange}
                 className="flex gap-3"
               >
-                {(["30", "45", "60"] as const).map((seconds) => (
+                {(realHistoricalOnly
+                  ? (["30", "45"] as const)
+                  : (["30", "45", "60"] as const)
+                ).map((seconds) => (
                   <Label
                     key={seconds}
                     htmlFor={`duration-${seconds}`}
@@ -211,10 +224,19 @@ export function StepOutputSettings({
                 onValueChange={field.onChange}
                 className="flex gap-3"
               >
-                {[
+                {(realHistoricalOnly
+                  ? [
+                      {
+                        value: "9:16" as const,
+                        label: "9:16 Vertical",
+                        icon: RectangleVertical,
+                      },
+                    ]
+                  : [
                   { value: "9:16" as const, label: "9:16 Vertical", icon: RectangleVertical },
                   { value: "16:9" as const, label: "16:9 Horizontal", icon: RectangleHorizontal },
-                ].map((option) => (
+                    ]
+                ).map((option) => (
                   <Label
                     key={option.value}
                     htmlFor={`aspect-${option.value}`}
@@ -248,7 +270,11 @@ export function StepOutputSettings({
                 <p className="text-xs text-muted-foreground">Burn in synced captions</p>
               </div>
               <FormControl>
-                <Switch checked={field.value} onCheckedChange={field.onChange} />
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                  disabled={realHistoricalOnly}
+                />
               </FormControl>
             </FormItem>
           )}
@@ -263,7 +289,11 @@ export function StepOutputSettings({
                 <p className="text-xs text-muted-foreground">Add a mood-matched score</p>
               </div>
               <FormControl>
-                <Switch checked={field.value} onCheckedChange={field.onChange} />
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                  disabled={realHistoricalOnly}
+                />
               </FormControl>
             </FormItem>
           )}

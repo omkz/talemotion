@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Response, status
 
 from app.api.dependencies import DatabaseSession
-from app.repositories.sqlalchemy import ProjectRepository
+from app.core.errors import ApiError
+from app.repositories.sqlalchemy import JobRepository, ProjectRepository
 from app.schemas.chapter import ChapterResponse, chapter_to_response
 from app.schemas.common import ErrorResponse
+from app.schemas.job import GenerationJobResponse, job_to_response
 from app.schemas.scene import (
     CreateSceneRequest,
     ReorderScenesRequest,
@@ -11,7 +13,10 @@ from app.schemas.scene import (
     UpdateSceneRequest,
     scene_to_response,
 )
+from app.schemas.scene_generation import CreateSceneGenerationRequest
+from app.services.scene_generation import SceneGenerationService
 from app.services.scenes import SceneService
+from app.tasks.media import generate_scene_media
 
 router = APIRouter(tags=["Scenes"])
 ERROR_RESPONSES = {
@@ -23,6 +28,17 @@ ERROR_RESPONSES = {
 
 def _scenes(session: DatabaseSession) -> SceneService:
     return SceneService(ProjectRepository(session))
+
+
+def _generation(session: DatabaseSession) -> SceneGenerationService:
+    return SceneGenerationService(
+        ProjectRepository(session),
+        JobRepository(session),
+    )
+
+
+def enqueue_scene_media(job_id: str) -> None:
+    generate_scene_media.apply_async(args=[job_id], queue="media")
 
 
 @router.post(
@@ -86,3 +102,30 @@ def delete_scene(scene_id: str, session: DatabaseSession) -> Response:
 )
 def duplicate_scene(scene_id: str, session: DatabaseSession) -> SceneResponse:
     return scene_to_response(_scenes(session).duplicate_scene(scene_id))
+
+
+@router.post(
+    "/scenes/{scene_id}/generations",
+    response_model=GenerationJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses=ERROR_RESPONSES,
+    summary="Queue real image and video generation for a persisted scene",
+)
+def create_scene_generation(
+    scene_id: str,
+    request: CreateSceneGenerationRequest,
+    session: DatabaseSession,
+) -> GenerationJobResponse:
+    service = _generation(session)
+    job = service.queue(scene_id, request)
+    try:
+        enqueue_scene_media(job.id)
+    except Exception as error:
+        service.mark_dispatch_failed(job.id)
+        raise ApiError(
+            status_code=503,
+            code="dependency_unavailable",
+            message="The media worker queue is unavailable.",
+            details={"job_id": job.id},
+        ) from error
+    return job_to_response(job)

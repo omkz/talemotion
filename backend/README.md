@@ -1,10 +1,10 @@
 # TaleMotion Backend
 
 This backend now includes one real, provider-backed vertical slice: an
-existing TaleMotion scene can generate a GMICloud keyframe and animate it,
-while Genblaze stores the media and provenance manifests in Backblaze B2.
-The request streams TaleMotion-specific progress events directly from
-FastAPI; it does not create a database job or use Celery.
+persisted TaleMotion scene can generate a GMICloud keyframe and animate it.
+FastAPI creates a PostgreSQL `GenerationJob`, Celery performs the Genblaze
+work, and media plus provenance manifests are stored in Backblaze B2. Asset
+metadata and the scene's active asset remain in PostgreSQL.
 
 ## Configure native services
 
@@ -76,21 +76,26 @@ The suite uses PostgreSQL JSONB and constraints through `talemotion_test`;
 SQLite is not supported. Set `RUN_CELERY_INTEGRATION=1` only while a worker is
 running to exercise the Redis → worker → PostgreSQL diagnostic path.
 
-## Real scene media endpoint
+## Persistent scene media workflow
 
-`POST /api/v1/scene-runs/stream` accepts one scene prompt and returns
-`text/event-stream`. Events cover the run, image, and video lifecycle. Media
+`POST /api/v1/scenes/{scene_id}/generations` loads the persisted scene,
+commits a queued job, dispatches `app.tasks.media.generate_scene_media` to the
+`media` queue, and returns HTTP 202. The frontend polls
+`GET /api/v1/jobs/{job_id}` approximately every 1.5 seconds. On completion it
+fetches `GET /api/v1/assets/{asset_id}` and requests a signed preview with
+`POST /api/v1/assets/{asset_id}/preview-url`.
+
+The worker records real stage progress, persists the image before starting
+video generation, and preserves that image if video generation fails. Media
 is stored under:
 
 ```text
 talemotion/projects/{safe_project}/scenes/{safe_scene}/runs/{run_id}/
 ```
 
-`GET /api/v1/media/{encoded_key}/preview` validates that namespace and
-redirects to a short-lived signed B2 URL. Credentials and raw provider errors
-are never returned.
+Signed preview URLs expire after approximately 15 minutes. Credentials and
+raw provider errors are never stored in job payloads or returned by the API.
 
 Automatic storyboards, narration, music, full-project rendering, scene
-version history, and long-form generation remain unimplemented. Existing
-frontend project data remains mock-backed; only the flagged per-scene action
-uses this endpoint.
+full-project rendering, and long-form generation remain unimplemented. The
+frontend uses this workflow only when `NEXT_PUBLIC_REAL_SCENE_GENERATION=true`.

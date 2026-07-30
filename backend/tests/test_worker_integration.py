@@ -1,15 +1,6 @@
-import os
-
-import pytest
-
-from app.tasks.system import database_worker_health
+from app.core.celery_app import celery_app
 
 
-@pytest.mark.integration
-@pytest.mark.skipif(
-    os.getenv("RUN_CELERY_INTEGRATION") != "1",
-    reason="requires a running Redis broker and Celery worker",
-)
-def test_celery_worker_can_query_postgresql() -> None:
-    result = database_worker_health.delay().get(timeout=15)
-    assert result == {"status": "ok", "database": "ok"}
+def test_celery_uses_redis_only_as_a_broker() -> None:
+    assert celery_app.conf.task_ignore_result is True
+    assert celery_app.backend.__class__.__name__ == "DisabledBackend"

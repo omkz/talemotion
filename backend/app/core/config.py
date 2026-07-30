@@ -13,7 +13,6 @@ class AppConfig(BaseSettings):
     database_url: str
     redis_url: str
     celery_broker_url: str
-    celery_result_backend: str
 
     b2_region: str | None = None
     b2_bucket_name: str | None = None

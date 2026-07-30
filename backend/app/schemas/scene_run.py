@@ -24,8 +24,9 @@ class SceneRunAsset(StrictSchema):
     kind: Literal["image", "video"]
     media_type: str
     asset_url: str
-    preview_url: str
     sha256: str
+    storage_object_key: str
+    file_size_bytes: int | None = None
     provider: Literal["GMICloud"] = "GMICloud"
     model: str
 
@@ -62,6 +63,7 @@ class SceneImageCompletedEvent(StrictSchema):
     scene_id: str
     asset: SceneRunAsset
     manifest_url: str
+    manifest_object_key: str
 
 
 class SceneVideoStartedEvent(StrictSchema):
@@ -89,6 +91,7 @@ class SceneVideoCompletedEvent(StrictSchema):
     scene_id: str
     asset: SceneRunAsset
     manifest_url: str
+    manifest_object_key: str
 
 
 class SceneRunCompletedEvent(StrictSchema):
@@ -99,6 +102,7 @@ class SceneRunCompletedEvent(StrictSchema):
     image: SceneRunAsset
     video: SceneRunAsset | None
     manifest_url: str
+    manifest_object_key: str
 
 
 class SceneRunFailedEvent(StrictSchema):

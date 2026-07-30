@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 
@@ -16,7 +17,6 @@ class TestEnvironment(BaseSettings):
     test_database_url: str
     redis_url: str
     celery_broker_url: str
-    celery_result_backend: str
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -43,9 +43,6 @@ if test_environment is not None:
     os.environ["DATABASE_URL"] = test_environment.test_database_url
     os.environ["REDIS_URL"] = test_environment.redis_url
     os.environ["CELERY_BROKER_URL"] = test_environment.celery_broker_url
-    os.environ["CELERY_RESULT_BACKEND"] = (
-        test_environment.celery_result_backend
-    )
 else:
     os.environ.setdefault(
         "DATABASE_URL",
@@ -53,7 +50,6 @@ else:
     )
     os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
     os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6379/15")
-    os.environ.setdefault("CELERY_RESULT_BACKEND", "redis://localhost:6379/14")
 
 from app.core.database import get_db  # noqa: E402
 from app.main import app  # noqa: E402
@@ -67,8 +63,12 @@ def session_factory() -> Iterator[sessionmaker[Session]]:
     database_url = test_environment.test_database_url
     admin_engine = create_engine(database_url)
     schema = f"test_{uuid4().hex}"
-    with admin_engine.begin() as connection:
-        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    try:
+        with admin_engine.begin() as connection:
+            connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    except SQLAlchemyError:
+        admin_engine.dispose()
+        pytest.skip("Configured PostgreSQL test database is unavailable.")
     engine = create_engine(
         database_url,
         connect_args={"options": f"-csearch_path={schema}"},

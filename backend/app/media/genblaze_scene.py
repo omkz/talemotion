@@ -22,7 +22,6 @@ from genblaze_gmicloud import GMICloudImageProvider, GMICloudVideoProvider
 from genblaze_s3 import S3StorageBackend
 
 from app.core.config import AppConfig
-from app.core.sse import encode_media_key
 from app.media import SceneMediaError
 from app.schemas.scene_run import (
     SceneImageCompletedEvent,
@@ -120,13 +119,16 @@ class GenblazeSceneGenerator:
                 model=self.config.talemotion_image_model,
                 expected_prefix=prefix,
             )
-            image_manifest = self._manifest_url(image_result)
+            image_manifest, image_manifest_key = self._manifest_reference(
+                image_result, expected_prefix=prefix
+            )
             yield SceneImageCompletedEvent(
                 run_id=run_id,
                 project_id=request.project_id,
                 scene_id=request.scene_id,
                 asset=image,
                 manifest_url=image_manifest,
+                manifest_object_key=image_manifest_key,
             )
 
             if not request.generate_video:
@@ -137,6 +139,7 @@ class GenblazeSceneGenerator:
                     image=image,
                     video=None,
                     manifest_url=image_manifest,
+                    manifest_object_key=image_manifest_key,
                 )
                 return
 
@@ -166,13 +169,16 @@ class GenblazeSceneGenerator:
                 model=self.config.talemotion_video_model,
                 expected_prefix=prefix,
             )
-            video_manifest = self._manifest_url(video_result)
+            video_manifest, video_manifest_key = self._manifest_reference(
+                video_result, expected_prefix=prefix
+            )
             yield SceneVideoCompletedEvent(
                 run_id=run_id,
                 project_id=request.project_id,
                 scene_id=request.scene_id,
                 asset=video,
                 manifest_url=video_manifest,
+                manifest_object_key=video_manifest_key,
             )
             yield SceneRunCompletedEvent(
                 run_id=run_id,
@@ -181,6 +187,7 @@ class GenblazeSceneGenerator:
                 image=image,
                 video=video,
                 manifest_url=video_manifest,
+                manifest_object_key=video_manifest_key,
             )
         except Exception as error:
             yield self._failure(
@@ -331,15 +338,15 @@ class GenblazeSceneGenerator:
             kind=kind,
             media_type=asset.media_type,
             asset_url=asset.url,
-            preview_url=(
-                f"{self.config.api_v1_prefix}/media/"
-                f"{encode_media_key(key)}/preview"
-            ),
             sha256=asset.sha256,
+            storage_object_key=key,
+            file_size_bytes=asset.size_bytes,
             model=model,
         )
 
-    def _manifest_url(self, result: PipelineResult) -> str:
+    def _manifest_reference(
+        self, result: PipelineResult, *, expected_prefix: str
+    ) -> tuple[str, str]:
         manifest_url = result.manifest.manifest_uri
         if not manifest_url:
             raise SceneMediaError(
@@ -347,7 +354,13 @@ class GenblazeSceneGenerator:
                 message="Genblaze did not persist a provenance manifest.",
                 retryable=True,
             )
-        return manifest_url
+        return (
+            manifest_url,
+            self._key_from_url(
+                manifest_url,
+                expected_prefix=expected_prefix,
+            ),
+        )
 
     def _sink(self, prefix: str) -> ObjectStorageSink:
         return ObjectStorageSink(

@@ -8,17 +8,22 @@ import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/empty-state";
 import { generateAllScenes, retryScene } from "@/lib/mock-api";
 import {
+  createSceneGeneration,
+  getAssetPreviewUrl,
+  getPersistedAsset,
+  pollPersistedJob,
   realSceneGenerationEnabled,
-  resolveScenePreviewUrl,
-  streamSceneRun,
-} from "@/lib/api/scene-run-stream";
+  resultAssetId,
+} from "@/lib/api/scene-generation-jobs";
+import type {
+  PersistedAsset,
+  PersistedGenerationJob,
+} from "@/lib/api/scene-generation-jobs";
 import { SceneEditDialog } from "@/components/storyboard/scene-edit-dialog";
 import type {
   Asset,
   AspectRatio,
   Scene,
-  SceneRunAsset,
-  SceneRunEvent,
   SceneVersion,
 } from "@/types";
 import { GenerationCard } from "./generation-card";
@@ -26,7 +31,6 @@ import { GenerationDetailsDrawer } from "./generation-details-drawer";
 import { RegenerateSceneDialog } from "./regenerate-scene-dialog";
 
 interface GenerationSectionProps {
-  projectId: string;
   scenes: Scene[];
   aspectRatio: AspectRatio;
   onScenesChange: (scenes: Scene[]) => void;
@@ -36,7 +40,6 @@ interface GenerationSectionProps {
 }
 
 export function GenerationSection({
-  projectId,
   scenes,
   aspectRatio,
   onScenesChange,
@@ -90,110 +93,55 @@ export function GenerationSection({
     });
   };
 
-  const toAsset = (scene: Scene, value: SceneRunAsset): Asset => ({
-    id: `${scene.id}-${value.kind}-${value.sha256.slice(0, 12)}`,
+  const toAsset = (
+    scene: Scene,
+    value: PersistedAsset,
+    previewUrl: string,
+  ): Asset => ({
+    id: value.id,
     sceneId: scene.id,
-    kind: value.kind,
-    previewUrl: resolveScenePreviewUrl(value.preview_url),
-    version: scene.activeVersion,
-    provider: value.provider,
-    model: value.model,
+    kind: value.type === "video" ? "video" : "image",
+    previewUrl,
+    version: value.version,
+    provider: value.provider ?? "GMICloud",
+    model: value.model_name ?? "Configured model",
     orchestration: "Genblaze",
     storageProvider: "Backblaze B2",
-    manifestStatus: "recorded",
+    manifestStatus: value.provenance_object_key ? "recorded" : "pending",
     promptSaved: true,
-    sha256: value.sha256,
+    sha256: value.sha256 ?? "",
     generationDurationMs: 0,
-    createdAt: new Date().toISOString(),
+    createdAt: value.created_at,
   });
 
-  const handleRealEvent = (scene: Scene, event: SceneRunEvent) => {
-    const current =
-      scenesRef.current.find((item) => item.id === scene.id) ?? scene;
-    const priorJob = current.currentJob;
-    const job = {
-      id: event.run_id,
-      sceneId: scene.id,
-      stage: priorJob?.stage ?? ("waiting" as const),
-      progress: priorJob?.progress ?? 0,
-      errorMessage: null as string | null,
-      startedAt: priorJob?.startedAt ?? new Date().toISOString(),
-      completedAt: null as string | null,
-    };
+  const showPersistedAsset = async (
+    scene: Scene,
+    assetId: string,
+    signal: AbortSignal,
+    complete: boolean,
+  ) => {
+    const [asset, previewUrl] = await Promise.all([
+      getPersistedAsset(assetId, signal),
+      getAssetPreviewUrl(assetId, signal),
+    ]);
+    applyGeneratedAsset(scene.id, toAsset(scene, asset, previewUrl), complete);
+  };
 
-    switch (event.type) {
-      case "scene_run.started":
-        patchScene(scene.id, { status: "waiting", currentJob: job });
-        break;
-      case "scene_image.started":
-        patchScene(scene.id, {
-          status: "generating-image",
-          currentJob: { ...job, stage: "generating-image" },
-        });
-        break;
-      case "scene_image.progress":
-        patchScene(scene.id, {
-          status: "generating-image",
-          currentJob: {
-            ...job,
-            stage: "generating-image",
-            progress: Math.round(event.progress ?? job.progress),
-          },
-        });
-        break;
-      case "scene_image.completed":
-        applyGeneratedAsset(scene.id, toAsset(scene, event.asset), false);
-        break;
-      case "scene_video.started":
-        patchScene(scene.id, {
-          status: "generating-video",
-          currentJob: { ...job, stage: "generating-video" },
-        });
-        break;
-      case "scene_video.progress":
-        patchScene(scene.id, {
-          status: "generating-video",
-          currentJob: {
-            ...job,
-            stage: "generating-video",
-            progress: Math.round(event.progress ?? job.progress),
-          },
-        });
-        break;
-      case "scene_video.completed":
-        applyGeneratedAsset(scene.id, toAsset(scene, event.asset), false);
-        break;
-      case "scene_run.completed":
-        applyGeneratedAsset(scene.id, toAsset(scene, event.video ?? event.image));
-        setRetryableScenes((currentSet) => {
-          const next = new Set(currentSet);
-          next.delete(scene.id);
-          return next;
-        });
-        toast.success(`Scene ${scene.position} media generated`);
-        break;
-      case "scene_run.failed":
-        if (event.image) {
-          applyGeneratedAsset(scene.id, toAsset(scene, event.image), false);
-        }
-        patchScene(scene.id, {
-          status: "failed",
-          currentJob: {
-            ...job,
-            stage: "failed",
-            errorMessage: event.message,
-            completedAt: new Date().toISOString(),
-          },
-        });
-        setRetryableScenes((currentSet) => {
-          const next = new Set(currentSet);
-          if (event.retryable) next.add(scene.id);
-          else next.delete(scene.id);
-          return next;
-        });
-        toast.error(event.message);
-        break;
+  const stageForJob = (job: PersistedGenerationJob) => {
+    if (job.status === "queued") return "waiting" as const;
+    if (job.status === "failed" || job.status === "cancelled") {
+      return "failed" as const;
     }
+    if (job.status === "completed") return "completed" as const;
+    if (
+      job.current_stage?.includes("animating") ||
+      job.current_stage?.includes("video")
+    ) {
+      return "generating-video" as const;
+    }
+    return job.current_stage?.includes("keyframe")
+      ? ("generating-image" as const)
+      : ("waiting" as const);
   };
 
   const handleRealGeneration = async (scene: Scene) => {
@@ -201,22 +149,81 @@ export function GenerationSection({
     const controller = new AbortController();
     realControllers.current.set(scene.id, controller);
     onGenerationStart?.();
+    let displayedAssetId: string | null = null;
     try {
-      await streamSceneRun(
-        {
-          project_id: projectId,
-          scene_id: scene.id,
-          title: scene.title,
-          visual_prompt: scene.visualPrompt,
-          aspect_ratio: aspectRatio,
-          duration_seconds: 5,
-          generate_video: true,
+      const queuedJob = await createSceneGeneration(scene.id, controller.signal);
+      patchScene(scene.id, {
+        status: "waiting",
+        currentJob: {
+          id: queuedJob.id,
+          sceneId: scene.id,
+          stage: "waiting",
+          progress: queuedJob.progress,
+          errorMessage: null,
+          startedAt: new Date().toISOString(),
+          completedAt: null,
         },
-        {
+      });
+      const completedJob = await pollPersistedJob(queuedJob.id, {
           signal: controller.signal,
-          onEvent: (event) => handleRealEvent(scene, event),
+          onUpdate: async (job) => {
+            const candidateAssetId = resultAssetId(job);
+            if (candidateAssetId && candidateAssetId !== displayedAssetId) {
+              await showPersistedAsset(
+                scene,
+                candidateAssetId,
+                controller.signal,
+                job.status === "completed",
+              );
+              displayedAssetId = candidateAssetId;
+            }
+            const stage = stageForJob(job);
+            if (job.status !== "completed") {
+              patchScene(scene.id, {
+                status: stage,
+                currentJob: {
+                  id: job.id,
+                  sceneId: scene.id,
+                  stage,
+                  progress: job.progress,
+                  errorMessage: job.error_message,
+                  startedAt:
+                    scenesRef.current.find((item) => item.id === scene.id)
+                      ?.currentJob?.startedAt ?? new Date().toISOString(),
+                  completedAt:
+                    job.status === "failed" || job.status === "cancelled"
+                      ? new Date().toISOString()
+                      : null,
+                },
+              });
+            }
+          },
         },
       );
+      if (completedJob.status === "completed") {
+        const finalAssetId = resultAssetId(completedJob);
+        if (finalAssetId && finalAssetId !== displayedAssetId) {
+          await showPersistedAsset(
+            scene,
+            finalAssetId,
+            controller.signal,
+            true,
+          );
+        } else {
+          patchScene(scene.id, { status: "completed", currentJob: null });
+        }
+        setRetryableScenes((currentSet) => {
+          const next = new Set(currentSet);
+          next.delete(scene.id);
+          return next;
+        });
+        toast.success(`Scene ${scene.position} media generated`);
+      } else {
+        setRetryableScenes((currentSet) => new Set(currentSet).add(scene.id));
+        toast.error(
+          completedJob.error_message ?? "Scene generation did not complete.",
+        );
+      }
     } catch (error) {
       if (controller.signal.aborted) return;
       const message =

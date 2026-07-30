@@ -6,10 +6,10 @@ from app.core.config import settings
 celery_app = Celery(
     "talemotion",
     broker=settings.celery_broker_url,
-    backend=settings.celery_result_backend,
-    include=["app.tasks.system"],
+    include=["app.tasks.media", "app.tasks.system"],
 )
 celery_app.conf.update(
+    task_ignore_result=True,
     task_queues=(
         Queue("storyboard"),
         Queue("media"),
@@ -19,6 +19,7 @@ celery_app.conf.update(
     task_default_queue="system",
     task_routes={
         "app.tasks.system.database_worker_health": {"queue": "system"},
+        "app.tasks.media.generate_scene_media": {"queue": "media"},
     },
     task_track_started=True,
     task_serializer="json",

@@ -244,7 +244,6 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
 
           <TabsContent value="generate">
             <GenerationSection
-              projectId={project.id}
               scenes={scenes}
               aspectRatio={project.output.aspectRatio}
               onScenesChange={handleStoryboardScenesChange}

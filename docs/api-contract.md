@@ -3,9 +3,9 @@
 ## Current scope
 
 The `/api/v1` API persists projects, their internal chapters, ordered scenes,
-and generation-job state in PostgreSQL. Redis and Celery provide the worker
-foundation, but no product-generation task exists yet. The frontend remains on
-its existing mock provider.
+and generation-job state in PostgreSQL. Redis is the Celery broker, and the
+media worker now executes the real per-scene Genblaze pipeline. Other frontend
+resources remain on their existing provider boundary.
 
 All JSON fields use `snake_case`, IDs are opaque prefixed UUID strings, and
 timestamps are timezone-aware ISO 8601 values. Every new short-form project is
@@ -24,12 +24,16 @@ created atomically with one `Main` chapter at position `1`.
 | `POST /chapters/{id}/scenes/reorder` | Apply a complete scene order |
 | `GET`, `PATCH`, `DELETE /scenes/{id}` | Scene CRUD |
 | `POST /scenes/{id}/duplicate` | Insert a draft copy after the source |
+| `POST /scenes/{id}/generations` | Commit and enqueue a real scene-media job |
 | `GET /jobs/{id}` | Inspect persisted job state |
 | `POST /jobs/{id}/cancel` | Request cancellation of queued/running work |
 | `POST /jobs/{id}/retry` | Validate retry eligibility |
+| `GET /assets/{id}` | Read persisted generated-asset metadata |
+| `POST /assets/{id}/preview-url` | Request a short-lived signed B2 URL |
 
-Retry dispatch returns `not_implemented` after eligibility checks because no
-storyboard, media, or rendering task exists. It never invents a successful job.
+The generic `/jobs/{id}/retry` endpoint still returns `not_implemented` after
+eligibility checks. The workspace retries scene media by creating a new
+generation job, preserving the prior job and asset history.
 
 ## Persistence and lifecycle
 
@@ -76,39 +80,17 @@ PostgreSQL and Redis are native services at `localhost:5432` and
 distinct `TEST_DATABASE_URL` whose database name visibly contains `test`; they
 create isolated PostgreSQL schemas and never clear the development database.
 
-The Celery queues are `storyboard`, `media`, `rendering`, and `system`. Only
-`app.tasks.system.database_worker_health` is implemented, to verify
-worker-to-database connectivity without simulating product work.
+The Celery queues are `storyboard`, `media`, `rendering`, and `system`.
+`app.tasks.media.generate_scene_media` is routed to `media`; API requests never
+execute Genblaze or paid provider work in the FastAPI process.
 
 ## Real scene media vertical slice
 
-The existing project workspace can opt into one real per-scene operation with
-`NEXT_PUBLIC_REAL_SCENE_GENERATION=true`. Project, chapter, and scene data
-remain supplied by the current frontend mock provider; this flag changes only
-the individual scene Generate, Retry, and Regenerate actions.
-
-`POST /scene-runs/stream` accepts `project_id`, `scene_id`, `title`,
-`visual_prompt`, `aspect_ratio`, `duration_seconds`, and `generate_video`.
-It returns `text/event-stream` with this ordered vocabulary:
-
-```text
-scene_run.started
-scene_image.started
-scene_image.progress
-scene_image.completed
-scene_video.started
-scene_video.progress
-scene_video.completed
-scene_run.completed
-scene_run.failed
-```
-
-Image-only requests stop after `scene_image.completed`. If video generation
-fails after the keyframe succeeds, `scene_run.failed` includes the durable
-image so the workspace can preserve it. Failures expose only TaleMotion codes:
-`missing_configuration`, `provider_authentication_failed`,
-`provider_rate_limited`, `provider_generation_failed`, `storage_failed`,
-`invalid_request`, or `unknown_error`.
+With `NEXT_PUBLIC_REAL_SCENE_GENERATION=true`, Generate posts to
+`/scenes/{scene_id}/generations`, receives a job ID, and polls
+`/jobs/{job_id}` every 1.5 seconds. `result_payload.image_asset_id` becomes
+available as soon as the keyframe is stored; `video_asset_id` replaces it when
+animation succeeds. Failures retain the image asset ID when one exists.
 
 GMICloud calls are made through Genblaze providers. `ObjectStorageSink` and
 `genblaze-s3` persist assets and Genblaze manifests to Backblaze B2 under:
@@ -117,9 +99,11 @@ GMICloud calls are made through Genblaze providers. `ObjectStorageSink` and
 talemotion/projects/{safe_project}/scenes/{safe_scene}/runs/{run_id}/
 ```
 
-`GET /media/{encoded_key}/preview` accepts only encoded keys in that namespace
-and redirects to a signed B2 URL with a development expiry of about 15 minutes.
-It never accepts external URLs or returns storage credentials.
+Asset metadata stores only the bucket display name, TaleMotion object key,
+hash, media type, provider/model, version, and provenance object key.
+`POST /assets/{asset_id}/preview-url` resolves only an available persisted
+asset and returns a signed B2 URL with a development expiry of about 15
+minutes.
 
 `GET /health/integrations` reports only whether B2 and GMICloud configuration
 is present; it performs no paid generation call. Required variables and
@@ -127,6 +111,6 @@ configurable model slugs are documented in `backend/.env.example`.
 
 ## Explicitly deferred
 
-Automatic storyboard generation, project persistence for this scene-run
-flow, narration, music, FFmpeg/full-project rendering, scene version history,
-and long-form chapter generation are not part of this vertical slice.
+Automatic storyboard generation, narration, music, FFmpeg/full-project
+rendering, and long-form chapter generation are not part of this vertical
+slice. SSE is not used as the primary generation workflow.

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.models.asset import Asset, AssetStatus, AssetType
 from app.models.chapter import Chapter
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import Project, ProjectStatus, VideoMode
@@ -113,6 +114,7 @@ class JobRepository:
         scene_id: str | None = None,
         parent_job_id: str | None = None,
         current_stage: str = "queued",
+        input_payload: dict[str, object] | None = None,
     ) -> GenerationJob:
         job = GenerationJob(
             project_id=project_id,
@@ -122,6 +124,7 @@ class JobRepository:
             status=JobStatus.QUEUED,
             progress=0,
             current_stage=current_stage,
+            input_payload=input_payload or {},
         )
         self.session.add(job)
         self.session.flush()
@@ -136,6 +139,88 @@ class JobRepository:
                 selectinload(GenerationJob.scene).selectinload(Scene.chapter),
             )
         )
+
+    def get_for_update(self, job_id: str) -> GenerationJob | None:
+        return self.session.scalar(
+            select(GenerationJob)
+            .where(GenerationJob.id == job_id)
+            .with_for_update()
+        )
+
+    def active_for_scene(self, scene_id: str) -> GenerationJob | None:
+        return self.session.scalar(
+            select(GenerationJob)
+            .where(
+                GenerationJob.scene_id == scene_id,
+                GenerationJob.status.in_(
+                    (
+                        JobStatus.QUEUED,
+                        JobStatus.RUNNING,
+                        JobStatus.CANCEL_REQUESTED,
+                    )
+                ),
+            )
+            .order_by(GenerationJob.created_at.desc())
+        )
+
+    def commit(self) -> None:
+        self.session.commit()
+
+
+class AssetRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get(self, asset_id: str) -> Asset | None:
+        return self.session.get(Asset, asset_id)
+
+    def next_version(self, scene_id: str, asset_type: AssetType) -> int:
+        latest = self.session.scalar(
+            select(func.max(Asset.version)).where(
+                Asset.scene_id == scene_id,
+                Asset.type == asset_type,
+            )
+        )
+        return (latest or 0) + 1
+
+    def create(
+        self,
+        *,
+        project_id: str,
+        scene_id: str,
+        asset_type: AssetType,
+        version: int,
+        provider: str,
+        model_name: str,
+        prompt: str,
+        generation_parameters: dict[str, object],
+        storage_bucket: str,
+        storage_object_key: str,
+        mime_type: str,
+        file_size_bytes: int | None,
+        sha256: str,
+        provenance_object_key: str,
+    ) -> Asset:
+        asset = Asset(
+            project_id=project_id,
+            scene_id=scene_id,
+            type=asset_type,
+            status=AssetStatus.AVAILABLE,
+            version=version,
+            provider=provider,
+            model_name=model_name,
+            prompt=prompt,
+            generation_parameters=generation_parameters,
+            storage_bucket=storage_bucket,
+            storage_object_key=storage_object_key,
+            mime_type=mime_type,
+            file_size_bytes=file_size_bytes,
+            sha256=sha256,
+            provenance_object_key=provenance_object_key,
+        )
+        self.session.add(asset)
+        self.session.flush()
+        return asset
 
     def commit(self) -> None:
         self.session.commit()

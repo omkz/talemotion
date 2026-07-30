@@ -197,6 +197,26 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/SceneResponse"}
         "404": {$ref: "#/components/responses/Error"}
+  /scenes/{scene_id}/generations:
+    post:
+      tags: [Scenes]
+      summary: Queue real media generation for a persisted scene
+      parameters:
+        - {$ref: "#/components/parameters/SceneId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateSceneGenerationRequest"}
+      responses:
+        "202":
+          description: Persisted queued generation job
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/GenerationJobResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
   /jobs/{job_id}:
     get:
       tags: [Jobs]
@@ -233,6 +253,34 @@ paths:
       responses:
         "409": {$ref: "#/components/responses/Error"}
         "501": {$ref: "#/components/responses/Error"}
+  /assets/{asset_id}:
+    get:
+      tags: [Assets]
+      summary: Get persisted asset metadata
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Asset metadata
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AssetResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+  /assets/{asset_id}/preview-url:
+    post:
+      tags: [Assets]
+      summary: Create a short-lived signed B2 preview URL
+      parameters:
+        - {name: asset_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Signed preview
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SignedPreviewUrlResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
 components:
   parameters:
     ProjectId: {name: project_id, in: path, required: true, schema: {type: string}}
@@ -359,6 +407,12 @@ components:
         visual_prompt: {type: string}
         duration_seconds: {type: integer, minimum: 1, maximum: 60}
         position: {type: integer, minimum: 1}
+    CreateSceneGenerationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        duration_seconds: {type: integer, minimum: 1, maximum: 60, default: 5}
+        generate_video: {type: boolean, default: true}
     UpdateSceneRequest:
       type: object
       additionalProperties: false
@@ -408,6 +462,36 @@ components:
         started_at: {type: [string, "null"], format: date-time}
         completed_at: {type: [string, "null"], format: date-time}
         updated_at: {type: string, format: date-time}
+    AssetResponse:
+      type: object
+      required: [id, project_id, type, status, version, generation_parameters, created_at, updated_at]
+      properties:
+        id: {type: string}
+        project_id: {type: string}
+        scene_id: {type: [string, "null"]}
+        parent_asset_id: {type: [string, "null"]}
+        type: {type: string, enum: [image, video, audio, subtitle, manifest, thumbnail, final_video]}
+        status: {type: string, enum: [pending, available, failed, archived]}
+        version: {type: integer, minimum: 1}
+        provider: {type: [string, "null"]}
+        model_name: {type: [string, "null"]}
+        prompt: {type: [string, "null"]}
+        generation_parameters: {type: object}
+        storage_bucket: {type: [string, "null"]}
+        storage_object_key: {type: [string, "null"]}
+        mime_type: {type: [string, "null"]}
+        file_size_bytes: {type: [integer, "null"]}
+        sha256: {type: [string, "null"]}
+        provenance_object_key: {type: [string, "null"]}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        archived_at: {type: [string, "null"], format: date-time}
+    SignedPreviewUrlResponse:
+      type: object
+      required: [url, expires_at]
+      properties:
+        url: {type: string, format: uri}
+        expires_at: {type: string, format: date-time}
     ErrorResponse:
       type: object
       required: [error]

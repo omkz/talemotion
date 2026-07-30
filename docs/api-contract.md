@@ -2,9 +2,10 @@
 
 ## Purpose and boundaries
 
-This document defines the JSON contract between the Next.js frontend and a
-future FastAPI service. The current application still uses local mock services;
-no HTTP provider is active.
+This document defines the JSON contract between the Next.js frontend and the
+planned FastAPI service. The backend currently exposes only a process health
+endpoint, while the application continues using local mock services; no HTTP
+provider is active.
 
 The API uses `/api/v1`, opaque string IDs, snake_case JSON fields, and ISO 8601
 UTC timestamps. Binary media is never embedded in JSON. Authentication is out
@@ -42,7 +43,7 @@ All paths below are relative to `/api/v1`.
 
 | Resource | Method and path | Result |
 | --- | --- | --- |
-| Health | `GET /health` | Process health; not provider proof |
+| Health | `GET /health` | Process health and build identity; not provider proof |
 | Projects | `GET /projects` | Cursor-paged projects |
 |  | `POST /projects` | Create project and default chapter |
 |  | `GET /projects/{project_id}` | Project with chapters and scenes |

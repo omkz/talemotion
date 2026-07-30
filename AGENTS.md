@@ -1,54 +1,61 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
+## Project Structure
 
-Talemotion is a frontend-only Next.js prototype for AI video generation. App Router pages live in `src/app/`; keep route files thin and place feature logic in `src/components/`. Components are grouped by domain, such as `projects/`, `storyboard/`, and `generation/`; reusable primitives belong in `shared/` or `ui/`.
+TaleMotion has two application roots. `frontend/` contains the Next.js App
+Router application, domain types, feature components, and current mock service
+layer. `backend/` contains the FastAPI service and future worker code.
+API documentation remains in `docs/`.
 
-Domain types live in `src/types/`. Static fixtures are in `src/lib/mock-data/`, while `src/lib/mock-api/` simulates backend operations and persistence. UI code should call the mock API rather than import mock data directly. Static browser assets belong in `public/`, and global theme tokens are defined in `src/app/globals.css`.
+Within the frontend, routes live in `frontend/src/app/`, feature logic in
+`frontend/src/components/`, domain types in `frontend/src/types/`, fixtures in
+`frontend/src/lib/mock-data/`, and simulated services in
+`frontend/src/lib/mock-api/`. Preserve the mock-service boundary.
 
-## Build, Test, and Development Commands
+Within the backend, versioned routes belong in `backend/app/api/`, core
+configuration in `backend/app/core/`, future tasks in `backend/app/tasks/`,
+pipelines in `backend/app/pipelines/`, and provider adapters in
+`backend/app/integrations/`. The API server and worker share this codebase but
+run as separate processes.
 
-Use pnpm, matching `pnpm-lock.yaml`.
+## Development and Verification
 
-- `pnpm install` installs dependencies.
-- `pnpm dev` starts the local Next.js development server.
-- `pnpm run lint` runs ESLint with Next.js and TypeScript rules.
-- `pnpm exec tsc --noEmit` performs a standalone strict type check.
-- `pnpm build` creates a production build and catches integration/type errors.
-- `pnpm start` serves an existing production build.
+Run frontend commands from `frontend/`:
 
-## Coding Style & Naming Conventions
+- `pnpm install`
+- `pnpm run lint`
+- `npx tsc --noEmit`
+- `pnpm build`
 
-Write strict TypeScript and functional React components. Follow the existing style: two-space indentation, double quotes, semicolons, and Tailwind utilities. Use kebab-case filenames (`scene-card.tsx`), PascalCase component/type names, and camelCase functions and variables. Import project modules through the `@/*` alias. Preserve the `mock-api` boundary and reuse shared/UI components before adding variants.
+Run backend commands from `backend/`:
 
-## Testing Guidelines
+- `uv sync`
+- `uv run ruff check .`
+- `uv run pytest`
+- `uv run fastapi dev app/main.py`
 
-No automated test framework or coverage threshold is configured. Before submitting changes, run lint, the TypeScript check, and a production build. If tests are introduced, colocate them with the feature using names such as `scene-card.test.tsx`, and add the runner command to `package.json`. Manually verify affected workflows and describe that verification in the pull request.
+Do not launch a development server solely for visual inspection. Do not use
+browser automation unless the user explicitly requests it.
 
-## Commit & Pull Request Guidelines
+## Coding Conventions
 
-The current history uses a concise, imperative summary (for example, `Initial Talemotion AI video prototype (Next.js + shadcn/ui)`). Keep commit subjects focused and include context in the body when behavior is non-obvious.
+Frontend code uses strict TypeScript, functional React, two-space indentation,
+double quotes, semicolons, kebab-case filenames, PascalCase components/types,
+and the `@/*` alias. Keep route files thin and reuse shared components.
 
-Pull requests should explain the user-visible change, identify affected routes/components, and list validation commands. Link relevant issues and include screenshots or recordings for visual changes. Call out changes to mock behavior, persistence, or dependencies explicitly.
+Backend code targets Python 3.12 and follows Ruff formatting and lint rules.
+Use snake_case for modules/functions, PascalCase for classes, type annotations
+for public functions, and Pydantic models for API boundaries.
 
-## Configuration & Prototype Constraints
+## Tests and Changes
 
-Do not commit secrets or generated `.next/` output. This prototype has no real backend, authentication, storage, or AI provider; implement plausible simulated behavior through `src/lib/mock-api/`. Preserve the dark cinematic theme and restrained amber accent unless a design change is explicitly requested.
+Frontend changes must pass lint, TypeScript, and production build checks.
+Backend changes must pass Ruff and pytest. Keep commits focused and use concise
+imperative subjects. Pull requests should explain behavior, list validation
+commands, and include visual evidence only when browser review was explicitly
+performed.
 
-
-## Browser policy
-
-Do not use Chrome DevTools, Playwright, Puppeteer, browser automation,
-screenshots, computer-use tools, or browser-related MCP servers unless
-the user explicitly requests browser testing.
-
-Do not launch a development server solely for visual inspection.
-
-For normal frontend work, verify changes using:
-
-- pnpm run lint
-- npx tsc --noEmit
-- pnpm build
-
-When browser verification might be useful, report it as a manual
-verification step instead of running browser tools automatically.
+Never commit secrets, local environment files, build output, virtual
+environments, or dependency directories. Do not add real providers, storage,
+databases, queues, authentication, or rendering infrastructure without an
+explicit task.

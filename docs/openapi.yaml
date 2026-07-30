@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: TaleMotion API
   version: 0.1.0
-  description: Contract for the future FastAPI service. No backend is implemented yet.
+  description: Contract for the TaleMotion FastAPI service. Only the health endpoint is implemented.
 servers:
   - url: http://localhost:8000/api/v1
     description: Local FastAPI development example
@@ -22,10 +22,10 @@ paths:
     get:
       tags: [Health]
       operationId: getHealth
-      summary: Report API process and configuration health
+      summary: Report API process health and build identity
       responses:
         "200":
-          description: Health snapshot; not proof that providers are operational
+          description: Process health; not proof that providers are operational
           content:
             application/json:
               schema:
@@ -1032,15 +1032,8 @@ components:
             request_id: { type: string }
     HealthResponse:
       type: object
-      required: [status, version, services]
+      required: [status, service, version]
       properties:
-        status: { type: string, enum: [ok, degraded] }
+        status: { type: string, enum: [ok] }
+        service: { type: string, example: talemotion-backend }
         version: { type: string }
-        services:
-          type: object
-          required: [database, queue, backblaze_b2, genblaze]
-          properties:
-            database: { type: string, example: unknown }
-            queue: { type: string, example: unknown }
-            backblaze_b2: { type: string, example: not_configured }
-            genblaze: { type: string, example: not_configured }

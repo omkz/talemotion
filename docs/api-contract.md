@@ -3,9 +3,9 @@
 ## Purpose and boundaries
 
 This document defines the JSON contract between the Next.js frontend and the
-planned FastAPI service. The backend currently exposes only a process health
-endpoint, while the application continues using local mock services; no HTTP
-provider is active.
+planned FastAPI service. The backend currently implements health plus
+in-memory Project, Chapter, and Scene resources. The application continues
+using local mock services; no frontend HTTP provider is active.
 
 The API uses `/api/v1`, opaque string IDs, snake_case JSON fields, and ISO 8601
 UTC timestamps. Binary media is never embedded in JSON. Authentication is out
@@ -29,6 +29,11 @@ Every project contains chapters. A short-form project receives a default
 long-form projects, child jobs, and chapter-level coordination without a data
 migration.
 
+Project, chapter, and scene data currently lives in one process-local,
+lock-protected repository. Repository values cross the boundary as copies and
+all state is reset when the backend process restarts. This is a development
+implementation, not durable storage.
+
 Storyboard regeneration uses the same
 `POST /projects/{project_id}/storyboard` endpoint. Supplying
 `additional_instruction` starts a new storyboard job; the backend retains
@@ -48,10 +53,11 @@ All paths below are relative to `/api/v1`.
 |  | `POST /projects` | Create project and default chapter |
 |  | `GET /projects/{project_id}` | Project with chapters and scenes |
 |  | `PATCH /projects/{project_id}` | Update client-editable metadata |
-|  | `DELETE /projects/{project_id}` | Soft delete initially; may become async |
+|  | `DELETE /projects/{project_id}` | Soft-delete the in-memory project |
+| Chapters | `GET /chapters/{chapter_id}` | Chapter with ordered scenes |
 | Storyboard | `POST /projects/{project_id}/storyboard` | Start generation/regeneration job |
 | Scenes | `GET /scenes/{scene_id}` | Get scene |
-|  | `PATCH /scenes/{scene_id}` | Update title, narration, prompt, duration, position |
+|  | `PATCH /scenes/{scene_id}` | Update title, narration, prompt, and duration |
 |  | `DELETE /scenes/{scene_id}` | Delete scene |
 |  | `POST /scenes/{scene_id}/duplicate` | Duplicate scene |
 |  | `POST /chapters/{chapter_id}/scenes` | Add scene |
@@ -168,7 +174,7 @@ Create project
 
 ## Mock-to-HTTP migration
 
-`src/lib/api` contains DTOs, Zod validation for critical responses, domain
+`frontend/src/lib/api` contains DTOs, Zod validation for critical responses, domain
 mappers, `VideoProjectApi`, `MockVideoProjectApi`, `HttpVideoProjectApi`, and a
 polling helper. `videoProjectApi` explicitly uses the mock adapter. Existing
 components still import the established mock functions, so behavior and timer
@@ -185,5 +191,5 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1
 
 Mock mode is the default when variables are absent. HTTP mode performs no
 request until a method is called and must never fall back silently to mock
-data. FastAPI, persistence, queues, provider integrations, authentication, and
+data. Durable persistence, queues, provider integrations, authentication, and
 render workers remain future implementation work.

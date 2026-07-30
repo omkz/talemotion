@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: TaleMotion API
   version: 0.1.0
-  description: Contract for the TaleMotion FastAPI service. Only the health endpoint is implemented.
+  description: Contract for TaleMotion. Health, projects, chapters, and scenes are implemented with process-local storage; generation and media resources remain future work.
 servers:
   - url: http://localhost:8000/api/v1
     description: Local FastAPI development example
@@ -10,6 +10,7 @@ security: []
 tags:
   - name: Health
   - name: Projects
+  - name: Chapters
   - name: Storyboard
   - name: Scenes
   - name: Generation
@@ -169,6 +170,23 @@ paths:
                 $ref: "#/components/schemas/GenerationJobResponse"
         "409": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
+        default: { $ref: "#/components/responses/Error" }
+  /chapters/{chapter_id}:
+    parameters:
+      - { $ref: "#/components/parameters/ChapterId" }
+    get:
+      tags: [Chapters]
+      operationId: getChapter
+      summary: Get an internal chapter and its ordered scenes
+      responses:
+        "200":
+          description: Chapter
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChapterResponse"
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
         default: { $ref: "#/components/responses/Error" }
   /scenes/{scene_id}:
     parameters:
@@ -661,7 +679,10 @@ components:
       enum: [draft, storyboard_ready, generating, ready, failed, deleted]
     SceneStatus:
       type: string
-      enum: [draft, queued, generating_image, generating_video, generating_narration, uploading_assets, completed, failed]
+      enum: [draft, ready, generating, completed, failed]
+    ChapterStatus:
+      type: string
+      enum: [draft, ready, generating, completed, failed]
     AssetType:
       type: string
       enum: [image, video, audio, subtitle, thumbnail, final_render]
@@ -711,13 +732,13 @@ components:
         - { $ref: "#/components/schemas/ProductAdvertisementBrief" }
       discriminator:
         propertyName: mode
-    OutputConfig:
+    OutputConfiguration:
       type: object
-      required: [title, language, duration_seconds, aspect_ratio, visual_style, narration_style, scene_count, captions_enabled, background_music_enabled]
+      required: [title, language, duration, aspect_ratio, visual_style, narration_style, scene_count, captions_enabled, music_enabled]
       properties:
         title: { type: string }
         language: { type: string }
-        duration_seconds: { type: integer, enum: [30, 45, 60] }
+        duration: { type: integer, enum: [30, 45, 60] }
         aspect_ratio: { type: string, enum: ["9:16", "16:9"] }
         visual_style: { type: string }
         narration_style: { type: string }
@@ -726,39 +747,56 @@ components:
             - { const: auto }
             - { type: integer, enum: [4, 5, 6] }
         captions_enabled: { type: boolean }
-        background_music_enabled: { type: boolean }
-    CreateProjectRequest:
-      type: object
-      required: [mode, brief, output_config]
-      properties:
-        mode: { $ref: "#/components/schemas/VideoMode" }
-        brief: { $ref: "#/components/schemas/VideoBrief" }
-        output_config: { $ref: "#/components/schemas/OutputConfig" }
-        template_id: { type: [string, "null"] }
-    UpdateProjectRequest:
+        music_enabled: { type: boolean }
+    UpdateOutputConfiguration:
       type: object
       properties:
         title: { type: string }
+        language: { type: string }
+        duration: { type: integer, enum: [30, 45, 60] }
+        aspect_ratio: { type: string, enum: ["9:16", "16:9"] }
+        visual_style: { type: string }
+        narration_style: { type: string }
+        scene_count:
+          oneOf:
+            - { const: auto }
+            - { type: integer, enum: [4, 5, 6] }
+        captions_enabled: { type: boolean }
+        music_enabled: { type: boolean }
+    CreateProjectRequest:
+      type: object
+      required: [mode, brief, output]
+      properties:
+        mode: { $ref: "#/components/schemas/VideoMode" }
         brief: { $ref: "#/components/schemas/VideoBrief" }
-        output_config: { $ref: "#/components/schemas/OutputConfig" }
+        output: { $ref: "#/components/schemas/OutputConfiguration" }
+        template_id: { type: [string, "null"] }
+        historical_accuracy_note: { type: [string, "null"] }
+    UpdateProjectRequest:
+      type: object
+      properties:
+        brief: { $ref: "#/components/schemas/VideoBrief" }
+        output: { $ref: "#/components/schemas/UpdateOutputConfiguration" }
         historical_accuracy_note: { type: [string, "null"] }
     ProjectResponse:
       type: object
-      required: [id, mode, status, brief, output_config, chapters, thumbnail_url, historical_accuracy_note, generation_progress, created_at, updated_at]
+      required: [id, mode, status, brief, output, chapters, template_id, thumbnail_url, historical_accuracy_note, generation_progress, created_at, updated_at, deleted_at]
       properties:
         id: { type: string }
         mode: { $ref: "#/components/schemas/VideoMode" }
         status: { $ref: "#/components/schemas/ProjectStatus" }
         brief: { $ref: "#/components/schemas/VideoBrief" }
-        output_config: { $ref: "#/components/schemas/OutputConfig" }
+        output: { $ref: "#/components/schemas/OutputConfiguration" }
         chapters:
           type: array
           items: { $ref: "#/components/schemas/ChapterResponse" }
+        template_id: { type: [string, "null"] }
         thumbnail_url: { type: [string, "null"], format: uri }
         historical_accuracy_note: { type: [string, "null"] }
         generation_progress: { type: integer, minimum: 0, maximum: 100 }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
+        deleted_at: { type: [string, "null"], format: date-time }
     ProjectListResponse:
       type: object
       required: [items, next_cursor, has_more]
@@ -770,18 +808,23 @@ components:
         has_more: { type: boolean }
     ChapterResponse:
       type: object
-      required: [id, project_id, title, position, scenes]
+      required: [id, project_id, title, summary, position, target_duration_seconds, status, scenes, created_at, updated_at]
       properties:
         id: { type: string }
         project_id: { type: string }
         title: { type: string }
+        summary: { type: [string, "null"] }
         position: { type: integer, minimum: 1 }
+        target_duration_seconds: { type: integer, minimum: 1 }
+        status: { $ref: "#/components/schemas/ChapterStatus" }
         scenes:
           type: array
           items: { $ref: "#/components/schemas/SceneResponse" }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     SceneResponse:
       type: object
-      required: [id, chapter_id, position, title, narration, visual_prompt, duration_seconds, status, active_version, versions, current_job, approved, created_at, updated_at]
+      required: [id, chapter_id, position, title, narration, visual_prompt, duration_seconds, status, created_at, updated_at]
       properties:
         id: { type: string }
         chapter_id: { type: string }
@@ -789,17 +832,8 @@ components:
         title: { type: string }
         narration: { type: string }
         visual_prompt: { type: string }
-        duration_seconds: { type: number, minimum: 0 }
+        duration_seconds: { type: integer, minimum: 1, maximum: 60 }
         status: { $ref: "#/components/schemas/SceneStatus" }
-        active_version: { type: integer, minimum: 1 }
-        versions:
-          type: array
-          items: { $ref: "#/components/schemas/SceneVersionResponse" }
-        current_job:
-          oneOf:
-            - { $ref: "#/components/schemas/GenerationJobResponse" }
-            - { type: "null" }
-        approved: { type: boolean }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
     SceneVersionResponse:
@@ -821,7 +855,7 @@ components:
         title: { type: string }
         narration: { type: string }
         visual_prompt: { type: string }
-        duration_seconds: { type: number, minimum: 0 }
+        duration_seconds: { type: integer, minimum: 1, maximum: 60 }
         position: { type: integer, minimum: 1 }
     UpdateSceneRequest:
       type: object
@@ -829,8 +863,7 @@ components:
         title: { type: string }
         narration: { type: string }
         visual_prompt: { type: string }
-        duration_seconds: { type: number, minimum: 0 }
-        position: { type: integer, minimum: 1 }
+        duration_seconds: { type: integer, minimum: 1, maximum: 60 }
     ReorderScenesRequest:
       type: object
       required: [scene_ids]

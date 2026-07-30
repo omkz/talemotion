@@ -12,8 +12,9 @@ docs/       API contract and OpenAPI specification
 ```
 
 The frontend remains fully functional in mock mode. The backend currently
-implements only a health endpoint; it does not contain real generation,
-storage, database, queue, or rendering integrations.
+implements health plus in-memory project, chapter, and scene resources. It
+does not contain real generation, storage, database, queue, or rendering
+integrations.
 
 ## Frontend development
 
@@ -46,8 +47,9 @@ uv run pytest
 uv run fastapi dev app/main.py
 ```
 
-The API is served at `http://localhost:8000`; its current endpoint is
-`GET /api/v1/health`. A production-style command is:
+The API is served at `http://localhost:8000`. Implemented resources live under
+`/api/v1/health`, `/api/v1/projects`, `/api/v1/chapters`, and
+`/api/v1/scenes`. A production-style command is:
 
 ```bash
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000

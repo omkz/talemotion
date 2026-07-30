@@ -1,8 +1,9 @@
 # TaleMotion Backend
 
-Minimal Python 3.12 FastAPI foundation for TaleMotion. It currently exposes
-only `GET /api/v1/health`; no database, queue, AI provider, storage provider,
-or rendering pipeline is implemented.
+Python 3.12 FastAPI foundation for TaleMotion. It currently exposes health
+plus in-memory project, chapter, and scene resources under `/api/v1`.
+Repository state is process-local and resets on restart. No database, queue,
+AI provider, storage provider, or rendering pipeline is implemented.
 
 ## Development
 

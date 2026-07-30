@@ -1,0 +1,273 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { NARRATION_STYLES, VISUAL_STYLES } from "@/lib/mock-data";
+import type { ModeBrief, OutputConfig } from "@/types";
+
+export interface BriefSaveValues {
+  brief: ModeBrief;
+  visualStyle: string;
+  narrationStyle: string;
+  captionsEnabled: boolean;
+  musicEnabled: boolean;
+  historicalAccuracyNote: string | null;
+}
+
+interface EditBriefSheetProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  brief: ModeBrief;
+  output: OutputConfig;
+  historicalAccuracyNote: string | null;
+  onSave: (next: BriefSaveValues) => void;
+}
+
+export function EditBriefSheet({
+  open,
+  onOpenChange,
+  brief,
+  output,
+  historicalAccuracyNote,
+  onSave,
+}: EditBriefSheetProps) {
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
+        <SheetHeader>
+          <SheetTitle>Edit brief</SheetTitle>
+          <SheetDescription>
+            Update the original input and settings used to generate this video.
+          </SheetDescription>
+        </SheetHeader>
+
+        {open && (
+          <EditBriefForm
+            brief={brief}
+            output={output}
+            historicalAccuracyNote={historicalAccuracyNote}
+            onCancel={() => onOpenChange(false)}
+            onSave={(values) => {
+              onSave(values);
+              onOpenChange(false);
+            }}
+          />
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+function EditBriefForm({
+  brief,
+  output,
+  historicalAccuracyNote,
+  onSave,
+  onCancel,
+}: {
+  brief: ModeBrief;
+  output: OutputConfig;
+  historicalAccuracyNote: string | null;
+  onSave: (values: BriefSaveValues) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState<ModeBrief>(brief);
+  const [visualStyle, setVisualStyle] = useState(output.visualStyle);
+  const [narrationStyle, setNarrationStyle] = useState(output.narrationStyle);
+  const [captionsEnabled, setCaptionsEnabled] = useState(output.captionsEnabled);
+  const [musicEnabled, setMusicEnabled] = useState(output.musicEnabled);
+  const [accuracyNote, setAccuracyNote] = useState(historicalAccuracyNote ?? "");
+
+  const handleSave = () => {
+    onSave({
+      brief: draft,
+      visualStyle,
+      narrationStyle,
+      captionsEnabled,
+      musicEnabled,
+      historicalAccuracyNote: draft.mode === "historical-documentary" ? accuracyNote : historicalAccuracyNote,
+    });
+  };
+
+  return (
+    <>
+      <div className="flex flex-col gap-5 px-4 pb-4">
+        {draft.mode === "historical-documentary" && (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-topic">Topic</Label>
+              <Textarea
+                id="brief-topic"
+                rows={3}
+                value={draft.topic}
+                onChange={(e) => setDraft({ ...draft, topic: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-direction">Additional direction</Label>
+              <Textarea
+                id="brief-direction"
+                rows={3}
+                value={draft.additionalDirection}
+                onChange={(e) => setDraft({ ...draft, additionalDirection: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-sources">Source notes</Label>
+              <Textarea
+                id="brief-sources"
+                rows={2}
+                value={draft.sourceNotes}
+                onChange={(e) => setDraft({ ...draft, sourceNotes: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-accuracy">Historical accuracy note</Label>
+              <Textarea
+                id="brief-accuracy"
+                rows={2}
+                value={accuracyNote}
+                onChange={(e) => setAccuracyNote(e.target.value)}
+              />
+            </div>
+          </>
+        )}
+
+        {draft.mode === "microdrama" && (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-premise">Premise</Label>
+              <Textarea
+                id="brief-premise"
+                rows={3}
+                value={draft.premise}
+                onChange={(e) => setDraft({ ...draft, premise: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-character">Main character</Label>
+              <Textarea
+                id="brief-character"
+                rows={1}
+                value={draft.mainCharacter}
+                onChange={(e) => setDraft({ ...draft, mainCharacter: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-ending">Desired ending</Label>
+              <Textarea
+                id="brief-ending"
+                rows={2}
+                value={draft.desiredEnding}
+                onChange={(e) => setDraft({ ...draft, desiredEnding: e.target.value })}
+              />
+            </div>
+          </>
+        )}
+
+        {draft.mode === "product-advertisement" && (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-product-desc">Product description</Label>
+              <Textarea
+                id="brief-product-desc"
+                rows={3}
+                value={draft.productDescription}
+                onChange={(e) => setDraft({ ...draft, productDescription: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-benefit">Main benefit</Label>
+              <Textarea
+                id="brief-benefit"
+                rows={2}
+                value={draft.mainBenefit}
+                onChange={(e) => setDraft({ ...draft, mainBenefit: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-cta">Call to action</Label>
+              <Textarea
+                id="brief-cta"
+                rows={1}
+                value={draft.callToAction}
+                onChange={(e) => setDraft({ ...draft, callToAction: e.target.value })}
+              />
+            </div>
+          </>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Visual style</Label>
+            <Select value={visualStyle} onValueChange={setVisualStyle}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {VISUAL_STYLES.map((style) => (
+                  <SelectItem key={style} value={style}>
+                    {style}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Narration style</Label>
+            <Select value={narrationStyle} onValueChange={setNarrationStyle}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {NARRATION_STYLES.map((style) => (
+                  <SelectItem key={style} value={style}>
+                    {style}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border border-border p-3">
+          <Label htmlFor="brief-captions" className="text-sm font-normal">
+            Captions enabled
+          </Label>
+          <Switch id="brief-captions" checked={captionsEnabled} onCheckedChange={setCaptionsEnabled} />
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-border p-3">
+          <Label htmlFor="brief-music" className="text-sm font-normal">
+            Background music enabled
+          </Label>
+          <Switch id="brief-music" checked={musicEnabled} onCheckedChange={setMusicEnabled} />
+        </div>
+      </div>
+
+      <SheetFooter>
+        <Button variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button onClick={handleSave}>Save changes</Button>
+      </SheetFooter>
+    </>
+  );
+}

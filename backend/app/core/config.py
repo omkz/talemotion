@@ -19,6 +19,10 @@ class AppConfig(BaseSettings):
     b2_key_id: SecretStr | None = None
     b2_application_key: SecretStr | None = None
     gmi_api_key: SecretStr | None = None
+    openai_api_key: SecretStr | None = None
+    talemotion_storyboard_provider: str = "gmicloud"
+    talemotion_storyboard_model: str | None = None
+    talemotion_storyboard_max_attempts: int = 3
     talemotion_image_model: str = "seedream-5.0-lite"
     talemotion_video_model: str = "wan2.6-i2v"
     talemotion_video_durations: str = "5"
@@ -60,5 +64,15 @@ class AppConfig(BaseSettings):
             "GMI_API_KEY": self.gmi_api_key,
         }
         return [name for name, value in configured.items() if not value]
+
+    def missing_storyboard_configuration(self) -> list[str]:
+        missing: list[str] = []
+        if self.talemotion_storyboard_provider != "gmicloud":
+            missing.append("TALEMOTION_STORYBOARD_PROVIDER=gmicloud")
+        if not self.talemotion_storyboard_model:
+            missing.append("TALEMOTION_STORYBOARD_MODEL")
+        if not self.gmi_api_key:
+            missing.append("GMI_API_KEY")
+        return missing
 
 settings = AppConfig()

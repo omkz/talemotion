@@ -26,6 +26,7 @@ from app.schemas.scene_run import (
     SceneVideoCompletedEvent,
     SceneVideoProgressEvent,
 )
+from app.services.jobs import aggregate_parent_job
 
 
 def _set_job_state(
@@ -107,6 +108,7 @@ def execute_scene_media_job(
             )
             job.completed_at = utc_now()
             session.commit()
+            aggregate_parent_job(jobs, job.parent_job_id)
             return {"job_id": job_id, "status": "cancelled"}
         if job.status is not JobStatus.QUEUED or not job.scene_id:
             return {"job_id": job_id, "status": job.status.value}
@@ -131,6 +133,7 @@ def execute_scene_media_job(
         job.started_at = utc_now()
         scene.status = SceneStatus.GENERATING
         session.commit()
+        aggregate_parent_job(jobs, job.parent_job_id)
 
         request = SceneRunRequest(
             project_id=job.project_id,
@@ -158,6 +161,7 @@ def execute_scene_media_job(
                     job.completed_at = utc_now()
                     scene.status = SceneStatus.READY
                     session.commit()
+                    aggregate_parent_job(jobs, job.parent_job_id)
                     return {"job_id": job_id, "status": "cancelled"}
 
                 if event.type == "scene_image.started":
@@ -218,6 +222,7 @@ def execute_scene_media_job(
                         message=event.message,
                     )
                     session.commit()
+                    aggregate_parent_job(jobs, job.parent_job_id)
                     return {
                         "job_id": job_id,
                         "status": "failed",
@@ -234,6 +239,8 @@ def execute_scene_media_job(
                     job.result_payload = dict(result_payload)
                     scene.status = SceneStatus.COMPLETED
                 session.commit()
+                if event.type == "scene_run.completed":
+                    aggregate_parent_job(jobs, job.parent_job_id)
             if job.status is JobStatus.RUNNING:
                 _fail_job(
                     job,
@@ -242,6 +249,7 @@ def execute_scene_media_job(
                     message="The media pipeline ended without a terminal result.",
                 )
                 session.commit()
+                aggregate_parent_job(jobs, job.parent_job_id)
         except Exception:
             _fail_job(
                 job,
@@ -250,6 +258,7 @@ def execute_scene_media_job(
                 message="Scene generation failed unexpectedly.",
             )
             session.commit()
+            aggregate_parent_job(jobs, job.parent_job_id)
             return {"job_id": job_id, "status": "failed", **result_payload}
         return {"job_id": job_id, "status": job.status.value, **result_payload}
 

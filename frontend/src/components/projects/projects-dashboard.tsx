@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { videoProjectApi } from "@/lib/api/provider";
+import { listPersistedProjects } from "@/lib/api/persisted-projects";
+import { realSceneGenerationEnabled } from "@/lib/api/scene-generation-jobs";
 import type { VideoProject } from "@/types";
 import { ProjectCard } from "./project-card";
 import { ProjectFilters, type ProjectFilter } from "./project-filters";
@@ -19,8 +21,10 @@ export function ProjectsDashboard() {
 
   useEffect(() => {
     let cancelled = false;
-    videoProjectApi
-      .listProjects()
+    const request = realSceneGenerationEnabled
+      ? listPersistedProjects()
+      : videoProjectApi.listProjects();
+    request
       .then((data) => {
         if (!cancelled) setProjects(data);
       })

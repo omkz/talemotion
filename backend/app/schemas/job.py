@@ -1,7 +1,17 @@
 from datetime import datetime
 
+from pydantic import Field
+
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.schemas.common import StrictSchema
+
+
+class GenerationJobChildResponse(StrictSchema):
+    id: str
+    scene_id: str | None
+    status: JobStatus
+    progress: int
+    result_asset_id: str | None = None
 
 
 class GenerationJobResponse(StrictSchema):
@@ -24,9 +34,21 @@ class GenerationJobResponse(StrictSchema):
     started_at: datetime | None
     completed_at: datetime | None
     updated_at: datetime
+    children: list[GenerationJobChildResponse] = Field(default_factory=list)
 
 
 def job_to_response(job: GenerationJob) -> GenerationJobResponse:
+    children_by_scene: dict[str, GenerationJob] = {}
+    children_without_scene: list[GenerationJob] = []
+    for child in sorted(job.children, key=lambda value: (value.created_at, value.id)):
+        if child.scene_id is None:
+            children_without_scene.append(child)
+        else:
+            children_by_scene[child.scene_id] = child
+    current_children = [
+        *children_by_scene.values(),
+        *children_without_scene,
+    ]
     return GenerationJobResponse(
         id=job.id,
         project_id=job.project_id,
@@ -47,4 +69,19 @@ def job_to_response(job: GenerationJob) -> GenerationJobResponse:
         started_at=job.started_at,
         completed_at=job.completed_at,
         updated_at=job.updated_at,
+        children=[
+            GenerationJobChildResponse(
+                id=child.id,
+                scene_id=child.scene_id,
+                status=child.status,
+                progress=child.progress,
+                result_asset_id=(
+                    child.result_payload.get("asset_id")
+                    if child.result_payload
+                    and isinstance(child.result_payload.get("asset_id"), str)
+                    else None
+                ),
+            )
+            for child in current_children
+        ],
     )

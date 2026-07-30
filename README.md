@@ -3,15 +3,16 @@
 TaleMotion is a cinematic video-production workspace organized as:
 
 ```text
-frontend/   Next.js application (currently uses mock services)
+frontend/   Next.js application with opt-in persisted generation workflows
 backend/    FastAPI API, PostgreSQL persistence, and Celery worker
 docs/       API contract and OpenAPI specification
 ```
 
-The backend foundation persists projects, chapters, scenes, generation-job
-metadata, assets, and renders. It does **not** yet implement Genblaze,
-Backblaze B2, narration, scene media generation, FFmpeg rendering, or final
-video production.
+The backend persists projects, validated four-scene historical storyboards,
+parent/child generation jobs, and generated asset metadata. Celery workers use
+Genblaze for GMICloud image/video generation and store media plus manifests in
+Backblaze B2. Narration audio, music, captions, FFmpeg rendering, and final
+video production are not implemented.
 
 ## Native infrastructure
 
@@ -59,9 +60,11 @@ uv run celery -A app.core.celery_app worker \
   -Q storyboard,media,rendering,system --loglevel=info
 ```
 
-The only task currently implemented is the safe
+Workers run storyboard planning, scene media generation, and the safe
 `app.tasks.system.database_worker_health` diagnostic. Start the frontend
-separately with `cd frontend && pnpm dev`; it remains in mock API mode.
+separately with `cd frontend && pnpm dev`. Persisted storyboard and generation
+actions are enabled only with `NEXT_PUBLIC_REAL_SCENE_GENERATION=true`; other
+frontend features keep their existing mock boundary.
 
 See [docs/api-contract.md](docs/api-contract.md) for implementation status and
 the testing workflow.

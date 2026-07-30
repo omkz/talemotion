@@ -15,6 +15,8 @@ import { StoryboardSection } from "@/components/storyboard/storyboard-section";
 import { GenerationSection } from "@/components/generation/generation-section";
 import { FinalVideoSection } from "@/components/final-video/final-video-section";
 import { MAJAPAHIT_REGENERATION_EXAMPLE } from "@/lib/mock-data";
+import { getPersistedProject } from "@/lib/api/persisted-projects";
+import { realSceneGenerationEnabled } from "@/lib/api/scene-generation-jobs";
 import type { ModeBrief, Render, Scene, VideoProject } from "@/types";
 import { BriefSection } from "./brief-section";
 import { ProjectHeader, type SaveState } from "./project-header";
@@ -41,23 +43,34 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    getProject(projectId).then((data) => {
-      if (cancelled) return;
-      if (!data) {
+    const loadProject = realSceneGenerationEnabled
+      ? getPersistedProject(projectId)
+      : getProject(projectId);
+    loadProject
+      .then((data) => {
+        if (cancelled) return;
+        if (!data) {
+          setNotFound(true);
+          return;
+        }
+        setProject(data);
+        setRender(buildInitialRender(data));
+        setActiveTab(initialTabFor(data));
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
         setNotFound(true);
-        return;
-      }
-      setProject(data);
-      setRender(buildInitialRender(data));
-      setActiveTab(initialTabFor(data));
-    });
+        toast.error(
+          error instanceof Error ? error.message : "Could not load the project.",
+        );
+      });
     return () => {
       cancelled = true;
     };
   }, [projectId]);
 
   useEffect(() => {
-    if (!project) return;
+    if (!project || realSceneGenerationEnabled) return;
     if (!hasLoadedRef.current) {
       hasLoadedRef.current = true;
       return;
@@ -124,6 +137,13 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const handleStoryboardScenesChange = (nextScenes: Scene[]) => {
     handleScenesChange(nextScenes);
     markDirty();
+  };
+
+  const refreshPersistedProject = async () => {
+    if (!realSceneGenerationEnabled) return;
+    const refreshed = await getPersistedProject(projectId);
+    if (!refreshed) throw new Error("The persisted project could not be found.");
+    setProject(refreshed);
   };
 
   const handleBriefSave = (next: {
@@ -239,11 +259,13 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
               aspectRatio={project.output.aspectRatio}
               onScenesChange={handleStoryboardScenesChange}
               markDirty={markDirty}
+              onRefreshProject={refreshPersistedProject}
             />
           </TabsContent>
 
           <TabsContent value="generate">
             <GenerationSection
+              projectId={project.id}
               scenes={scenes}
               aspectRatio={project.output.aspectRatio}
               onScenesChange={handleStoryboardScenesChange}
@@ -251,6 +273,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
               onGenerationStart={() =>
                 setProject((prev) => (prev && prev.status !== "ready" ? { ...prev, status: "generating" } : prev))
               }
+              onRefreshProject={refreshPersistedProject}
               regenerateInstructionPlaceholder={(sceneId) =>
                 project.id === "majapahit" && sceneId === "majapahit-scene-3"
                   ? MAJAPAHIT_REGENERATION_EXAMPLE

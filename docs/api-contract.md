@@ -4,8 +4,8 @@
 
 The `/api/v1` API persists projects, their internal chapters, ordered scenes,
 and generation-job state in PostgreSQL. Redis is the Celery broker, and the
-media worker now executes the real per-scene Genblaze pipeline. Other frontend
-resources remain on their existing provider boundary.
+storyboard worker produces validated four-scene plans, and media workers
+execute the existing real per-scene Genblaze pipeline.
 
 All JSON fields use `snake_case`, IDs are opaque prefixed UUID strings, and
 timestamps are timezone-aware ISO 8601 values. Every new short-form project is
@@ -19,6 +19,8 @@ created atomically with one `Main` chapter at position `1`.
 | `GET /health/dependencies` | Non-secret PostgreSQL and Redis status |
 | `GET`, `POST /projects` | Cursor list or atomically create a project |
 | `GET`, `PATCH`, `DELETE /projects/{id}` | Read, update safe fields, soft-delete |
+| `POST /projects/{id}/storyboard` | Queue structured historical storyboard planning |
+| `POST /projects/{id}/generations` | Queue one parent and four scene-media children |
 | `GET /chapters/{id}` | Chapter with scenes ordered by position |
 | `POST /chapters/{id}/scenes` | Append or insert a scene |
 | `POST /chapters/{id}/scenes/reorder` | Apply a complete scene order |
@@ -27,13 +29,13 @@ created atomically with one `Main` chapter at position `1`.
 | `POST /scenes/{id}/generations` | Commit and enqueue a real scene-media job |
 | `GET /jobs/{id}` | Inspect persisted job state |
 | `POST /jobs/{id}/cancel` | Request cancellation of queued/running work |
-| `POST /jobs/{id}/retry` | Validate retry eligibility |
+| `POST /jobs/{id}/retry` | Create and enqueue a new failed scene-job attempt |
 | `GET /assets/{id}` | Read persisted generated-asset metadata |
 | `POST /assets/{id}/preview-url` | Request a short-lived signed B2 URL |
 
-The generic `/jobs/{id}/retry` endpoint still returns `not_implemented` after
-eligibility checks. The workspace retries scene media by creating a new
-generation job, preserving the prior job and asset history.
+Retries preserve failed job history. A replacement child points to the same
+parent; parent aggregation uses the latest attempt for each scene and never
+regenerates already successful siblings.
 
 ## Persistence and lifecycle
 
@@ -84,6 +86,21 @@ The Celery queues are `storyboard`, `media`, `rendering`, and `system`.
 `app.tasks.media.generate_scene_media` is routed to `media`; API requests never
 execute Genblaze or paid provider work in the FastAPI process.
 
+## Historical storyboard and Generate All
+
+Only `historical_documentary`, `9:16`, 30/45-second projects are supported.
+Storyboard jobs use `TALEMOTION_STORYBOARD_MODEL` through the Genblaze
+GMICloud chat connector. The structured response must contain exactly four
+ordered scenes whose durations total the requested duration within two
+seconds. Invalid output is retried at most the configured limit; no hardcoded
+storyboard fallback is used.
+
+Generate All creates a `project_generation` parent plus four
+`scene_generation` children. Children run concurrently through Celery's media
+queue and reuse the same B2-backed task as an individual Generate action.
+Parent progress is the persisted completed-child ratio (0/25/50/75/100), and
+`GET /jobs/{id}` includes current child summaries.
+
 ## Real scene media vertical slice
 
 With `NEXT_PUBLIC_REAL_SCENE_GENERATION=true`, Generate posts to
@@ -111,6 +128,6 @@ configurable model slugs are documented in `backend/.env.example`.
 
 ## Explicitly deferred
 
-Automatic storyboard generation, narration, music, FFmpeg/full-project
-rendering, and long-form chapter generation are not part of this vertical
-slice. SSE is not used as the primary generation workflow.
+Narration audio, music, captions, FFmpeg/final rendering, and long-form
+chapter generation are not part of this workflow. SSE is not used as the
+primary generation workflow.

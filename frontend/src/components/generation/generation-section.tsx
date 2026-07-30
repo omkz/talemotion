@@ -8,12 +8,15 @@ import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/empty-state";
 import { generateAllScenes, retryScene } from "@/lib/mock-api";
 import {
+  createProjectGeneration,
   createSceneGeneration,
   getAssetPreviewUrl,
   getPersistedAsset,
+  getPersistedJob,
   pollPersistedJob,
   realSceneGenerationEnabled,
   resultAssetId,
+  retryPersistedJob,
 } from "@/lib/api/scene-generation-jobs";
 import type {
   PersistedAsset,
@@ -31,20 +34,24 @@ import { GenerationDetailsDrawer } from "./generation-details-drawer";
 import { RegenerateSceneDialog } from "./regenerate-scene-dialog";
 
 interface GenerationSectionProps {
+  projectId: string;
   scenes: Scene[];
   aspectRatio: AspectRatio;
   onScenesChange: (scenes: Scene[]) => void;
   markDirty: () => void;
   onGenerationStart?: () => void;
+  onRefreshProject?: () => Promise<void>;
   regenerateInstructionPlaceholder?: (sceneId: string) => string | undefined;
 }
 
 export function GenerationSection({
+  projectId,
   scenes,
   aspectRatio,
   onScenesChange,
   markDirty,
   onGenerationStart,
+  onRefreshProject,
   regenerateInstructionPlaceholder,
 }: GenerationSectionProps) {
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
@@ -55,6 +62,8 @@ export function GenerationSection({
   const [retryableScenes, setRetryableScenes] = useState<Set<string>>(new Set());
   const cancelRef = useRef<() => void>(() => {});
   const realControllers = useRef(new Map<string, AbortController>());
+  const failedJobIds = useRef(new Map<string, string>());
+  const parentJobIdRef = useRef<string | null>(null);
   const scenesRef = useRef(scenes);
 
   useEffect(() => {
@@ -84,11 +93,26 @@ export function GenerationSection({
   ) => {
     const scene = scenesRef.current.find((item) => item.id === sceneId);
     if (!scene) return;
-    const versions = scene.versions.map((version) =>
-      version.version === scene.activeVersion ? { ...version, asset } : version,
+    const matchingVersion = scene.versions.find(
+      (version) => version.version === asset.version,
     );
+    const versions = matchingVersion
+      ? scene.versions.map((version) =>
+          version.version === asset.version ? { ...version, asset } : version,
+        )
+      : [
+          ...scene.versions,
+          {
+            version: asset.version,
+            visualPrompt: scene.visualPrompt,
+            instruction: null,
+            asset,
+            createdAt: asset.createdAt,
+          },
+        ];
     patchScene(sceneId, {
       versions,
+      activeVersion: asset.version,
       ...(complete ? { status: "completed" as const, currentJob: null } : {}),
     });
   };
@@ -144,14 +168,19 @@ export function GenerationSection({
       : ("waiting" as const);
   };
 
-  const handleRealGeneration = async (scene: Scene) => {
+  const handleRealGeneration = async (
+    scene: Scene,
+    failedJobId?: string,
+  ) => {
     realControllers.current.get(scene.id)?.abort();
     const controller = new AbortController();
     realControllers.current.set(scene.id, controller);
     onGenerationStart?.();
     let displayedAssetId: string | null = null;
     try {
-      const queuedJob = await createSceneGeneration(scene.id, controller.signal);
+      const queuedJob = failedJobId
+        ? await retryPersistedJob(failedJobId, controller.signal)
+        : await createSceneGeneration(scene.id, controller.signal);
       patchScene(scene.id, {
         status: "waiting",
         currentJob: {
@@ -217,8 +246,20 @@ export function GenerationSection({
           next.delete(scene.id);
           return next;
         });
+        failedJobIds.current.delete(scene.id);
         toast.success(`Scene ${scene.position} media generated`);
+        if (failedJobId && parentJobIdRef.current) {
+          const parent = await getPersistedJob(
+            parentJobIdRef.current,
+            controller.signal,
+          );
+          setOverallProgress(parent.progress);
+          if (parent.status === "completed") {
+            toast.success("All scenes ready");
+          }
+        }
       } else {
+        failedJobIds.current.set(scene.id, completedJob.id);
         setRetryableScenes((currentSet) => new Set(currentSet).add(scene.id));
         toast.error(
           completedJob.error_message ?? "Scene generation did not complete.",
@@ -249,9 +290,112 @@ export function GenerationSection({
     }
   };
 
+  const handleRealGenerateAll = async () => {
+    const controller = new AbortController();
+    realControllers.current.set(`project:${projectId}`, controller);
+    setIsGeneratingAll(true);
+    setOverallProgress(0);
+    onGenerationStart?.();
+    try {
+      const queued = await createProjectGeneration(projectId, controller.signal);
+      parentJobIdRef.current = queued.id;
+      const completed = await pollPersistedJob(queued.id, {
+        signal: controller.signal,
+        onUpdate: async (parent) => {
+          setOverallProgress(parent.progress);
+          for (const child of parent.children) {
+            if (!child.scene_id) continue;
+            const sceneId = child.scene_id;
+            const scene = scenesRef.current.find(
+              (item) => item.id === sceneId,
+            );
+            if (!scene) continue;
+            if (child.result_asset_id) {
+              const existing = scene.versions.some(
+                (version) => version.asset?.id === child.result_asset_id,
+              );
+              if (!existing) {
+                await showPersistedAsset(
+                  scene,
+                  child.result_asset_id,
+                  controller.signal,
+                  child.status === "completed",
+                );
+              }
+            }
+            const stage =
+              child.status === "completed"
+                ? "completed"
+                : child.status === "failed" || child.status === "cancelled"
+                  ? "failed"
+                  : child.status === "queued"
+                    ? "waiting"
+                    : "generating-image";
+            if (child.status !== "completed") {
+              patchScene(sceneId, {
+                status: stage,
+                currentJob: {
+                  id: child.id,
+                  sceneId,
+                  stage,
+                  progress: child.progress,
+                  errorMessage:
+                    child.status === "failed" ? "Scene generation failed." : null,
+                  startedAt: new Date().toISOString(),
+                  completedAt:
+                    child.status === "failed" || child.status === "cancelled"
+                      ? new Date().toISOString()
+                      : null,
+                },
+              });
+            }
+            if (child.status === "failed" || child.status === "cancelled") {
+              failedJobIds.current.set(sceneId, child.id);
+              setRetryableScenes(
+                (currentSet) => new Set(currentSet).add(sceneId),
+              );
+            }
+          }
+        },
+      });
+      if (completed.status === "completed") {
+        await onRefreshProject?.();
+        for (const child of completed.children) {
+          if (!child.scene_id || !child.result_asset_id) continue;
+          const scene = scenesRef.current.find(
+            (item) => item.id === child.scene_id,
+          );
+          if (scene) {
+            await showPersistedAsset(
+              scene,
+              child.result_asset_id,
+              controller.signal,
+              true,
+            );
+          }
+        }
+        toast.success("All scenes ready");
+      } else {
+        toast.error(
+          completed.error_message ??
+            "One or more scenes could not be generated.",
+        );
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        toast.error(
+          error instanceof Error ? error.message : "Generate All failed.",
+        );
+      }
+    } finally {
+      realControllers.current.delete(`project:${projectId}`);
+      setIsGeneratingAll(false);
+    }
+  };
+
   const handleGenerateAll = () => {
     if (realSceneGenerationEnabled) {
-      toast.info("Generate scenes individually for the real media pipeline.");
+      void handleRealGenerateAll();
       return;
     }
     const alreadyCompleted = new Set(
@@ -284,7 +428,7 @@ export function GenerationSection({
 
   const handleRetry = (scene: Scene) => {
     if (realSceneGenerationEnabled) {
-      void handleRealGeneration(scene);
+      void handleRealGeneration(scene, failedJobIds.current.get(scene.id));
       return;
     }
     retryScene(scene.id, (status, job, asset) => {
@@ -353,23 +497,28 @@ export function GenerationSection({
         </div>
         <Button
           onClick={handleGenerateAll}
-          disabled={isGeneratingAll || realSceneGenerationEnabled}
+          disabled={isGeneratingAll || scenes.length !== 4}
         >
           {isGeneratingAll ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (
             <Sparkles className="size-4" />
           )}
-          {realSceneGenerationEnabled
-            ? "Generate scenes individually"
-            : "Generate All Scenes"}
+          Generate All Scenes
         </Button>
       </div>
 
       {isGeneratingAll && (
         <div className="space-y-1.5 rounded-lg border border-border p-3.5">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            <span>Overall generation progress</span>
+            <span>
+              Generating scene{" "}
+              {Math.min(
+                scenes.length,
+                Math.floor((overallProgress / 100) * scenes.length) + 1,
+              )}{" "}
+              of {scenes.length}
+            </span>
             <span>{overallProgress}%</span>
           </div>
           <Progress value={overallProgress} className="h-2" />

@@ -36,7 +36,8 @@ CREATE DATABASE talemotion_test OWNER talemotion;
 
 Do not run these statements over existing resources.
 
-For real scene media, also configure `GMI_API_KEY`, `B2_REGION`,
+For real storyboard planning and scene media, also configure `GMI_API_KEY`,
+`TALEMOTION_STORYBOARD_MODEL`, `B2_REGION`,
 `B2_BUCKET_NAME`, `B2_KEY_ID`, and `B2_APPLICATION_KEY`. Model slugs and
 supported clip durations are configurable through `TALEMOTION_IMAGE_MODEL`,
 `TALEMOTION_VIDEO_MODEL`, and `TALEMOTION_VIDEO_DURATIONS`. The health endpoint
@@ -78,6 +79,17 @@ running to exercise the Redis → worker → PostgreSQL diagnostic path.
 
 ## Persistent scene media workflow
 
+`POST /api/v1/projects/{project_id}/storyboard` commits a storyboard job to
+PostgreSQL and dispatches `app.tasks.storyboard.generate_project_storyboard`
+to the `storyboard` queue. The configured Genblaze GMICloud chat connector
+returns a validated four-scene structure; only valid output is persisted.
+Existing scenes require `replace_existing=true`.
+
+`POST /api/v1/projects/{project_id}/generations` creates one persisted parent
+job and four child scene jobs, then dispatches the existing media task once
+per scene. The parent derives progress from the latest child for each scene,
+so a failed child can be retried without recreating successful work.
+
 `POST /api/v1/scenes/{scene_id}/generations` loads the persisted scene,
 commits a queued job, dispatches `app.tasks.media.generate_scene_media` to the
 `media` queue, and returns HTTP 202. The frontend polls
@@ -96,6 +108,6 @@ talemotion/projects/{safe_project}/scenes/{safe_scene}/runs/{run_id}/
 Signed preview URLs expire after approximately 15 minutes. Credentials and
 raw provider errors are never stored in job payloads or returned by the API.
 
-Automatic storyboards, narration, music, full-project rendering, scene
-full-project rendering, and long-form generation remain unimplemented. The
-frontend uses this workflow only when `NEXT_PUBLIC_REAL_SCENE_GENERATION=true`.
+Narration audio, music, captions, full-project rendering, and long-form
+generation remain unimplemented. The frontend uses these workflows only when
+`NEXT_PUBLIC_REAL_SCENE_GENERATION=true`.

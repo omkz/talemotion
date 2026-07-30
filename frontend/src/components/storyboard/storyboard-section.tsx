@@ -14,6 +14,11 @@ import {
   resetStoryboard,
   updateScene,
 } from "@/lib/mock-api";
+import {
+  createStoryboardGeneration,
+  pollPersistedJob,
+  realSceneGenerationEnabled,
+} from "@/lib/api/scene-generation-jobs";
 import type { AspectRatio, Scene } from "@/types";
 import { SceneCard } from "./scene-card";
 import { SceneEditDialog } from "./scene-edit-dialog";
@@ -24,6 +29,7 @@ interface StoryboardSectionProps {
   aspectRatio: AspectRatio;
   onScenesChange: (scenes: Scene[]) => void;
   markDirty: () => void;
+  onRefreshProject?: () => Promise<void>;
 }
 
 export function StoryboardSection({
@@ -32,6 +38,7 @@ export function StoryboardSection({
   aspectRatio,
   onScenesChange,
   markDirty,
+  onRefreshProject,
 }: StoryboardSectionProps) {
   const [editingScene, setEditingScene] = useState<Scene | null>(null);
   const [deletingSceneId, setDeletingSceneId] = useState<string | null>(null);
@@ -78,10 +85,31 @@ export function StoryboardSection({
   const handleRegenerate = async () => {
     setIsRegenerating(true);
     try {
+      if (realSceneGenerationEnabled) {
+        const queued = await createStoryboardGeneration(
+          projectId,
+          scenes.length > 0,
+        );
+        const completed = await pollPersistedJob(queued.id, {
+          onUpdate: () => undefined,
+        });
+        if (completed.status !== "completed") {
+          throw new Error(
+            completed.error_message ?? "Storyboard generation failed.",
+          );
+        }
+        await onRefreshProject?.();
+        toast.success("Four storyboard scenes are ready");
+        return;
+      }
       const nextScenes = await generateStoryboard(projectId);
       onScenesChange(nextScenes);
       markDirty();
       toast.success("Storyboard regenerated");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Storyboard generation failed.",
+      );
     } finally {
       setIsRegenerating(false);
     }
@@ -98,21 +126,39 @@ export function StoryboardSection({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleAddScene} disabled={isBusy}>
-            <Plus className="size-3.5" />
-            Add Scene
-          </Button>
-          <Button variant="outline" size="sm" onClick={handleReset} disabled={isBusy || scenes.length === 0}>
-            <RotateCcw className="size-3.5" />
-            Reset
-          </Button>
+          {!realSceneGenerationEnabled && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleAddScene}
+              disabled={isBusy}
+            >
+              <Plus className="size-3.5" />
+              Add Scene
+            </Button>
+          )}
+          {!realSceneGenerationEnabled && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleReset}
+              disabled={isBusy || scenes.length === 0}
+            >
+              <RotateCcw className="size-3.5" />
+              Reset
+            </Button>
+          )}
           <Button size="sm" onClick={handleRegenerate} disabled={isRegenerating}>
             {isRegenerating ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
               <Sparkles className="size-3.5" />
             )}
-            Regenerate Storyboard
+            {isRegenerating
+              ? "Planning storyboard"
+              : scenes.length > 0
+                ? "Regenerate Storyboard"
+                : "Generate Storyboard"}
           </Button>
         </div>
       </div>
@@ -121,11 +167,30 @@ export function StoryboardSection({
         <EmptyState
           icon={Film}
           title="No scenes yet"
-          description="Add your first scene to start building this storyboard."
+          description={
+            realSceneGenerationEnabled
+              ? "Generate four historically grounded scenes from this project's topic."
+              : "Add your first scene to start building this storyboard."
+          }
           action={
-            <Button onClick={handleAddScene} disabled={isBusy}>
-              <Plus className="size-4" />
-              Add Scene
+            <Button
+              onClick={
+                realSceneGenerationEnabled ? handleRegenerate : handleAddScene
+              }
+              disabled={isBusy || isRegenerating}
+            >
+              {isRegenerating ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : realSceneGenerationEnabled ? (
+                <Sparkles className="size-4" />
+              ) : (
+                <Plus className="size-4" />
+              )}
+              {realSceneGenerationEnabled
+                ? isRegenerating
+                  ? "Planning storyboard"
+                  : "Generate Storyboard"
+                : "Add Scene"}
             </Button>
           }
         />
@@ -139,6 +204,7 @@ export function StoryboardSection({
               onEdit={() => setEditingScene(scene)}
               onDuplicate={() => handleDuplicate(scene.id)}
               onDelete={() => setDeletingSceneId(scene.id)}
+              readOnly={realSceneGenerationEnabled}
             />
           ))}
         </div>

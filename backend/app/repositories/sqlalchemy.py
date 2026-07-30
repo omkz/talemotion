@@ -41,6 +41,17 @@ class ProjectRepository:
             statement = statement.where(Project.status != ProjectStatus.DELETED)
         return self.session.scalar(statement)
 
+    def get_for_update(self, project_id: str) -> Project | None:
+        return self.session.scalar(
+            select(Project)
+            .where(
+                Project.id == project_id,
+                Project.status != ProjectStatus.DELETED,
+            )
+            .options(*_project_graph())
+            .with_for_update()
+        )
+
     def list(
         self,
         *,
@@ -95,6 +106,10 @@ class ProjectRepository:
             )
         )
 
+    def delete_chapter_scenes(self, chapter: Chapter) -> None:
+        chapter.scenes.clear()
+        self.session.flush()
+
     def commit(self) -> None:
         self.session.commit()
 
@@ -115,6 +130,8 @@ class JobRepository:
         parent_job_id: str | None = None,
         current_stage: str = "queued",
         input_payload: dict[str, object] | None = None,
+        retry_count: int = 0,
+        max_retries: int = 2,
     ) -> GenerationJob:
         job = GenerationJob(
             project_id=project_id,
@@ -125,6 +142,8 @@ class JobRepository:
             progress=0,
             current_stage=current_stage,
             input_payload=input_payload or {},
+            retry_count=retry_count,
+            max_retries=max_retries,
         )
         self.session.add(job)
         self.session.flush()
@@ -161,6 +180,49 @@ class JobRepository:
                 ),
             )
             .order_by(GenerationJob.created_at.desc())
+        )
+
+    def active_for_project(
+        self,
+        project_id: str,
+        job_type: JobType,
+    ) -> GenerationJob | None:
+        return self.session.scalar(
+            select(GenerationJob)
+            .where(
+                GenerationJob.project_id == project_id,
+                GenerationJob.type == job_type,
+                GenerationJob.status.in_(
+                    (
+                        JobStatus.QUEUED,
+                        JobStatus.RUNNING,
+                        JobStatus.CANCEL_REQUESTED,
+                    )
+                ),
+            )
+            .order_by(GenerationJob.created_at.desc())
+        )
+
+    def children(self, parent_job_id: str) -> list[GenerationJob]:
+        return list(
+            self.session.scalars(
+                select(GenerationJob)
+                .where(GenerationJob.parent_job_id == parent_job_id)
+                .order_by(
+                    GenerationJob.created_at.asc(),
+                    GenerationJob.id.asc(),
+                )
+            )
+        )
+
+    def latest_children(self, parent_job_id: str) -> list[GenerationJob]:
+        latest: dict[str, GenerationJob] = {}
+        for child in reversed(self.children(parent_job_id)):
+            if child.scene_id and child.scene_id not in latest:
+                latest[child.scene_id] = child
+        return sorted(
+            latest.values(),
+            key=lambda child: (child.created_at, child.id),
         )
 
     def commit(self) -> None:

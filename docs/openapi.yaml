@@ -99,6 +99,46 @@ paths:
       responses:
         "204": {description: Project soft-deleted}
         "404": {$ref: "#/components/responses/Error"}
+  /projects/{project_id}/storyboard:
+    post:
+      tags: [Projects]
+      summary: Queue a four-scene historical storyboard
+      parameters:
+        - {$ref: "#/components/parameters/ProjectId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateStoryboardRequest"}
+      responses:
+        "202":
+          description: Persisted queued storyboard job
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/GenerationJobResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /projects/{project_id}/generations:
+    post:
+      tags: [Projects]
+      summary: Queue media generation for all four storyboard scenes
+      parameters:
+        - {$ref: "#/components/parameters/ProjectId"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateProjectGenerationRequest"}
+      responses:
+        "202":
+          description: Parent job with four queued child summaries
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/GenerationJobResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
   /chapters/{chapter_id}:
     get:
       tags: [Chapters]
@@ -246,11 +286,16 @@ paths:
   /jobs/{job_id}/retry:
     post:
       tags: [Jobs]
-      summary: Check retry eligibility
-      description: Eligible jobs return not_implemented until task dispatch exists.
+      summary: Retry a failed or cancelled scene-generation job
+      description: Creates a new child attempt and preserves prior job history.
       parameters:
         - {$ref: "#/components/parameters/JobId"}
       responses:
+        "200":
+          description: New queued scene-generation job
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/GenerationJobResponse"}
         "409": {$ref: "#/components/responses/Error"}
         "501": {$ref: "#/components/responses/Error"}
   /assets/{asset_id}:
@@ -413,6 +458,16 @@ components:
       properties:
         duration_seconds: {type: integer, minimum: 1, maximum: 60, default: 5}
         generate_video: {type: boolean, default: true}
+    CreateStoryboardRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        replace_existing: {type: boolean, default: false}
+    CreateProjectGenerationRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        generate_video: {type: boolean, default: true}
     UpdateSceneRequest:
       type: object
       additionalProperties: false
@@ -441,7 +496,7 @@ components:
             updated_at: {type: string, format: date-time}
     GenerationJobResponse:
       type: object
-      required: [id, project_id, type, status, progress, input_payload, retry_count, max_retries, created_at, updated_at]
+      required: [id, project_id, type, status, progress, input_payload, retry_count, max_retries, created_at, updated_at, children]
       properties:
         id: {type: string}
         project_id: {type: string}
@@ -462,6 +517,18 @@ components:
         started_at: {type: [string, "null"], format: date-time}
         completed_at: {type: [string, "null"], format: date-time}
         updated_at: {type: string, format: date-time}
+        children:
+          type: array
+          items: {$ref: "#/components/schemas/GenerationJobChildResponse"}
+    GenerationJobChildResponse:
+      type: object
+      required: [id, scene_id, status, progress, result_asset_id]
+      properties:
+        id: {type: string}
+        scene_id: {type: [string, "null"]}
+        status: {$ref: "#/components/schemas/JobStatus"}
+        progress: {type: integer, minimum: 0, maximum: 100}
+        result_asset_id: {type: [string, "null"]}
     AssetResponse:
       type: object
       required: [id, project_id, type, status, version, generation_parameters, created_at, updated_at]

@@ -11,15 +11,32 @@ export type PersistedJobStatus =
   | "cancel_requested"
   | "cancelled";
 
-export interface PersistedGenerationJob {
+export interface PersistedJobChild {
   id: string;
   scene_id: string | null;
+  status: PersistedJobStatus;
+  progress: number;
+  result_asset_id: string | null;
+}
+
+export interface PersistedGenerationJob {
+  id: string;
+  project_id: string;
+  scene_id: string | null;
+  parent_job_id: string | null;
+  type:
+    | "storyboard"
+    | "scene_generation"
+    | "scene_regeneration"
+    | "project_generation"
+    | "render";
   status: PersistedJobStatus;
   progress: number;
   current_stage: string | null;
   result_payload: Record<string, unknown> | null;
   error_code: string | null;
   error_message: string | null;
+  children: PersistedJobChild[];
 }
 
 export interface PersistedAsset {
@@ -58,11 +75,39 @@ export function createSceneGeneration(
   });
 }
 
+export function createStoryboardGeneration(
+  projectId: string,
+  replaceExisting: boolean,
+  signal?: AbortSignal,
+): Promise<PersistedGenerationJob> {
+  return client().post(`/projects/${projectId}/storyboard`, {
+    body: { replace_existing: replaceExisting },
+    signal,
+  });
+}
+
+export function createProjectGeneration(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<PersistedGenerationJob> {
+  return client().post(`/projects/${projectId}/generations`, {
+    body: { generate_video: true },
+    signal,
+  });
+}
+
 export function getPersistedJob(
   jobId: string,
   signal?: AbortSignal,
 ): Promise<PersistedGenerationJob> {
   return client().get(`/jobs/${jobId}`, { signal });
+}
+
+export function retryPersistedJob(
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<PersistedGenerationJob> {
+  return client().post(`/jobs/${jobId}/retry`, { signal });
 }
 
 export function getPersistedAsset(

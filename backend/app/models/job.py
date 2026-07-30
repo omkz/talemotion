@@ -48,6 +48,12 @@ class GenerationJob(Base):
     __table_args__ = (
         CheckConstraint("progress BETWEEN 0 AND 100", name="progress_range"),
         Index("ix_generation_jobs_created_at", "created_at"),
+        Index(
+            "ix_generation_jobs_parent_scene_created_at",
+            "parent_job_id",
+            "scene_id",
+            "created_at",
+        ),
     )
 
     id: Mapped[str] = mapped_column(

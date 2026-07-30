@@ -12,9 +12,17 @@ interface SceneCardProps {
   onEdit: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  readOnly?: boolean;
 }
 
-export function SceneCard({ scene, aspectRatio, onEdit, onDuplicate, onDelete }: SceneCardProps) {
+export function SceneCard({
+  scene,
+  aspectRatio,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  readOnly = false,
+}: SceneCardProps) {
   return (
     <Card className="gap-0 overflow-hidden p-0 sm:flex-row">
       <div className="w-full shrink-0 sm:w-40">
@@ -54,7 +62,7 @@ export function SceneCard({ scene, aspectRatio, onEdit, onDuplicate, onDelete }:
           </div>
         </div>
 
-        <div className="mt-auto flex items-center gap-1 pt-1">
+        {!readOnly && <div className="mt-auto flex items-center gap-1 pt-1">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-sm" onClick={onEdit} aria-label={`Edit scene ${scene.position}`}>
@@ -90,7 +98,7 @@ export function SceneCard({ scene, aspectRatio, onEdit, onDuplicate, onDelete }:
             </TooltipTrigger>
             <TooltipContent>Delete scene</TooltipContent>
           </Tooltip>
-        </div>
+        </div>}
       </div>
     </Card>
   );

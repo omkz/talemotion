@@ -11,12 +11,19 @@ All JSON fields use `snake_case`, IDs are opaque prefixed UUID strings, and
 timestamps are timezone-aware ISO 8601 values. Every new short-form project is
 created atomically with one `Main` chapter at position `1`.
 
+All product resources require a cookie session. Passwords use salted `scrypt`;
+the database stores only password hashes and SHA-256 session-token hashes.
+Authenticated mutations also require `X-CSRF-Token` to match the readable
+SameSite CSRF cookie. Browser clients never store access tokens in localStorage.
+
 ## Implemented endpoints
 
 | Method and path | Behavior |
 | --- | --- |
 | `GET /health` | API process identity |
 | `GET /health/dependencies` | Non-secret PostgreSQL and Redis status |
+| `POST /auth/register`, `POST /auth/login` | Create an account or session |
+| `POST /auth/logout`, `GET /auth/me` | Revoke or inspect the current session |
 | `GET`, `POST /projects` | Cursor list or atomically create a project |
 | `GET`, `PATCH`, `DELETE /projects/{id}` | Read, update safe fields, soft-delete |
 | `POST /projects/{id}/storyboard` | Queue structured historical storyboard planning |
@@ -44,6 +51,21 @@ with a PostgreSQL advisory transaction lock, so repeated requests return the
 original job rather than enqueueing duplicate work. Retries preserve failed job
 history and completed B2 assets. Project retries enqueue only failed or
 cancelled scenes and never regenerate successful siblings.
+
+## Ownership and authorization
+
+`Project`, `GenerationJob`, `Asset`, and `Render` rows carry a non-null
+`user_id`. Chapters and scenes inherit ownership through their project. Every
+HTTP repository is scoped to the authenticated user; cross-user project,
+chapter, scene, job, asset, render, and signed-preview requests return `404`.
+Celery workers use the persisted job/project ownership and propagate it to
+new asset records.
+
+Migration `0006_authentication_ownership` preserves pre-authentication
+development records by assigning them to the locked
+`development@talemotion.local` migration user. It does not delete legacy
+projects. Reassign those records explicitly in local administration if they
+need to become accessible to a registered account.
 
 ## Persistence and lifecycle
 

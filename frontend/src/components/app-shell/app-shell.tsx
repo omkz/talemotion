@@ -1,16 +1,30 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Menu, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { SidebarContent } from "./sidebar-content";
 import { PRODUCT_ICON, PRODUCT_NAME } from "./nav-items";
+import { useAuth } from "@/components/auth/auth-provider";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const { loading, user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  if (pathname === "/login" || pathname === "/register") {
+    return children;
+  }
+  if (loading || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-sm text-muted-foreground">
+        Loading workspace…
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen w-full bg-background">

@@ -24,6 +24,7 @@ from app.models.project import enum_values
 if TYPE_CHECKING:
     from app.models.project import Project
     from app.models.scene import Scene
+    from app.models.user import User
 
 
 class JobType(StrEnum):
@@ -60,6 +61,10 @@ class GenerationJob(Base):
         String(64),
         primary_key=True,
         default=lambda: new_resource_id("job"),
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        index=True,
     )
     project_id: Mapped[str] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"),
@@ -120,6 +125,7 @@ class GenerationJob(Base):
     )
 
     project: Mapped[Project] = relationship(back_populates="jobs")
+    user: Mapped[User] = relationship(back_populates="jobs")
     scene: Mapped[Scene | None] = relationship(back_populates="jobs")
     parent: Mapped[GenerationJob | None] = relationship(
         remote_side=[id],

@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, Query, Response, status
 
-from app.api.dependencies import DatabaseSession
+from app.api.dependencies import CurrentAuth, DatabaseSession, MutationAuth
 from app.core.errors import ApiError
 from app.models.project import ProjectStatus, VideoMode
 from app.repositories.sqlalchemy import JobRepository, ProjectRepository
@@ -34,14 +34,16 @@ ERROR_RESPONSES = {
 }
 
 
-def _projects(session: DatabaseSession) -> ProjectService:
-    return ProjectService(ProjectRepository(session))
+def _projects(session: DatabaseSession, user_id: str) -> ProjectService:
+    return ProjectService(ProjectRepository(session, user_id))
 
 
-def _generation(session: DatabaseSession) -> ProjectGenerationService:
+def _generation(
+    session: DatabaseSession, user_id: str
+) -> ProjectGenerationService:
     return ProjectGenerationService(
-        ProjectRepository(session),
-        JobRepository(session),
+        ProjectRepository(session, user_id),
+        JobRepository(session, user_id),
     )
 
 
@@ -65,13 +67,14 @@ def enqueue_project_children(job_ids: list[str]) -> None:
 @router.get("", response_model=ProjectListResponse, responses=ERROR_RESPONSES)
 def list_projects(
     session: DatabaseSession,
+    auth: CurrentAuth,
     project_status: Annotated[ProjectStatus | None, Query(alias="status")] = None,
     mode: VideoMode | None = None,
     search: str | None = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     cursor: str | None = None,
 ) -> ProjectListResponse:
-    page = _projects(session).list_projects(
+    page = _projects(session, auth.user.id).list_projects(
         status=project_status,
         mode=mode,
         search=search,
@@ -93,14 +96,24 @@ def list_projects(
     responses=ERROR_RESPONSES,
 )
 def create_project(
-    request: CreateProjectRequest, session: DatabaseSession
+    request: CreateProjectRequest,
+    session: DatabaseSession,
+    auth: MutationAuth,
 ) -> ProjectResponse:
-    return project_to_response(_projects(session).create_project(request))
+    return project_to_response(
+        _projects(session, auth.user.id).create_project(request)
+    )
 
 
 @router.get("/{project_id}", response_model=ProjectResponse, responses=ERROR_RESPONSES)
-def get_project(project_id: str, session: DatabaseSession) -> ProjectResponse:
-    return project_to_response(_projects(session).get_project(project_id))
+def get_project(
+    project_id: str,
+    session: DatabaseSession,
+    auth: CurrentAuth,
+) -> ProjectResponse:
+    return project_to_response(
+        _projects(session, auth.user.id).get_project(project_id)
+    )
 
 
 @router.patch(
@@ -110,8 +123,11 @@ def update_project(
     project_id: str,
     request: UpdateProjectRequest,
     session: DatabaseSession,
+    auth: MutationAuth,
 ) -> ProjectResponse:
-    return project_to_response(_projects(session).update_project(project_id, request))
+    return project_to_response(
+        _projects(session, auth.user.id).update_project(project_id, request)
+    )
 
 
 @router.delete(
@@ -119,8 +135,12 @@ def update_project(
     status_code=status.HTTP_204_NO_CONTENT,
     responses=ERROR_RESPONSES,
 )
-def delete_project(project_id: str, session: DatabaseSession) -> Response:
-    _projects(session).soft_delete_project(project_id)
+def delete_project(
+    project_id: str,
+    session: DatabaseSession,
+    auth: MutationAuth,
+) -> Response:
+    _projects(session, auth.user.id).soft_delete_project(project_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -134,9 +154,10 @@ def create_storyboard(
     project_id: str,
     request: CreateStoryboardRequest,
     session: DatabaseSession,
+    auth: MutationAuth,
     idempotency_key: Annotated[str | None, Header()] = None,
 ) -> GenerationJobResponse:
-    service = _generation(session)
+    service = _generation(session, auth.user.id)
     queued = service.queue_storyboard(
         project_id,
         request,
@@ -166,9 +187,10 @@ def create_project_generation(
     project_id: str,
     request: CreateProjectGenerationRequest,
     session: DatabaseSession,
+    auth: MutationAuth,
     idempotency_key: Annotated[str | None, Header()] = None,
 ) -> GenerationJobResponse:
-    service = _generation(session)
+    service = _generation(session, auth.user.id)
     queued = service.queue_all_scenes(
         project_id,
         request,

@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.asset import Asset, AssetStatus, AssetType
+from app.models.project import Project
 from app.models.render import Render, RenderStatus
 
 
@@ -23,7 +24,10 @@ def test_asset_and_render_foundation_records_persist_without_fake_media(
     ).json()
 
     with session_factory() as session:
+        persisted_project = session.get(Project, project["id"])
+        assert persisted_project is not None
         asset = Asset(
+            user_id=persisted_project.user_id,
             project_id=project["id"],
             scene_id=scene["id"],
             type=AssetType.IMAGE,
@@ -34,6 +38,7 @@ def test_asset_and_render_foundation_records_persist_without_fake_media(
         session.add(asset)
         session.flush()
         render = Render(
+            user_id=persisted_project.user_id,
             project_id=project["id"],
             version=1,
             status=RenderStatus.QUEUED,

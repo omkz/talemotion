@@ -2,7 +2,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, Response, status
 
-from app.api.dependencies import DatabaseSession
+from app.api.dependencies import CurrentAuth, DatabaseSession, MutationAuth
 from app.core.errors import ApiError
 from app.repositories.sqlalchemy import JobRepository, ProjectRepository
 from app.schemas.chapter import ChapterResponse, chapter_to_response
@@ -32,14 +32,16 @@ ERROR_RESPONSES = {
 }
 
 
-def _scenes(session: DatabaseSession) -> SceneService:
-    return SceneService(ProjectRepository(session))
+def _scenes(session: DatabaseSession, user_id: str) -> SceneService:
+    return SceneService(ProjectRepository(session, user_id))
 
 
-def _generation(session: DatabaseSession) -> SceneGenerationService:
+def _generation(
+    session: DatabaseSession, user_id: str
+) -> SceneGenerationService:
     return SceneGenerationService(
-        ProjectRepository(session),
-        JobRepository(session),
+        ProjectRepository(session, user_id),
+        JobRepository(session, user_id),
     )
 
 
@@ -58,9 +60,14 @@ def enqueue_scene_media(job_id: str) -> None:
     responses=ERROR_RESPONSES,
 )
 def create_scene(
-    chapter_id: str, request: CreateSceneRequest, session: DatabaseSession
+    chapter_id: str,
+    request: CreateSceneRequest,
+    session: DatabaseSession,
+    auth: MutationAuth,
 ) -> SceneResponse:
-    return scene_to_response(_scenes(session).add_scene(chapter_id, request))
+    return scene_to_response(
+        _scenes(session, auth.user.id).add_scene(chapter_id, request)
+    )
 
 
 @router.post(
@@ -72,26 +79,40 @@ def reorder_scenes(
     chapter_id: str,
     request: ReorderScenesRequest,
     session: DatabaseSession,
+    auth: MutationAuth,
 ) -> ChapterResponse:
     return chapter_to_response(
-        _scenes(session).reorder_scenes(chapter_id, request.scene_ids)
+        _scenes(session, auth.user.id).reorder_scenes(
+            chapter_id, request.scene_ids
+        )
     )
 
 
 @router.get(
     "/scenes/{scene_id}", response_model=SceneResponse, responses=ERROR_RESPONSES
 )
-def get_scene(scene_id: str, session: DatabaseSession) -> SceneResponse:
-    return scene_to_response(_scenes(session).get_scene(scene_id))
+def get_scene(
+    scene_id: str,
+    session: DatabaseSession,
+    auth: CurrentAuth,
+) -> SceneResponse:
+    return scene_to_response(
+        _scenes(session, auth.user.id).get_scene(scene_id)
+    )
 
 
 @router.patch(
     "/scenes/{scene_id}", response_model=SceneResponse, responses=ERROR_RESPONSES
 )
 def update_scene(
-    scene_id: str, request: UpdateSceneRequest, session: DatabaseSession
+    scene_id: str,
+    request: UpdateSceneRequest,
+    session: DatabaseSession,
+    auth: MutationAuth,
 ) -> SceneResponse:
-    return scene_to_response(_scenes(session).update_scene(scene_id, request))
+    return scene_to_response(
+        _scenes(session, auth.user.id).update_scene(scene_id, request)
+    )
 
 
 @router.delete(
@@ -99,8 +120,12 @@ def update_scene(
     status_code=status.HTTP_204_NO_CONTENT,
     responses=ERROR_RESPONSES,
 )
-def delete_scene(scene_id: str, session: DatabaseSession) -> Response:
-    _scenes(session).delete_scene(scene_id)
+def delete_scene(
+    scene_id: str,
+    session: DatabaseSession,
+    auth: MutationAuth,
+) -> Response:
+    _scenes(session, auth.user.id).delete_scene(scene_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -110,8 +135,14 @@ def delete_scene(scene_id: str, session: DatabaseSession) -> Response:
     status_code=status.HTTP_201_CREATED,
     responses=ERROR_RESPONSES,
 )
-def duplicate_scene(scene_id: str, session: DatabaseSession) -> SceneResponse:
-    return scene_to_response(_scenes(session).duplicate_scene(scene_id))
+def duplicate_scene(
+    scene_id: str,
+    session: DatabaseSession,
+    auth: MutationAuth,
+) -> SceneResponse:
+    return scene_to_response(
+        _scenes(session, auth.user.id).duplicate_scene(scene_id)
+    )
 
 
 @router.post(
@@ -125,9 +156,10 @@ def create_scene_generation(
     scene_id: str,
     request: CreateSceneGenerationRequest,
     session: DatabaseSession,
+    auth: MutationAuth,
     idempotency_key: Annotated[str | None, Header()] = None,
 ) -> GenerationJobResponse:
-    service = _generation(session)
+    service = _generation(session, auth.user.id)
     queued = service.queue(
         scene_id,
         request,
@@ -158,9 +190,10 @@ def create_scene_regeneration(
     scene_id: str,
     request: CreateSceneRegenerationRequest,
     session: DatabaseSession,
+    auth: MutationAuth,
     idempotency_key: Annotated[str | None, Header()] = None,
 ) -> GenerationJobResponse:
-    service = _generation(session)
+    service = _generation(session, auth.user.id)
     queued = service.queue(
         scene_id,
         CreateSceneGenerationRequest(

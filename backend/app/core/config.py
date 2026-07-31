@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import SecretStr
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,12 +37,29 @@ class AppConfig(BaseSettings):
     ffmpeg_timeout_seconds: int = 900
     queued_job_timeout_seconds: int = 1800
     running_job_timeout_seconds: int = 7200
+    auth_secret_key: SecretStr = SecretStr("development-only-change-me")
+    session_cookie_name: str = "talemotion_session"
+    csrf_cookie_name: str = "talemotion_csrf"
+    session_ttl_days: int = 30
+    session_cookie_secure: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def validate_auth_configuration(self) -> "AppConfig":
+        if (
+            self.app_env == "production"
+            and self.auth_secret_key.get_secret_value()
+            == "development-only-change-me"
+        ):
+            raise ValueError(
+                "AUTH_SECRET_KEY must be configured outside development."
+            )
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -51,6 +68,10 @@ class AppConfig(BaseSettings):
             for origin in self.cors_origins.split(",")
             if origin.strip()
         ]
+
+    @property
+    def secure_session_cookie(self) -> bool:
+        return self.session_cookie_secure or self.app_env == "production"
 
     @property
     def supported_video_durations(self) -> frozenset[int]:

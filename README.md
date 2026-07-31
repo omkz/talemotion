@@ -17,6 +17,10 @@ restores current job and render state from PostgreSQL after reload. Run Celery
 beat with the workers so abandoned queued or heartbeat-stale jobs are finalized
 without deleting completed assets.
 
+TaleMotion uses server-side cookie sessions. Password and session tokens are
+never returned or stored in browser localStorage; all product resources are
+scoped to their owning user, and mutations use CSRF protection.
+
 ## Native infrastructure
 
 PostgreSQL and Redis run as native Linux services:

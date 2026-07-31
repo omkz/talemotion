@@ -14,6 +14,17 @@ export interface ApiRequestOptions {
   idempotencyKey?: string;
 }
 
+function readCookie(name: string): string | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const prefix = `${encodeURIComponent(name)}=`;
+  const value = document.cookie
+    .split("; ")
+    .find((part) => part.startsWith(prefix));
+  return value ? decodeURIComponent(value.slice(prefix.length)) : null;
+}
+
 export class ApiClient {
   readonly baseUrl: string;
 
@@ -59,6 +70,12 @@ export class ApiClient {
     if (options.idempotencyKey) {
       headers.set("Idempotency-Key", options.idempotencyKey);
     }
+    if (method !== "GET") {
+      const csrfToken = readCookie("talemotion_csrf");
+      if (csrfToken) {
+        headers.set("X-CSRF-Token", csrfToken);
+      }
+    }
 
     const response = await fetch(url, {
       method,
@@ -68,6 +85,7 @@ export class ApiClient {
           ? undefined
           : JSON.stringify(options.body),
       signal: options.signal,
+      credentials: "include",
     });
 
     if (response.status === 204) {

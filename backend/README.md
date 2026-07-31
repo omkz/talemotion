@@ -50,6 +50,11 @@ Final rendering additionally uses `TALEMOTION_TTS_PROVIDER`,
 `FFMPEG_BINARY` defaults to `ffmpeg`; the executable must be installed on the
 worker host.
 
+Set `AUTH_SECRET_KEY` to a long random value outside local development.
+Production mode rejects the documented development default and always marks
+the session cookie Secure. The browser receives an HTTP-only SameSite session
+cookie plus a readable CSRF cookie; only the token hash is persisted.
+
 ## Run and migrate
 
 ```bash
@@ -119,6 +124,18 @@ talemotion/projects/{safe_project}/scenes/{safe_scene}/runs/{run_id}/
 
 Signed preview URLs expire after approximately 15 minutes. Credentials and
 raw provider errors are never stored in job payloads or returned by the API.
+
+## Authentication and ownership
+
+Register or sign in through `/api/v1/auth/register` and `/api/v1/auth/login`.
+All project/media endpoints require the resulting cookie session, and all
+mutations require the matching `X-CSRF-Token`. Projects, jobs, assets, and
+renders are user-owned; chapters and scenes inherit their project owner.
+Requests for another user's IDs intentionally return `404`.
+
+The ownership migration assigns existing local records to a locked
+`development@talemotion.local` account so no project is deleted. Reassign
+legacy rows deliberately if they should belong to a newly registered user.
 
 ## Final render workflow
 

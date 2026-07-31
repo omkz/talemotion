@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from app.models.asset import Asset
     from app.models.job import GenerationJob
     from app.models.project import Project
+    from app.models.user import User
 
 
 class RenderStatus(StrEnum):
@@ -43,6 +44,10 @@ class Render(Base):
         String(64),
         primary_key=True,
         default=lambda: new_resource_id("render"),
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        index=True,
     )
     project_id: Mapped[str] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"),
@@ -80,5 +85,6 @@ class Render(Base):
     )
 
     project: Mapped[Project] = relationship(back_populates="renders")
+    user: Mapped[User] = relationship(back_populates="renders")
     job: Mapped[GenerationJob | None] = relationship()
     asset: Mapped[Asset | None] = relationship()

@@ -10,6 +10,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { LogOut } from "lucide-react";
+import { useAuth } from "@/components/auth/auth-provider";
 
 interface SidebarContentProps {
   collapsed?: boolean;
@@ -18,6 +20,13 @@ interface SidebarContentProps {
 
 export function SidebarContent({ collapsed = false, onNavigate }: SidebarContentProps) {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
+  const initials = user?.name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase() || "TM";
 
   return (
     <div className="flex h-full flex-col">
@@ -98,13 +107,28 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
           )}
         >
           <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-medium text-secondary-foreground">
-            JD
+            {initials}
           </div>
           {!collapsed && (
             <div className="min-w-0 leading-tight">
-              <p className="truncate text-xs font-medium text-sidebar-foreground">Jordan Diaz</p>
-              <p className="truncate text-[11px] text-sidebar-foreground/50">Free workspace</p>
+              <p className="truncate text-xs font-medium text-sidebar-foreground">
+                {user?.name}
+              </p>
+              <p className="truncate text-[11px] text-sidebar-foreground/50">
+                {user?.email}
+              </p>
             </div>
+          )}
+          {!collapsed && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="ml-auto text-sidebar-foreground/60"
+              onClick={() => void logout()}
+              aria-label="Log out"
+            >
+              <LogOut className="size-3.5" />
+            </Button>
           )}
         </div>
       </div>

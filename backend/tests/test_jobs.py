@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api.v1 import jobs as job_routes
 from app.core.ids import utc_now
 from app.models.job import GenerationJob, JobStatus, JobType
+from app.models.project import Project
 from app.tasks import system as system_tasks
 
 
@@ -22,7 +23,10 @@ def persisted_job(
 ) -> GenerationJob:
     project = client.post("/api/v1/projects", json=project_payload).json()
     with session_factory() as session:
+        persisted_project = session.get(Project, project["id"])
+        assert persisted_project is not None
         job = GenerationJob(
+            user_id=persisted_project.user_id,
             project_id=project["id"],
             type=JobType.STORYBOARD,
             status=status,
@@ -120,7 +124,10 @@ def test_parent_cancellation_propagates_to_active_children(
 ) -> None:
     project = client.post("/api/v1/projects", json=project_payload).json()
     with session_factory() as session:
+        persisted_project = session.get(Project, project["id"])
+        assert persisted_project is not None
         parent = GenerationJob(
+            user_id=persisted_project.user_id,
             project_id=project["id"],
             type=JobType.PROJECT_GENERATION,
             status=JobStatus.RUNNING,
@@ -131,6 +138,7 @@ def test_parent_cancellation_propagates_to_active_children(
         session.add(parent)
         session.flush()
         child = GenerationJob(
+            user_id=persisted_project.user_id,
             project_id=project["id"],
             parent_job_id=parent.id,
             type=JobType.SCENE_GENERATION,

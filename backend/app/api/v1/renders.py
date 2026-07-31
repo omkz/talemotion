@@ -3,7 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Header, status
 
-from app.api.dependencies import DatabaseSession
+from app.api.dependencies import CurrentAuth, DatabaseSession, MutationAuth
 from app.core.config import settings
 from app.core.errors import ApiError
 from app.media.genblaze_scene import GenblazeRenderMediaGateway
@@ -34,11 +34,11 @@ ERROR_RESPONSES = {
 }
 
 
-def _renders(session: DatabaseSession) -> RenderService:
+def _renders(session: DatabaseSession, user_id: str) -> RenderService:
     return RenderService(
-        ProjectRepository(session),
-        JobRepository(session),
-        RenderRepository(session),
+        ProjectRepository(session, user_id),
+        JobRepository(session, user_id),
+        RenderRepository(session, user_id),
     )
 
 
@@ -60,10 +60,11 @@ def enqueue_render(job_id: str) -> None:
 def create_render(
     project_id: str,
     session: DatabaseSession,
+    auth: MutationAuth,
     request: CreateRenderRequest | None = None,
     idempotency_key: Annotated[str | None, Header()] = None,
 ) -> GenerationJobResponse:
-    service = _renders(session)
+    service = _renders(session, auth.user.id)
     queued = service.queue(
         project_id,
         request or CreateRenderRequest(),
@@ -91,11 +92,14 @@ def create_render(
 def list_renders(
     project_id: str,
     session: DatabaseSession,
+    auth: CurrentAuth,
 ) -> RenderListResponse:
     return RenderListResponse(
         items=[
             render_to_response(render)
-            for render in _renders(session).list_for_project(project_id)
+            for render in _renders(session, auth.user.id).list_for_project(
+                project_id
+            )
         ]
     )
 
@@ -105,8 +109,14 @@ def list_renders(
     response_model=RenderResponse,
     responses=ERROR_RESPONSES,
 )
-def get_render(render_id: str, session: DatabaseSession) -> RenderResponse:
-    return render_to_response(_renders(session).get(render_id))
+def get_render(
+    render_id: str,
+    session: DatabaseSession,
+    auth: CurrentAuth,
+) -> RenderResponse:
+    return render_to_response(
+        _renders(session, auth.user.id).get(render_id)
+    )
 
 
 @router.post(
@@ -117,8 +127,9 @@ def get_render(render_id: str, session: DatabaseSession) -> RenderResponse:
 def create_render_preview(
     render_id: str,
     session: DatabaseSession,
+    auth: MutationAuth,
 ) -> SignedPreviewUrlResponse:
-    render = _renders(session).previewable(render_id)
+    render = _renders(session, auth.user.id).previewable(render_id)
     try:
         url = GenblazeRenderMediaGateway(settings).presign_preview(
             render.asset.storage_object_key if render.asset else ""

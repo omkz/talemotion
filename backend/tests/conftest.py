@@ -85,7 +85,7 @@ def session_factory() -> Iterator[sessionmaker[Session]]:
 
 
 @pytest.fixture
-def client(
+def anonymous_client(
     session_factory: sessionmaker[Session],
 ) -> Iterator[TestClient]:
     def override_database() -> Iterator[Session]:
@@ -100,6 +100,25 @@ def client(
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def client(
+    anonymous_client: TestClient,
+) -> Iterator[TestClient]:
+    response = anonymous_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": f"owner-{uuid4().hex}@example.com",
+            "password": "correct horse battery staple",
+            "name": "Test Owner",
+        },
+    )
+    assert response.status_code == 201
+    csrf_token = anonymous_client.cookies.get("talemotion_csrf")
+    assert csrf_token
+    anonymous_client.headers["X-CSRF-Token"] = csrf_token
+    yield anonymous_client
 
 
 @pytest.fixture

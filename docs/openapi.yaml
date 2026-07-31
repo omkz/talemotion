@@ -5,9 +5,12 @@ info:
   description: PostgreSQL-backed project, scene, and job foundation.
 servers:
   - url: http://localhost:8000/api/v1
+security:
+  - cookieAuth: []
 paths:
   /health:
     get:
+      security: []
       tags: [Health]
       summary: Get API process health
       responses:
@@ -18,6 +21,7 @@ paths:
               schema: {$ref: "#/components/schemas/HealthResponse"}
   /health/dependencies:
     get:
+      security: []
       tags: [Health]
       summary: Check PostgreSQL and Redis
       responses:
@@ -31,6 +35,62 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/ErrorResponse"}
+  /auth/register:
+    post:
+      security: []
+      tags: [Authentication]
+      summary: Register a user and establish a cookie session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RegisterRequest"}
+      responses:
+        "201":
+          description: Registered user; session and CSRF cookies are set
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UserResponse"}
+        "409": {$ref: "#/components/responses/Error"}
+        "422": {$ref: "#/components/responses/Error"}
+  /auth/login:
+    post:
+      security: []
+      tags: [Authentication]
+      summary: Establish a cookie session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LoginRequest"}
+      responses:
+        "200":
+          description: Authenticated user; session and CSRF cookies are set
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UserResponse"}
+        "401": {$ref: "#/components/responses/Error"}
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Revoke the current session
+      parameters:
+        - {$ref: "#/components/parameters/CsrfToken"}
+      responses:
+        "204": {description: Session revoked and cookies cleared}
+        "401": {$ref: "#/components/responses/Error"}
+        "403": {$ref: "#/components/responses/Error"}
+  /auth/me:
+    get:
+      tags: [Authentication]
+      summary: Get the current user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UserResponse"}
+        "401": {$ref: "#/components/responses/Error"}
   /projects:
     get:
       tags: [Projects]
@@ -425,6 +485,11 @@ paths:
         "409": {$ref: "#/components/responses/Error"}
         "502": {$ref: "#/components/responses/Error"}
 components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: talemotion_session
   parameters:
     ProjectId: {name: project_id, in: path, required: true, schema: {type: string}}
     ChapterId: {name: chapter_id, in: path, required: true, schema: {type: string}}
@@ -435,6 +500,11 @@ components:
       in: header
       required: false
       schema: {type: string, minLength: 1, maxLength: 128}
+    CsrfToken:
+      name: X-CSRF-Token
+      in: header
+      required: true
+      schema: {type: string}
   responses:
     Error:
       description: Consistent error envelope
@@ -442,6 +512,28 @@ components:
         application/json:
           schema: {$ref: "#/components/schemas/ErrorResponse"}
   schemas:
+    RegisterRequest:
+      type: object
+      required: [email, password, name]
+      properties:
+        email: {type: string, format: email}
+        password: {type: string, minLength: 12, maxLength: 128}
+        name: {type: string, minLength: 1, maxLength: 120}
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: {type: string, format: email}
+        password: {type: string, minLength: 1, maxLength: 128}
+    UserResponse:
+      type: object
+      required: [id, email, name, created_at, updated_at]
+      properties:
+        id: {type: string}
+        email: {type: string, format: email}
+        name: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
     VideoMode:
       type: string
       enum: [historical_documentary, microdrama, product_advertisement]

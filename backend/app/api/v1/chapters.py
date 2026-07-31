@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.dependencies import DatabaseSession
+from app.api.dependencies import CurrentAuth, DatabaseSession
 from app.repositories.sqlalchemy import ProjectRepository
 from app.schemas.chapter import ChapterResponse, chapter_to_response
 from app.schemas.common import ErrorResponse
@@ -18,6 +18,12 @@ router = APIRouter(prefix="/chapters", tags=["Chapters"])
         409: {"model": ErrorResponse, "description": "Parent project deleted"},
     },
 )
-def get_chapter(chapter_id: str, session: DatabaseSession) -> ChapterResponse:
-    chapter = SceneService(ProjectRepository(session)).get_chapter(chapter_id)
+def get_chapter(
+    chapter_id: str,
+    session: DatabaseSession,
+    auth: CurrentAuth,
+) -> ChapterResponse:
+    chapter = SceneService(
+        ProjectRepository(session, auth.user.id)
+    ).get_chapter(chapter_id)
     return chapter_to_response(chapter)

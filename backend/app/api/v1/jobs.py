@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 
-from app.api.dependencies import DatabaseSession
+from app.api.dependencies import CurrentAuth, DatabaseSession, MutationAuth
 from app.core.errors import ApiError
 from app.models.job import JobType
 from app.repositories.sqlalchemy import (
@@ -27,11 +27,11 @@ ERROR_RESPONSES = {
 }
 
 
-def _jobs(session: DatabaseSession) -> JobService:
+def _jobs(session: DatabaseSession, user_id: str) -> JobService:
     return JobService(
-        JobRepository(session),
-        ProjectRepository(session),
-        RenderRepository(session),
+        JobRepository(session, user_id),
+        ProjectRepository(session, user_id),
+        RenderRepository(session, user_id),
     )
 
 
@@ -43,13 +43,14 @@ def _jobs(session: DatabaseSession) -> JobService:
 )
 def list_jobs(
     session: DatabaseSession,
+    auth: CurrentAuth,
     project_id: str = Query(min_length=1),
     active_only: bool = False,
 ) -> GenerationJobListResponse:
     return GenerationJobListResponse(
         items=[
             job_to_response(job)
-            for job in _jobs(session).list_project_jobs(
+            for job in _jobs(session, auth.user.id).list_project_jobs(
                 project_id,
                 active_only=active_only,
             )
@@ -63,8 +64,12 @@ def list_jobs(
     summary="Inspect a persisted job",
     responses=ERROR_RESPONSES,
 )
-def get_job(job_id: str, session: DatabaseSession) -> GenerationJobResponse:
-    return job_to_response(_jobs(session).get_job(job_id))
+def get_job(
+    job_id: str,
+    session: DatabaseSession,
+    auth: CurrentAuth,
+) -> GenerationJobResponse:
+    return job_to_response(_jobs(session, auth.user.id).get_job(job_id))
 
 
 @router.post(
@@ -73,8 +78,14 @@ def get_job(job_id: str, session: DatabaseSession) -> GenerationJobResponse:
     summary="Request cancellation",
     responses=ERROR_RESPONSES,
 )
-def cancel_job(job_id: str, session: DatabaseSession) -> GenerationJobResponse:
-    return job_to_response(_jobs(session).request_cancellation(job_id))
+def cancel_job(
+    job_id: str,
+    session: DatabaseSession,
+    auth: MutationAuth,
+) -> GenerationJobResponse:
+    return job_to_response(
+        _jobs(session, auth.user.id).request_cancellation(job_id)
+    )
 
 
 @router.post(
@@ -83,8 +94,12 @@ def cancel_job(job_id: str, session: DatabaseSession) -> GenerationJobResponse:
     summary="Check retry eligibility",
     responses=ERROR_RESPONSES,
 )
-def retry_job(job_id: str, session: DatabaseSession) -> GenerationJobResponse:
-    service = _jobs(session)
+def retry_job(
+    job_id: str,
+    session: DatabaseSession,
+    auth: MutationAuth,
+) -> GenerationJobResponse:
+    service = _jobs(session, auth.user.id)
     job = service.retry(job_id)
     try:
         if job.type in {JobType.SCENE_GENERATION, JobType.SCENE_REGENERATION}:

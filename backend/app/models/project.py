@@ -4,7 +4,15 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, Integer, String, Text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.ids import new_resource_id
@@ -15,6 +23,7 @@ if TYPE_CHECKING:
     from app.models.chapter import Chapter
     from app.models.job import GenerationJob
     from app.models.render import Render
+    from app.models.user import User
 
 
 def enum_values(enum_type: type[StrEnum]) -> list[str]:
@@ -60,6 +69,10 @@ class Project(Base, TimestampMixin):
         String(64),
         primary_key=True,
         default=lambda: new_resource_id("project"),
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        index=True,
     )
     mode: Mapped[VideoMode] = mapped_column(
         Enum(
@@ -126,3 +139,4 @@ class Project(Base, TimestampMixin):
         back_populates="project",
         cascade="all, delete-orphan",
     )
+    user: Mapped[User] = relationship(back_populates="projects")

@@ -30,7 +30,8 @@ def existing_idempotent_job(
     scene_id: str | None,
     input_payload: dict[str, object],
 ) -> tuple[GenerationJob | None, str | None]:
-    scoped = scoped_idempotency_key(operation, key)
+    owner_scope = repository.user_id or "worker"
+    scoped = scoped_idempotency_key(f"user:{owner_scope}:{operation}", key)
     if scoped is None:
         return None, None
     repository.lock_idempotency_key(scoped)

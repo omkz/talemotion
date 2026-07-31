@@ -25,10 +25,13 @@ def _project_graph() -> tuple[object, ...]:
 
 
 class ProjectRepository:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, user_id: str | None = None) -> None:
         self.session = session
+        self.user_id = user_id
 
     def add(self, project: Project) -> Project:
+        if self.user_id is not None:
+            project.user_id = self.user_id
         self.session.add(project)
         self.session.flush()
         self.session.refresh(project)
@@ -42,10 +45,12 @@ class ProjectRepository:
         )
         if not include_deleted:
             statement = statement.where(Project.status != ProjectStatus.DELETED)
+        if self.user_id is not None:
+            statement = statement.where(Project.user_id == self.user_id)
         return self.session.scalar(statement)
 
     def get_for_update(self, project_id: str) -> Project | None:
-        return self.session.scalar(
+        statement = (
             select(Project)
             .where(
                 Project.id == project_id,
@@ -54,6 +59,9 @@ class ProjectRepository:
             .options(*_project_graph())
             .with_for_update()
         )
+        if self.user_id is not None:
+            statement = statement.where(Project.user_id == self.user_id)
+        return self.session.scalar(statement)
 
     def list(
         self,
@@ -80,6 +88,8 @@ class ProjectRepository:
                     Project.topic.ilike(term),
                 )
             )
+        if self.user_id is not None:
+            statement = statement.where(Project.user_id == self.user_id)
         return list(self.session.scalars(statement).unique())
 
     def get_chapter(
@@ -96,10 +106,14 @@ class ProjectRepository:
         )
         if for_update:
             statement = statement.with_for_update()
+        if self.user_id is not None:
+            statement = statement.where(
+                Chapter.project.has(Project.user_id == self.user_id)
+            )
         return self.session.scalar(statement)
 
     def get_scene(self, scene_id: str) -> Scene | None:
-        return self.session.scalar(
+        statement = (
             select(Scene)
             .where(Scene.id == scene_id)
             .options(
@@ -108,6 +122,13 @@ class ProjectRepository:
                 selectinload(Scene.jobs),
             )
         )
+        if self.user_id is not None:
+            statement = statement.where(
+                Scene.chapter.has(
+                    Chapter.project.has(Project.user_id == self.user_id)
+                )
+            )
+        return self.session.scalar(statement)
 
     def delete_chapter_scenes(self, chapter: Chapter) -> None:
         chapter.scenes.clear()
@@ -121,8 +142,9 @@ class ProjectRepository:
 
 
 class JobRepository:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, user_id: str | None = None) -> None:
         self.session = session
+        self.user_id = user_id
 
     def create(
         self,
@@ -137,7 +159,13 @@ class JobRepository:
         max_retries: int = 2,
         idempotency_key: str | None = None,
     ) -> GenerationJob:
+        owner_id = self.user_id or self.session.scalar(
+            select(Project.user_id).where(Project.id == project_id)
+        )
+        if owner_id is None:
+            raise ValueError("A generation job requires an owning project.")
         job = GenerationJob(
+            user_id=owner_id,
             project_id=project_id,
             scene_id=scene_id,
             parent_job_id=parent_job_id,
@@ -155,7 +183,7 @@ class JobRepository:
         return job
 
     def get(self, job_id: str) -> GenerationJob | None:
-        return self.session.scalar(
+        statement = (
             select(GenerationJob)
             .where(GenerationJob.id == job_id)
             .options(
@@ -163,16 +191,22 @@ class JobRepository:
                 selectinload(GenerationJob.scene).selectinload(Scene.chapter),
             )
         )
+        if self.user_id is not None:
+            statement = statement.where(GenerationJob.user_id == self.user_id)
+        return self.session.scalar(statement)
 
     def get_for_update(self, job_id: str) -> GenerationJob | None:
-        return self.session.scalar(
+        statement = (
             select(GenerationJob)
             .where(GenerationJob.id == job_id)
             .with_for_update()
         )
+        if self.user_id is not None:
+            statement = statement.where(GenerationJob.user_id == self.user_id)
+        return self.session.scalar(statement)
 
     def by_idempotency_key(self, key: str) -> GenerationJob | None:
-        return self.session.scalar(
+        statement = (
             select(GenerationJob)
             .where(GenerationJob.idempotency_key == key)
             .options(
@@ -180,6 +214,9 @@ class JobRepository:
                 selectinload(GenerationJob.scene).selectinload(Scene.chapter),
             )
         )
+        if self.user_id is not None:
+            statement = statement.where(GenerationJob.user_id == self.user_id)
+        return self.session.scalar(statement)
 
     def lock_idempotency_key(self, key: str) -> None:
         self.session.execute(
@@ -214,6 +251,8 @@ class JobRepository:
                     )
                 )
             )
+        if self.user_id is not None:
+            statement = statement.where(GenerationJob.user_id == self.user_id)
         return list(self.session.scalars(statement).unique())
 
     def stale_jobs(
@@ -247,7 +286,7 @@ class JobRepository:
         )
 
     def active_for_scene(self, scene_id: str) -> GenerationJob | None:
-        return self.session.scalar(
+        statement = (
             select(GenerationJob)
             .where(
                 GenerationJob.scene_id == scene_id,
@@ -261,13 +300,16 @@ class JobRepository:
             )
             .order_by(GenerationJob.created_at.desc())
         )
+        if self.user_id is not None:
+            statement = statement.where(GenerationJob.user_id == self.user_id)
+        return self.session.scalar(statement)
 
     def active_for_project(
         self,
         project_id: str,
         job_type: JobType,
     ) -> GenerationJob | None:
-        return self.session.scalar(
+        statement = (
             select(GenerationJob)
             .where(
                 GenerationJob.project_id == project_id,
@@ -282,18 +324,22 @@ class JobRepository:
             )
             .order_by(GenerationJob.created_at.desc())
         )
+        if self.user_id is not None:
+            statement = statement.where(GenerationJob.user_id == self.user_id)
+        return self.session.scalar(statement)
 
     def children(self, parent_job_id: str) -> list[GenerationJob]:
-        return list(
-            self.session.scalars(
-                select(GenerationJob)
+        statement = (
+            select(GenerationJob)
                 .where(GenerationJob.parent_job_id == parent_job_id)
                 .order_by(
                     GenerationJob.created_at.asc(),
                     GenerationJob.id.asc(),
                 )
-            )
         )
+        if self.user_id is not None:
+            statement = statement.where(GenerationJob.user_id == self.user_id)
+        return list(self.session.scalars(statement))
 
     def latest_children(self, parent_job_id: str) -> list[GenerationJob]:
         latest: dict[str, GenerationJob] = {}
@@ -310,19 +356,24 @@ class JobRepository:
 
 
 class AssetRepository:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, user_id: str | None = None) -> None:
         self.session = session
+        self.user_id = user_id
 
     def get(self, asset_id: str) -> Asset | None:
-        return self.session.get(Asset, asset_id)
+        statement = select(Asset).where(Asset.id == asset_id)
+        if self.user_id is not None:
+            statement = statement.where(Asset.user_id == self.user_id)
+        return self.session.scalar(statement)
 
     def next_version(self, scene_id: str, asset_type: AssetType) -> int:
-        latest = self.session.scalar(
-            select(func.max(Asset.version)).where(
-                Asset.scene_id == scene_id,
-                Asset.type == asset_type,
-            )
+        statement = select(func.max(Asset.version)).where(
+            Asset.scene_id == scene_id,
+            Asset.type == asset_type,
         )
+        if self.user_id is not None:
+            statement = statement.where(Asset.user_id == self.user_id)
+        latest = self.session.scalar(statement)
         return (latest or 0) + 1
 
     def next_project_version(
@@ -330,13 +381,14 @@ class AssetRepository:
         project_id: str,
         asset_type: AssetType,
     ) -> int:
-        latest = self.session.scalar(
-            select(func.max(Asset.version)).where(
-                Asset.project_id == project_id,
-                Asset.scene_id.is_(None),
-                Asset.type == asset_type,
-            )
+        statement = select(func.max(Asset.version)).where(
+            Asset.project_id == project_id,
+            Asset.scene_id.is_(None),
+            Asset.type == asset_type,
         )
+        if self.user_id is not None:
+            statement = statement.where(Asset.user_id == self.user_id)
+        latest = self.session.scalar(statement)
         return (latest or 0) + 1
 
     def reusable_audio(
@@ -350,7 +402,7 @@ class AssetRepository:
         purpose: str,
         configuration: str,
     ) -> Asset | None:
-        return self.session.scalar(
+        statement = (
             select(Asset)
             .where(
                 Asset.project_id == project_id,
@@ -366,6 +418,9 @@ class AssetRepository:
             )
             .order_by(Asset.created_at.desc())
         )
+        if self.user_id is not None:
+            statement = statement.where(Asset.user_id == self.user_id)
+        return self.session.scalar(statement)
 
     def create(
         self,
@@ -386,7 +441,13 @@ class AssetRepository:
         provenance_object_key: str | None,
         parent_asset_id: str | None = None,
     ) -> Asset:
+        owner_id = self.user_id or self.session.scalar(
+            select(Project.user_id).where(Project.id == project_id)
+        )
+        if owner_id is None:
+            raise ValueError("An asset requires an owning project.")
         asset = Asset(
+            user_id=owner_id,
             project_id=project_id,
             scene_id=scene_id,
             type=asset_type,
@@ -413,8 +474,9 @@ class AssetRepository:
 
 
 class RenderRepository:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, user_id: str | None = None) -> None:
         self.session = session
+        self.user_id = user_id
 
     def create(
         self,
@@ -425,7 +487,13 @@ class RenderRepository:
         captions_enabled: bool,
         music_enabled: bool,
     ) -> Render:
+        owner_id = self.user_id or self.session.scalar(
+            select(Project.user_id).where(Project.id == project_id)
+        )
+        if owner_id is None:
+            raise ValueError("A render requires an owning project.")
         render = Render(
+            user_id=owner_id,
             project_id=project_id,
             version=version,
             status=RenderStatus.QUEUED,
@@ -449,28 +517,32 @@ class RenderRepository:
         )
         if for_update:
             statement = statement.with_for_update()
+        if self.user_id is not None:
+            statement = statement.where(Render.user_id == self.user_id)
         return self.session.scalar(statement)
 
     def list_for_project(self, project_id: str) -> list[Render]:
-        return list(
-            self.session.scalars(
-                select(Render)
+        statement = (
+            select(Render)
                 .where(Render.project_id == project_id)
                 .options(selectinload(Render.asset), selectinload(Render.job))
                 .order_by(Render.version.desc())
-            )
         )
+        if self.user_id is not None:
+            statement = statement.where(Render.user_id == self.user_id)
+        return list(self.session.scalars(statement))
 
     def next_version(self, project_id: str) -> int:
-        latest = self.session.scalar(
-            select(func.max(Render.version)).where(
-                Render.project_id == project_id
-            )
+        statement = select(func.max(Render.version)).where(
+            Render.project_id == project_id
         )
+        if self.user_id is not None:
+            statement = statement.where(Render.user_id == self.user_id)
+        latest = self.session.scalar(statement)
         return (latest or 0) + 1
 
     def active_for_project(self, project_id: str) -> Render | None:
-        return self.session.scalar(
+        statement = (
             select(Render)
             .where(
                 Render.project_id == project_id,
@@ -480,6 +552,9 @@ class RenderRepository:
             )
             .order_by(Render.created_at.desc())
         )
+        if self.user_id is not None:
+            statement = statement.where(Render.user_id == self.user_id)
+        return self.session.scalar(statement)
 
     def commit(self) -> None:
         self.session.commit()

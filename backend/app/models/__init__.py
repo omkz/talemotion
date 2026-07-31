@@ -10,6 +10,7 @@ from app.models.project import (
 )
 from app.models.render import Render, RenderStatus
 from app.models.scene import Scene, SceneStatus
+from app.models.user import User, UserSession
 
 __all__ = [
     "Asset",
@@ -29,4 +30,6 @@ __all__ = [
     "Scene",
     "SceneStatus",
     "VideoMode",
+    "User",
+    "UserSession",
 ]

@@ -25,6 +25,7 @@ from app.models.project import enum_values
 if TYPE_CHECKING:
     from app.models.project import Project
     from app.models.scene import Scene
+    from app.models.user import User
 
 
 class AssetType(StrEnum):
@@ -63,6 +64,10 @@ class Asset(Base):
         String(64),
         primary_key=True,
         default=lambda: new_resource_id("asset"),
+    )
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"),
+        index=True,
     )
     project_id: Mapped[str] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"),
@@ -117,6 +122,7 @@ class Asset(Base):
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     project: Mapped[Project] = relationship(back_populates="assets")
+    user: Mapped[User] = relationship(back_populates="assets")
     scene: Mapped[Scene | None] = relationship(
         back_populates="assets", foreign_keys=[scene_id]
     )

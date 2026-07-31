@@ -91,6 +91,17 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/UserResponse"}
         "401": {$ref: "#/components/responses/Error"}
+  /auth/csrf:
+    get:
+      tags: [Authentication]
+      summary: Rotate the current session's CSRF token
+      responses:
+        "200":
+          description: New readable CSRF token; its cookie is also refreshed
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CsrfTokenResponse"}
+        "401": {$ref: "#/components/responses/Error"}
   /projects:
     get:
       tags: [Projects]
@@ -517,7 +528,7 @@ components:
       required: [email, password, name]
       properties:
         email: {type: string, format: email}
-        password: {type: string, minLength: 12, maxLength: 128}
+        password: {type: string, minLength: 8, maxLength: 128}
         name: {type: string, minLength: 1, maxLength: 120}
     LoginRequest:
       type: object
@@ -534,6 +545,11 @@ components:
         name: {type: string}
         created_at: {type: string, format: date-time}
         updated_at: {type: string, format: date-time}
+    CsrfTokenResponse:
+      type: object
+      required: [csrf_token]
+      properties:
+        csrf_token: {type: string}
     VideoMode:
       type: string
       enum: [historical_documentary, microdrama, product_advertisement]

@@ -7,7 +7,7 @@ from app.models.user import User
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=12, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
     name: str = Field(min_length=1, max_length=120)
 
 
@@ -28,3 +28,7 @@ class UserResponse(BaseModel):
 
 def user_to_response(user: User) -> UserResponse:
     return UserResponse.model_validate(user)
+
+
+class CsrfTokenResponse(BaseModel):
+    csrf_token: str

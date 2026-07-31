@@ -12,6 +12,7 @@ dependencies = [
     "genblaze-gmicloud>=0.3.5",
     "genblaze-s3>=0.3.6",
     "psycopg[binary]>=3.2,<4",
+    "pwdlib[argon2]>=0.3.0",
     "pydantic-settings>=2.7,<3.0",
     "redis>=5,<7",
     "sqlalchemy>=2.0,<3",

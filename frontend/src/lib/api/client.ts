@@ -25,6 +25,29 @@ function readCookie(name: string): string | null {
   return value ? decodeURIComponent(value.slice(prefix.length)) : null;
 }
 
+async function fetchCsrfToken(baseUrl: string): Promise<string | null> {
+  if (typeof document === "undefined") {
+    return null;
+  }
+  const response = await fetch(`${baseUrl}/auth/csrf`, {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+  if (!response.ok) {
+    return null;
+  }
+  const body: unknown = await response.json().catch(() => null);
+  if (
+    body &&
+    typeof body === "object" &&
+    "csrf_token" in body &&
+    typeof body.csrf_token === "string"
+  ) {
+    return body.csrf_token;
+  }
+  return null;
+}
+
 export class ApiClient {
   readonly baseUrl: string;
 
@@ -71,7 +94,14 @@ export class ApiClient {
       headers.set("Idempotency-Key", options.idempotencyKey);
     }
     if (method !== "GET") {
-      const csrfToken = readCookie("talemotion_csrf");
+      let csrfToken = readCookie("talemotion_csrf");
+      if (
+        !csrfToken &&
+        path !== "/auth/login" &&
+        path !== "/auth/register"
+      ) {
+        csrfToken = await fetchCsrfToken(this.baseUrl);
+      }
       if (csrfToken) {
         headers.set("X-CSRF-Token", csrfToken);
       }

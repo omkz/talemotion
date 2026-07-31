@@ -108,12 +108,12 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
                   name="password"
                   type="password"
                   autoComplete={isRegister ? "new-password" : "current-password"}
-                  minLength={isRegister ? 12 : 1}
+                  minLength={isRegister ? 8 : 1}
                   required
                 />
                 {isRegister && (
                   <p className="text-xs text-muted-foreground">
-                    Use at least 12 characters.
+                    Use at least 8 characters.
                   </p>
                 )}
               </div>

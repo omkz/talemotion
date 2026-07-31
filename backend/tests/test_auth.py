@@ -4,8 +4,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.auth.passwords import verify_password
+from app.auth.sessions import hash_token
+from app.core.config import settings
 from app.core.ids import utc_now
-from app.core.security import verify_password
 from app.models.user import User, UserSession
 
 PASSWORD = "correct horse battery staple"
@@ -44,7 +46,17 @@ def test_registration_hashes_password_and_rejects_duplicate(
         )
         assert persisted is not None
         assert persisted.password_hash != PASSWORD
+        assert persisted.password_hash.startswith("$argon2")
         assert verify_password(PASSWORD, persisted.password_hash)
+        auth_session = session.scalar(select(UserSession))
+        assert auth_session is not None
+        raw_token = anonymous_client.cookies.get("talemotion_session")
+        raw_csrf = anonymous_client.cookies.get("talemotion_csrf")
+        assert raw_token and raw_csrf
+        assert auth_session.token_hash == hash_token(raw_token)
+        assert auth_session.token_hash != raw_token
+        assert auth_session.csrf_token_hash == hash_token(raw_csrf)
+        assert auth_session.csrf_token_hash != raw_csrf
 
     duplicate = anonymous_client.post(
         "/api/v1/auth/register",
@@ -107,3 +119,62 @@ def test_authenticated_mutation_requires_csrf(
     response = anonymous_client.post("/api/v1/projects", json=project_payload)
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "csrf_validation_failed"
+
+    anonymous_client.headers["X-CSRF-Token"] = "invalid"
+    invalid = anonymous_client.post("/api/v1/projects", json=project_payload)
+    assert invalid.status_code == 403
+
+    enable_csrf(anonymous_client)
+    accepted = anonymous_client.post("/api/v1/projects", json=project_payload)
+    assert accepted.status_code == 201
+
+
+def test_session_cookie_security_attributes(
+    anonymous_client: TestClient,
+    monkeypatch,
+) -> None:
+    development = anonymous_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "development-cookie@example.com",
+            "password": PASSWORD,
+            "name": "Development",
+        },
+    )
+    session_cookie = next(
+        value
+        for value in development.headers.get_list("set-cookie")
+        if value.startswith("talemotion_session=")
+    )
+    assert "HttpOnly" in session_cookie
+    assert "SameSite=lax" in session_cookie
+    assert "Secure" not in session_cookie
+
+    monkeypatch.setattr(settings, "app_env", "production")
+    production = anonymous_client.post(
+        "/api/v1/auth/register",
+        json={
+            "email": "production-cookie@example.com",
+            "password": PASSWORD,
+            "name": "Production",
+        },
+    )
+    secure_cookie = next(
+        value
+        for value in production.headers.get_list("set-cookie")
+        if value.startswith("talemotion_session=")
+    )
+    assert "HttpOnly" in secure_cookie
+    assert "Secure" in secure_cookie
+
+
+def test_csrf_endpoint_rotates_the_session_token(
+    anonymous_client: TestClient,
+) -> None:
+    register(anonymous_client)
+    original = anonymous_client.cookies.get("talemotion_csrf")
+    response = anonymous_client.get("/api/v1/auth/csrf")
+    assert response.status_code == 200
+    rotated = response.json()["csrf_token"]
+    assert rotated != original
+    assert anonymous_client.cookies.get("talemotion_csrf") == rotated

@@ -1,16 +1,23 @@
 from fastapi import APIRouter, Response, status
 
 from app.api.dependencies import CurrentAuth, DatabaseSession, MutationAuth
-from app.core.config import settings
+from app.auth.sessions import (
+    CreatedSession,
+    clear_auth_cookies,
+    rotate_csrf_token,
+    set_auth_cookies,
+    set_csrf_cookie,
+)
 from app.repositories.auth import AuthRepository
 from app.schemas.auth import (
+    CsrfTokenResponse,
     LoginRequest,
     RegisterRequest,
     UserResponse,
     user_to_response,
 )
 from app.schemas.common import ErrorResponse
-from app.services.auth import AuthService, CreatedSession
+from app.services.auth import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 ERROR_RESPONSES = {
@@ -22,24 +29,10 @@ ERROR_RESPONSES = {
 
 
 def _set_auth_cookies(response: Response, created: CreatedSession) -> None:
-    max_age = settings.session_ttl_days * 24 * 60 * 60
-    response.set_cookie(
-        settings.session_cookie_name,
-        created.token,
-        max_age=max_age,
-        httponly=True,
-        secure=settings.secure_session_cookie,
-        samesite="lax",
-        path="/",
-    )
-    response.set_cookie(
-        settings.csrf_cookie_name,
-        created.csrf_token,
-        max_age=max_age,
-        httponly=False,
-        secure=settings.secure_session_cookie,
-        samesite="lax",
-        path="/",
+    set_auth_cookies(
+        response,
+        session_token=created.token,
+        csrf_token=created.csrf_token,
     )
 
 
@@ -81,20 +74,7 @@ def logout(
     session: DatabaseSession,
 ) -> Response:
     AuthService(AuthRepository(session)).logout(auth.auth_session)
-    response.delete_cookie(
-        settings.session_cookie_name,
-        httponly=True,
-        secure=settings.secure_session_cookie,
-        samesite="lax",
-        path="/",
-    )
-    response.delete_cookie(
-        settings.csrf_cookie_name,
-        httponly=False,
-        secure=settings.secure_session_cookie,
-        samesite="lax",
-        path="/",
-    )
+    clear_auth_cookies(response)
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 
@@ -102,3 +82,21 @@ def logout(
 @router.get("/me", response_model=UserResponse, responses=ERROR_RESPONSES)
 def current_user(auth: CurrentAuth) -> UserResponse:
     return user_to_response(auth.user)
+
+
+@router.get(
+    "/csrf",
+    response_model=CsrfTokenResponse,
+    responses=ERROR_RESPONSES,
+)
+def refresh_csrf_token(
+    response: Response,
+    auth: CurrentAuth,
+    session: DatabaseSession,
+) -> CsrfTokenResponse:
+    token = rotate_csrf_token(
+        AuthRepository(session),
+        auth.auth_session,
+    )
+    set_csrf_cookie(response, csrf_token=token)
+    return CsrfTokenResponse(csrf_token=token)

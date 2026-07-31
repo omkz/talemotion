@@ -11,10 +11,11 @@ All JSON fields use `snake_case`, IDs are opaque prefixed UUID strings, and
 timestamps are timezone-aware ISO 8601 values. Every new short-form project is
 created atomically with one `Main` chapter at position `1`.
 
-All product resources require a cookie session. Passwords use salted `scrypt`;
-the database stores only password hashes and SHA-256 session-token hashes.
-Authenticated mutations also require `X-CSRF-Token` to match the readable
-SameSite CSRF cookie. Browser clients never store access tokens in localStorage.
+All product resources require a cookie session. Passwords use Argon2 through
+`pwdlib`; the database stores only password hashes and SHA-256 session-token
+hashes. Authenticated mutations also require `X-CSRF-Token` to match the
+separately generated CSRF token whose SHA-256 hash belongs to the current
+session. Browser clients never store access tokens in localStorage.
 
 ## Implemented endpoints
 
@@ -24,6 +25,7 @@ SameSite CSRF cookie. Browser clients never store access tokens in localStorage.
 | `GET /health/dependencies` | Non-secret PostgreSQL and Redis status |
 | `POST /auth/register`, `POST /auth/login` | Create an account or session |
 | `POST /auth/logout`, `GET /auth/me` | Revoke or inspect the current session |
+| `GET /auth/csrf` | Rotate and return the current session's CSRF token |
 | `GET`, `POST /projects` | Cursor list or atomically create a project |
 | `GET`, `PATCH`, `DELETE /projects/{id}` | Read, update safe fields, soft-delete |
 | `POST /projects/{id}/storyboard` | Queue structured historical storyboard planning |
@@ -66,6 +68,10 @@ development records by assigning them to the locked
 `development@talemotion.local` migration user. It does not delete legacy
 projects. Reassign those records explicitly in local administration if they
 need to become accessible to a registered account.
+
+Migration `0007_session_csrf` adds the per-session CSRF hash. It revokes
+pre-existing sessions because their raw CSRF values cannot be reconstructed;
+users and owned resources are unaffected.
 
 ## Persistence and lifecycle
 

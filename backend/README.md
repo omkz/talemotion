@@ -50,10 +50,10 @@ Final rendering additionally uses `TALEMOTION_TTS_PROVIDER`,
 `FFMPEG_BINARY` defaults to `ffmpeg`; the executable must be installed on the
 worker host.
 
-Set `AUTH_SECRET_KEY` to a long random value outside local development.
-Production mode rejects the documented development default and always marks
-the session cookie Secure. The browser receives an HTTP-only SameSite session
-cookie plus a readable CSRF cookie; only the token hash is persisted.
+Production mode always marks the session cookie Secure. The browser receives
+an HTTP-only SameSite session cookie plus a readable, independently random
+CSRF cookie. Passwords are hashed with Argon2 through `pwdlib`; only SHA-256
+hashes of session and CSRF tokens are persisted.
 
 ## Run and migrate
 
@@ -132,6 +132,9 @@ All project/media endpoints require the resulting cookie session, and all
 mutations require the matching `X-CSRF-Token`. Projects, jobs, assets, and
 renders are user-owned; chapters and scenes inherit their project owner.
 Requests for another user's IDs intentionally return `404`.
+`GET /api/v1/auth/csrf` rotates the current session's CSRF token when a browser
+needs to recover the readable cookie. Registration accepts passwords of at
+least eight characters.
 
 The ownership migration assigns existing local records to a locked
 `development@talemotion.local` account so no project is deleted. Reassign

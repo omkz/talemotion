@@ -39,11 +39,13 @@ class AuthRepository:
         *,
         user_id: str,
         token_hash: str,
+        csrf_token_hash: str,
         expires_at: datetime,
     ) -> UserSession:
         auth_session = UserSession(
             user_id=user_id,
             token_hash=token_hash,
+            csrf_token_hash=csrf_token_hash,
             expires_at=expires_at,
         )
         self.session.add(auth_session)

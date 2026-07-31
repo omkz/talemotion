@@ -9,6 +9,7 @@ from app.api.v1 import jobs as job_routes
 from app.core.ids import utc_now
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import Project
+from app.models.scene import Scene
 from app.tasks import system as system_tasks
 
 
@@ -126,6 +127,16 @@ def test_parent_cancellation_propagates_to_active_children(
     with session_factory() as session:
         persisted_project = session.get(Project, project["id"])
         assert persisted_project is not None
+        scene = Scene(
+            chapter_id=project["chapters"][0]["id"],
+            title="Scene 1",
+            narration="Narration",
+            visual_prompt="Visual prompt",
+            duration_seconds=5,
+            position=1,
+        )
+        session.add(scene)
+        session.flush()
         parent = GenerationJob(
             user_id=persisted_project.user_id,
             project_id=project["id"],
@@ -140,6 +151,7 @@ def test_parent_cancellation_propagates_to_active_children(
         child = GenerationJob(
             user_id=persisted_project.user_id,
             project_id=project["id"],
+            scene_id=scene.id,
             parent_job_id=parent.id,
             type=JobType.SCENE_GENERATION,
             status=JobStatus.RUNNING,

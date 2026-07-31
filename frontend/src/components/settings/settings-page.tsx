@@ -8,6 +8,7 @@ import {
   CircleAlert,
   Loader2,
   Plug,
+  Coins,
   RotateCcw,
   Save,
   Settings2,
@@ -41,6 +42,7 @@ import { IntegrationsSettings } from "./integrations-settings";
 import { ResetSettingsDialog } from "./reset-settings-dialog";
 import { settingsFormSchema } from "./schema";
 import { SettingsLoading } from "./settings-loading";
+import { UsageSettings } from "./usage-settings";
 
 type SavePhase = "idle" | "saving" | "failed";
 
@@ -243,6 +245,10 @@ export function SettingsPage() {
                   <Plug />
                   Integrations
                 </TabsTrigger>
+                <TabsTrigger value="usage" className="px-3">
+                  <Coins />
+                  Usage & Credits
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="general">
@@ -260,6 +266,10 @@ export function SettingsPage() {
                   storedAssetCount={assetMetrics.count}
                   storageUsedBytes={assetMetrics.bytes}
                 />
+              </TabsContent>
+
+              <TabsContent value="usage">
+                <UsageSettings />
               </TabsContent>
             </Tabs>
           )}

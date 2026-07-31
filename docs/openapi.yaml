@@ -102,6 +102,43 @@ paths:
             application/json:
               schema: {$ref: "#/components/schemas/CsrfTokenResponse"}
         "401": {$ref: "#/components/responses/Error"}
+  /credits:
+    get:
+      tags: [Credits]
+      summary: Get the current user's internal credit balance
+      responses:
+        "200":
+          description: Decimal-safe balance and configured operation rates
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreditBalanceResponse"}
+        "401": {$ref: "#/components/responses/Error"}
+  /credits/transactions:
+    get:
+      tags: [Credits]
+      summary: List the current user's credit ledger
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        "200":
+          description: Recent immutable transactions
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/CreditTransactionListResponse"}
+        "401": {$ref: "#/components/responses/Error"}
+  /usage:
+    get:
+      tags: [Credits]
+      summary: List the current user's provider usage
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 50}}
+      responses:
+        "200":
+          description: Recent billable provider operations
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/UsageRecordListResponse"}
+        "401": {$ref: "#/components/responses/Error"}
   /projects:
     get:
       tags: [Projects]
@@ -831,6 +868,72 @@ components:
         items:
           type: array
           items: {$ref: "#/components/schemas/RenderResponse"}
+    CreditBalanceResponse:
+      type: object
+      required: [balance, reserved, available, rates]
+      properties:
+        balance: {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?$'}
+        reserved: {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?$'}
+        available: {type: string, pattern: '^-?[0-9]+(\.[0-9]+)?$'}
+        rates:
+          type: object
+          additionalProperties: {type: string}
+    CreditTransactionResponse:
+      type: object
+      required: [id, type, amount, balance_after, description, metadata, created_at]
+      properties:
+        id: {type: string}
+        job_id: {type: [string, "null"]}
+        type: {type: string, enum: [grant, reservation, charge, release, refund, adjustment]}
+        amount: {type: string}
+        balance_after: {type: string}
+        description: {type: string}
+        metadata: {type: object}
+        created_at: {type: string, format: date-time}
+    CreditTransactionListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/CreditTransactionResponse"}
+    UsageRecordResponse:
+      type: object
+      required:
+        - id
+        - project_id
+        - job_id
+        - provider
+        - model_name
+        - operation
+        - input_units
+        - output_units
+        - provider_cost_usd
+        - credits_charged
+        - metadata
+        - created_at
+      properties:
+        id: {type: string}
+        project_id: {type: string}
+        job_id: {type: string}
+        provider: {type: string}
+        model_name: {type: string}
+        operation:
+          type: string
+          enum: [storyboard_generation, image_generation, video_generation, tts_generation, music_generation, final_render]
+        input_units: {type: string}
+        output_units: {type: string}
+        provider_cost_usd: {type: string}
+        credits_charged: {type: string}
+        metadata: {type: object}
+        created_at: {type: string, format: date-time}
+    UsageRecordListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/UsageRecordResponse"}
     ErrorResponse:
       type: object
       required: [error]

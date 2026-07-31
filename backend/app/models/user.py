@@ -11,6 +11,7 @@ from app.models.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from app.models.asset import Asset
+    from app.models.credits import CreditAccount, CreditTransaction, UsageRecord
     from app.models.job import GenerationJob
     from app.models.project import Project
     from app.models.render import Render
@@ -36,6 +37,19 @@ class User(Base, TimestampMixin):
     jobs: Mapped[list[GenerationJob]] = relationship(back_populates="user")
     assets: Mapped[list[Asset]] = relationship(back_populates="user")
     renders: Mapped[list[Render]] = relationship(back_populates="user")
+    credit_account: Mapped[CreditAccount | None] = relationship(
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    credit_transactions: Mapped[list[CreditTransaction]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    usage_records: Mapped[list[UsageRecord]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
 
 class UserSession(Base):

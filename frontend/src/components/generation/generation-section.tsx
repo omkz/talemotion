@@ -35,6 +35,7 @@ import type {
 import { GenerationCard } from "./generation-card";
 import { GenerationDetailsDrawer } from "./generation-details-drawer";
 import { RegenerateSceneDialog } from "./regenerate-scene-dialog";
+import { useCredits } from "@/components/credits/credits-provider";
 
 interface GenerationSectionProps {
   projectId: string;
@@ -57,6 +58,7 @@ export function GenerationSection({
   onRefreshProject,
   regenerateInstructionPlaceholder,
 }: GenerationSectionProps) {
+  const { credits, estimate, canAfford, refresh: refreshCredits } = useCredits();
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [overallProgress, setOverallProgress] = useState(0);
   const [regenerateTarget, setRegenerateTarget] = useState<Scene | null>(null);
@@ -365,6 +367,7 @@ export function GenerationSection({
               controller.signal,
               crypto.randomUUID(),
             );
+      await refreshCredits();
       patchScene(scene.id, {
         status: "waiting",
         currentJob: {
@@ -478,6 +481,7 @@ export function GenerationSection({
       setRetryableScenes((currentSet) => new Set(currentSet).add(scene.id));
       toast.error(message);
     } finally {
+      await refreshCredits();
       realControllers.current.delete(scene.id);
     }
   };
@@ -494,6 +498,7 @@ export function GenerationSection({
         controller.signal,
         crypto.randomUUID(),
       );
+      await refreshCredits();
       parentJobIdRef.current = queued.id;
       const completed = await pollPersistedJob(queued.id, {
         signal: controller.signal,
@@ -594,6 +599,7 @@ export function GenerationSection({
         );
       }
     } finally {
+      await refreshCredits();
       realControllers.current.delete(`project:${projectId}`);
       setIsGeneratingAll(false);
     }
@@ -701,6 +707,11 @@ export function GenerationSection({
   const completedCount = scenes.filter(
     (scene) => scene.status === "completed",
   ).length;
+  const sceneEstimate = estimate({
+    image_generation: 1,
+    video_generation: 1,
+  });
+  const allEstimate = sceneEstimate * scenes.length;
 
   return (
     <div className="space-y-5">
@@ -713,7 +724,16 @@ export function GenerationSection({
         </div>
         <Button
           onClick={handleGenerateAll}
-          disabled={isGeneratingAll || scenes.length !== 4}
+          disabled={
+            isGeneratingAll ||
+            scenes.length !== 4 ||
+            (realSceneGenerationEnabled && !canAfford(allEstimate))
+          }
+          title={
+            credits && !canAfford(allEstimate)
+              ? `Requires ${allEstimate} credits; ${credits.available} available`
+              : undefined
+          }
         >
           {isGeneratingAll ? (
             <Loader2 className="size-4 animate-spin" />
@@ -721,6 +741,11 @@ export function GenerationSection({
             <Sparkles className="size-4" />
           )}
           Generate All Scenes
+          {realSceneGenerationEnabled && (
+            <span className="text-xs opacity-70">
+              · est. {allEstimate}
+            </span>
+          )}
         </Button>
       </div>
 
@@ -767,6 +792,12 @@ export function GenerationSection({
               )
             }
             persistedMode={realSceneGenerationEnabled}
+            estimatedCredits={
+              realSceneGenerationEnabled ? sceneEstimate : undefined
+            }
+            insufficientCredits={
+              realSceneGenerationEnabled && !canAfford(sceneEstimate)
+            }
           />
         ))}
       </div>

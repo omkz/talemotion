@@ -1,6 +1,13 @@
 from app.models.asset import Asset, AssetStatus, AssetType
 from app.models.base import Base
 from app.models.chapter import Chapter, ChapterStatus
+from app.models.credits import (
+    CreditAccount,
+    CreditTransaction,
+    CreditTransactionType,
+    UsageOperation,
+    UsageRecord,
+)
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import (
     AspectRatio,
@@ -20,6 +27,9 @@ __all__ = [
     "Base",
     "Chapter",
     "ChapterStatus",
+    "CreditAccount",
+    "CreditTransaction",
+    "CreditTransactionType",
     "GenerationJob",
     "JobStatus",
     "JobType",
@@ -32,4 +42,6 @@ __all__ = [
     "VideoMode",
     "User",
     "UserSession",
+    "UsageOperation",
+    "UsageRecord",
 ]

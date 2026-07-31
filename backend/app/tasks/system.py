@@ -6,11 +6,14 @@ from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import session_scope
 from app.core.ids import utc_now
+from app.models.credits import CreditTransactionType
 from app.models.job import JobStatus, JobType
 from app.models.project import ProjectStatus
 from app.models.render import RenderStatus
 from app.models.scene import SceneStatus
+from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import JobRepository, RenderRepository
+from app.services.credits import CreditService
 from app.services.jobs import aggregate_parent_job
 
 
@@ -31,6 +34,8 @@ def cleanup_abandoned_jobs() -> dict[str, int]:
     with session_scope() as session:
         jobs = JobRepository(session)
         renders = RenderRepository(session)
+        billing = BillingRepository(session)
+        credits = CreditService(billing)
         stale = jobs.stale_jobs(
             queued_before=now
             - timedelta(seconds=settings.queued_job_timeout_seconds),
@@ -91,7 +96,22 @@ def cleanup_abandoned_jobs() -> dict[str, int]:
                     else ProjectStatus.FAILED
                 )
             cleaned += 1
+            if (
+                billing.transaction(
+                    job.id,
+                    CreditTransactionType.RESERVATION,
+                )
+                is not None
+            ):
+                credits.settle(job.id)
         session.commit()
         for parent_id in parent_ids:
-            aggregate_parent_job(jobs, parent_id)
+            parent = aggregate_parent_job(jobs, parent_id)
+            if parent is not None and parent.status in {
+                JobStatus.COMPLETED,
+                JobStatus.FAILED,
+                JobStatus.CANCELLED,
+            }:
+                credits.settle(parent.id)
+                session.commit()
     return {"cleaned": cleaned}

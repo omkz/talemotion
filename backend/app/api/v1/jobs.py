@@ -21,6 +21,7 @@ from app.tasks.storyboard import generate_project_storyboard
 
 router = APIRouter(prefix="/jobs", tags=["Jobs"])
 ERROR_RESPONSES = {
+    402: {"model": ErrorResponse},
     404: {"model": ErrorResponse},
     409: {"model": ErrorResponse},
     503: {"model": ErrorResponse},

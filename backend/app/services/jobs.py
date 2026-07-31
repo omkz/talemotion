@@ -1,14 +1,20 @@
+from decimal import Decimal
+
+from app.billing.pricing import pricing
 from app.core.errors import ApiError
 from app.core.ids import utc_now
+from app.models.credits import UsageOperation
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import ProjectStatus
 from app.models.render import RenderStatus
 from app.models.scene import SceneStatus
+from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import (
     JobRepository,
     ProjectRepository,
     RenderRepository,
 )
+from app.services.credits import CreditService
 
 
 class JobService:
@@ -115,6 +121,11 @@ class JobService:
             return self._retry_project_generation(job)
         if job.type is JobType.STORYBOARD:
             retry = self._copy_job(job)
+            self._reserve(
+                retry,
+                pricing.rate(UsageOperation.STORYBOARD_GENERATION),
+                "Storyboard retry reservation",
+            )
             retry.project.status = ProjectStatus.STORYBOARD_PENDING
             self.repository.commit()
             return self.get_job(retry.id)
@@ -139,6 +150,13 @@ class JobService:
             input_payload=dict(job.input_payload),
             retry_count=job.retry_count + 1,
             max_retries=job.max_retries,
+        )
+        self._reserve(
+            retry,
+            pricing.scene_generation(
+                generate_video=bool(job.input_payload.get("generate_video", True))
+            ),
+            "Scene generation retry reservation",
         )
         if retry.scene is not None:
             retry.scene.status = SceneStatus.QUEUED
@@ -196,6 +214,21 @@ class JobService:
                 details={"job_id": job.id, "child_job_ids": exhausted},
             )
         parent = self._copy_job(job)
+        self._reserve(
+            parent,
+            sum(
+                (
+                    pricing.scene_generation(
+                        generate_video=bool(
+                            child.input_payload.get("generate_video", True)
+                        )
+                    )
+                    for child in failed
+                ),
+                start=Decimal("0"),
+            ),
+            "Generate-all retry reservation",
+        )
         for child in failed:
             retry = self.repository.create(
                 project_id=job.project_id,
@@ -232,6 +265,22 @@ class JobService:
                 details={"job_id": job.id},
             )
         retry = self._copy_job(job)
+        self._reserve(
+            retry,
+            pricing.render(
+                scene_count=sum(
+                    len(chapter.scenes)
+                    for chapter in retry.project.chapters
+                ),
+                narration_enabled=bool(
+                    retry.input_payload.get("narration_enabled", True)
+                ),
+                music_enabled=bool(
+                    retry.input_payload.get("music_enabled", True)
+                ),
+            ),
+            "Final render retry reservation",
+        )
         render.job_id = retry.id
         render.status = RenderStatus.QUEUED
         render.started_at = None
@@ -261,8 +310,19 @@ class JobService:
             if render is not None:
                 render.status = RenderStatus.FAILED
                 render.completed_at = utc_now()
+        CreditService(BillingRepository(self.repository.session)).settle(job.id)
         self.repository.commit()
         aggregate_parent_job(self.repository, job.parent_job_id)
+
+    def _reserve(
+        self,
+        job: GenerationJob,
+        amount: Decimal,
+        description: str,
+    ) -> None:
+        CreditService(
+            BillingRepository(self.repository.session, job.user_id)
+        ).reserve(job=job, amount=amount, description=description)
 
 
 def aggregate_parent_job(

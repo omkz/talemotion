@@ -10,8 +10,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { LogOut } from "lucide-react";
+import { Coins, LogOut } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { useCredits } from "@/components/credits/credits-provider";
 
 interface SidebarContentProps {
   collapsed?: boolean;
@@ -21,6 +22,7 @@ interface SidebarContentProps {
 export function SidebarContent({ collapsed = false, onNavigate }: SidebarContentProps) {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const { credits, loading: creditsLoading } = useCredits();
   const initials = user?.name
     .split(/\s+/)
     .slice(0, 2)
@@ -99,7 +101,27 @@ export function SidebarContent({ collapsed = false, onNavigate }: SidebarContent
         })}
       </nav>
 
-      <div className={cn("border-t border-sidebar-border p-3", collapsed && "flex justify-center")}>
+      <div className="border-t border-sidebar-border p-3">
+        <div
+          className={cn(
+            "mb-2 flex items-center gap-2 rounded-md bg-sidebar-accent/50 px-2 py-1.5 text-sidebar-foreground",
+            collapsed && "justify-center px-1",
+          )}
+          aria-label={
+            credits
+              ? `${credits.available} available credits`
+              : "Credit balance loading"
+          }
+        >
+          <Coins className="size-3.5 shrink-0 text-accent" />
+          {!collapsed && (
+            <span className="text-xs">
+              {creditsLoading || !credits
+                ? "Loading credits…"
+                : `${credits.available.toLocaleString()} credits`}
+            </span>
+          )}
+        </div>
         <div
           className={cn(
             "flex items-center gap-2.5 rounded-md p-1.5",

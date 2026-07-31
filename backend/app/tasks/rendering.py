@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import re
+from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from sqlalchemy.orm import Session
 
+from app.billing.pricing import pricing
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import session_scope
@@ -14,18 +16,21 @@ from app.core.ids import utc_now
 from app.media import RenderMediaGateway, SceneMediaError, StoredMediaArtifact
 from app.media.genblaze_scene import GenblazeRenderMediaGateway
 from app.models.asset import Asset, AssetType
+from app.models.credits import UsageOperation
 from app.models.job import GenerationJob, JobStatus
 from app.models.project import Project, ProjectStatus
 from app.models.render import Render, RenderStatus
 from app.rendering import FFmpegComposer, RenderComposition, SceneMediaInput
 from app.rendering.captions import CaptionScene, build_srt
 from app.rendering.ffmpeg import RenderCompositionError
+from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import (
     AssetRepository,
     JobRepository,
     ProjectRepository,
     RenderRepository,
 )
+from app.services.credits import CreditService
 
 _SAFE_SEGMENT = re.compile(r"[^a-zA-Z0-9_-]+")
 
@@ -120,6 +125,7 @@ def execute_render_job(
             )
             project = projects.get(job.project_id)
             _cancel(job, render, project)
+            CreditService(BillingRepository(session)).settle(job.id)
             session.commit()
             return {"job_id": job.id, "status": "cancelled"}
         if job.status is not JobStatus.QUEUED or not isinstance(render_id, str):
@@ -134,6 +140,7 @@ def execute_render_job(
                 "render_not_found",
                 "The queued render no longer exists.",
             )
+            CreditService(BillingRepository(session)).settle(job.id)
             session.commit()
             return {"job_id": job.id, "status": "failed"}
 
@@ -221,6 +228,22 @@ def execute_render_job(
                                     f"{settings.talemotion_tts_voice or 'default'}"
                                 ),
                             )
+                            CreditService(
+                                BillingRepository(session)
+                            ).record_usage(
+                                job=job,
+                                operation=UsageOperation.TTS_GENERATION,
+                                provider=artifact.provider,
+                                model_name=artifact.model,
+                                credits=pricing.rate(
+                                    UsageOperation.TTS_GENERATION
+                                ),
+                                idempotency_key=(
+                                    f"usage:{job.id}:tts:{scene.id}"
+                                ),
+                                input_units=Decimal(len(scene.narration)),
+                                metadata={"asset_id": narration_asset.id},
+                            )
                             session.commit()
                         if not narration_asset.storage_object_key:
                             raise SceneMediaError(
@@ -285,6 +308,20 @@ def execute_render_job(
                             configuration=(
                                 f"gmicloud:{settings.talemotion_music_model}"
                             ),
+                        )
+                        CreditService(
+                            BillingRepository(session)
+                        ).record_usage(
+                            job=job,
+                            operation=UsageOperation.MUSIC_GENERATION,
+                            provider=artifact.provider,
+                            model_name=artifact.model,
+                            credits=pricing.rate(
+                                UsageOperation.MUSIC_GENERATION
+                            ),
+                            idempotency_key=f"usage:{job.id}:music",
+                            input_units=Decimal(project.duration_seconds),
+                            metadata={"asset_id": music_asset.id},
                         )
                         session.commit()
                     if not music_asset.storage_object_key:
@@ -381,6 +418,17 @@ def execute_render_job(
                     prompt=None,
                     purpose="final_render",
                 )
+                CreditService(BillingRepository(session)).record_usage(
+                    job=job,
+                    operation=UsageOperation.FINAL_RENDER,
+                    provider="ffmpeg",
+                    model_name=settings.ffmpeg_binary,
+                    credits=pricing.rate(UsageOperation.FINAL_RENDER),
+                    idempotency_key=f"usage:{job.id}:final-render",
+                    input_units=Decimal(len(scenes)),
+                    output_units=Decimal(project.duration_seconds),
+                    metadata={"asset_id": final_asset.id},
+                )
                 render.asset_id = final_asset.id
                 render.duration_seconds = sum(
                     scene.duration_seconds for scene in scenes
@@ -401,6 +449,7 @@ def execute_render_job(
                 job.result_payload = result_payload
                 project.status = ProjectStatus.READY
                 project.generation_progress = 100
+                CreditService(BillingRepository(session)).settle(job.id)
                 session.commit()
                 return {
                     "job_id": job.id,
@@ -419,6 +468,7 @@ def execute_render_job(
                 else "FFmpeg could not compose the final video."
             )
             _fail(job, render, project, code, message)
+            CreditService(BillingRepository(session)).settle(job.id)
             session.commit()
             return {"job_id": job.id, "status": "failed"}
         except Exception:
@@ -429,6 +479,7 @@ def execute_render_job(
                 "unknown_error",
                 "Final video rendering failed unexpectedly.",
             )
+            CreditService(BillingRepository(session)).settle(job.id)
             session.commit()
             return {"job_id": job.id, "status": "failed"}
 
@@ -479,6 +530,7 @@ def _cancel_if_requested(
     if job.status is not JobStatus.CANCEL_REQUESTED:
         return False
     _cancel(job, render, project)
+    CreditService(BillingRepository(session)).settle(job.id)
     session.commit()
     return True
 

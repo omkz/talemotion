@@ -1,5 +1,8 @@
+from decimal import Decimal
+
 from pydantic import ValidationError
 
+from app.billing.pricing import pricing
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import session_scope
@@ -7,11 +10,18 @@ from app.core.ids import utc_now
 from app.media import SceneMediaError, StoryboardGenerator
 from app.media.genblaze_scene import GenblazeStoryboardGenerator
 from app.models.chapter import ChapterStatus
+from app.models.credits import UsageOperation
 from app.models.job import GenerationJob, JobStatus
 from app.models.project import ProjectStatus
 from app.models.scene import Scene, SceneStatus
+from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import JobRepository, ProjectRepository
 from app.schemas.storyboard import HistoricalStoryboardDraft
+from app.services.credits import CreditService
+
+
+def _settle(session, job: GenerationJob) -> None:
+    CreditService(BillingRepository(session)).settle(job.id)
 
 
 def _valid_duration(
@@ -36,6 +46,7 @@ def execute_storyboard_job(
             return {"job_id": job_id, "status": "not_found"}
         if job.status is JobStatus.CANCEL_REQUESTED:
             _cancel(job)
+            _settle(session, job)
             session.commit()
             return {"job_id": job.id, "status": "cancelled"}
         if job.status is not JobStatus.QUEUED:
@@ -43,6 +54,7 @@ def execute_storyboard_job(
         project = projects.get(job.project_id)
         if project is None:
             _fail(job, "project_not_found", "The project no longer exists.")
+            _settle(session, job)
             session.commit()
             return {"job_id": job.id, "status": "failed"}
 
@@ -61,6 +73,7 @@ def execute_storyboard_job(
             if job.status is JobStatus.CANCEL_REQUESTED:
                 _cancel(job)
                 project.status = ProjectStatus.DRAFT
+                _settle(session, job)
                 session.commit()
                 return {"job_id": job.id, "status": "cancelled"}
             try:
@@ -70,6 +83,18 @@ def execute_storyboard_job(
                     historical_accuracy_note=project.historical_accuracy_note,
                     visual_style=project.visual_style,
                     duration_seconds=project.duration_seconds,
+                )
+                CreditService(BillingRepository(session)).record_usage(
+                    job=job,
+                    operation=UsageOperation.STORYBOARD_GENERATION,
+                    provider=settings.talemotion_storyboard_provider,
+                    model_name=settings.talemotion_storyboard_model or "",
+                    credits=pricing.rate(
+                        UsageOperation.STORYBOARD_GENERATION
+                    ),
+                    idempotency_key=f"usage:{job.id}:storyboard",
+                    input_units=Decimal(len(project.topic)),
+                    metadata={"attempt": attempt + 1},
                 )
                 if not _valid_duration(candidate, project.duration_seconds):
                     raise ValueError(
@@ -99,6 +124,7 @@ def execute_storyboard_job(
             )
             _fail(job, code, message)
             project.status = ProjectStatus.FAILED
+            _settle(session, job)
             session.commit()
             return {"job_id": job.id, "status": "failed"}
 
@@ -106,11 +132,13 @@ def execute_storyboard_job(
         if job.status is JobStatus.CANCEL_REQUESTED:
             _cancel(job)
             project.status = ProjectStatus.DRAFT
+            _settle(session, job)
             session.commit()
             return {"job_id": job.id, "status": "cancelled"}
         locked_project = projects.get_for_update(project.id)
         if locked_project is None:
             _fail(job, "project_not_found", "The project no longer exists.")
+            _settle(session, job)
             session.commit()
             return {"job_id": job.id, "status": "failed"}
         chapter = locked_project.chapters[0]
@@ -121,6 +149,7 @@ def execute_storyboard_job(
                 "state_conflict",
                 "Storyboard scenes were added while generation was running.",
             )
+            _settle(session, job)
             session.commit()
             return {"job_id": job.id, "status": "failed"}
         if chapter.scenes:
@@ -148,6 +177,7 @@ def execute_storyboard_job(
             "scene_ids": [scene.id for scene in chapter.scenes],
             "scene_count": 4,
         }
+        _settle(session, job)
         session.commit()
         return {
             "job_id": job.id,

@@ -1,3 +1,4 @@
+from decimal import Decimal
 from pathlib import Path
 
 from pydantic import SecretStr
@@ -41,6 +42,13 @@ class AppConfig(BaseSettings):
     csrf_cookie_name: str = "talemotion_csrf"
     session_ttl_days: int = 30
     session_cookie_secure: bool = False
+    new_user_free_credits: Decimal = Decimal("100")
+    credit_rate_storyboard_generation: Decimal = Decimal("5")
+    credit_rate_image_generation: Decimal = Decimal("4")
+    credit_rate_video_generation: Decimal = Decimal("8")
+    credit_rate_tts_generation: Decimal = Decimal("2")
+    credit_rate_music_generation: Decimal = Decimal("3")
+    credit_rate_final_render: Decimal = Decimal("8")
 
     model_config = SettingsConfigDict(
         env_file=".env",

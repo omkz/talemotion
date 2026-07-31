@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from decimal import Decimal
 
+from sqlalchemy.orm import Session
+
+from app.billing.pricing import pricing
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import session_scope
@@ -9,8 +13,10 @@ from app.core.ids import new_resource_id, utc_now
 from app.media import SceneMediaError, SceneMediaGenerator
 from app.media.genblaze_scene import GenblazeSceneGenerator
 from app.models.asset import Asset, AssetType
+from app.models.credits import CreditTransactionType, UsageOperation
 from app.models.job import GenerationJob, JobStatus
 from app.models.scene import Scene, SceneStatus
+from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import (
     AssetRepository,
     JobRepository,
@@ -26,6 +32,7 @@ from app.schemas.scene_run import (
     SceneVideoCompletedEvent,
     SceneVideoProgressEvent,
 )
+from app.services.credits import CreditService
 from app.services.jobs import aggregate_parent_job
 
 
@@ -93,6 +100,30 @@ def _events(
     yield from generator.run(request, run_id)
 
 
+def _settle_terminal_job(
+    session: Session,
+    jobs: JobRepository,
+    job: GenerationJob,
+) -> None:
+    billing = BillingRepository(session)
+    credits = CreditService(billing)
+    has_own_reservation = (
+        billing.transaction(job.id, CreditTransactionType.RESERVATION)
+        is not None
+    )
+    if has_own_reservation:
+        credits.settle(job.id)
+        session.commit()
+    parent = aggregate_parent_job(jobs, job.parent_job_id)
+    if parent is not None and parent.status in {
+        JobStatus.COMPLETED,
+        JobStatus.FAILED,
+        JobStatus.CANCELLED,
+    }:
+        credits.settle(parent.id)
+        session.commit()
+
+
 def execute_scene_media_job(
     job_id: str,
     *,
@@ -114,7 +145,7 @@ def execute_scene_media_job(
             )
             job.completed_at = utc_now()
             session.commit()
-            aggregate_parent_job(jobs, job.parent_job_id)
+            _settle_terminal_job(session, jobs, job)
             return {"job_id": job_id, "status": "cancelled"}
         if job.status is not JobStatus.QUEUED or not job.scene_id:
             return {"job_id": job_id, "status": job.status.value}
@@ -128,6 +159,7 @@ def execute_scene_media_job(
                 message="The scene no longer exists.",
             )
             session.commit()
+            _settle_terminal_job(session, jobs, job)
             return {"job_id": job_id, "status": "failed"}
 
         _set_job_state(
@@ -178,7 +210,7 @@ def execute_scene_media_job(
                         else SceneStatus.READY
                     )
                     session.commit()
-                    aggregate_parent_job(jobs, job.parent_job_id)
+                    _settle_terminal_job(session, jobs, job)
                     return {"job_id": job_id, "status": "cancelled"}
 
                 if event.type == "scene_image.started":
@@ -199,6 +231,16 @@ def execute_scene_media_job(
                         scene=scene,
                         event=event,
                         prompt=effective_prompt,
+                    )
+                    CreditService(BillingRepository(session)).record_usage(
+                        job=job,
+                        operation=UsageOperation.IMAGE_GENERATION,
+                        provider=event.asset.provider,
+                        model_name=event.asset.model,
+                        credits=pricing.rate(UsageOperation.IMAGE_GENERATION),
+                        idempotency_key=f"usage:{job.id}:image",
+                        input_units=Decimal(len(effective_prompt)),
+                        metadata={"asset_id": image.id},
                     )
                     scene.active_asset_id = image.id
                     scene.active_asset_version = image.version
@@ -227,6 +269,16 @@ def execute_scene_media_job(
                         event=event,
                         prompt=effective_prompt,
                     )
+                    CreditService(BillingRepository(session)).record_usage(
+                        job=job,
+                        operation=UsageOperation.VIDEO_GENERATION,
+                        provider=event.asset.provider,
+                        model_name=event.asset.model,
+                        credits=pricing.rate(UsageOperation.VIDEO_GENERATION),
+                        idempotency_key=f"usage:{job.id}:video",
+                        input_units=Decimal(request.duration_seconds),
+                        metadata={"asset_id": video.id},
+                    )
                     scene.active_asset_id = video.id
                     scene.active_asset_version = video.version
                     result_payload["video_asset_id"] = video.id
@@ -241,7 +293,7 @@ def execute_scene_media_job(
                         message=event.message,
                     )
                     session.commit()
-                    aggregate_parent_job(jobs, job.parent_job_id)
+                    _settle_terminal_job(session, jobs, job)
                     return {
                         "job_id": job_id,
                         "status": "failed",
@@ -259,7 +311,7 @@ def execute_scene_media_job(
                     scene.status = SceneStatus.COMPLETED
                 session.commit()
                 if event.type == "scene_run.completed":
-                    aggregate_parent_job(jobs, job.parent_job_id)
+                    _settle_terminal_job(session, jobs, job)
             if job.status is JobStatus.RUNNING:
                 _fail_job(
                     job,
@@ -268,7 +320,7 @@ def execute_scene_media_job(
                     message="The media pipeline ended without a terminal result.",
                 )
                 session.commit()
-                aggregate_parent_job(jobs, job.parent_job_id)
+                _settle_terminal_job(session, jobs, job)
         except SceneMediaError as error:
             _fail_job(
                 job,
@@ -277,7 +329,7 @@ def execute_scene_media_job(
                 message=error.message,
             )
             session.commit()
-            aggregate_parent_job(jobs, job.parent_job_id)
+            _settle_terminal_job(session, jobs, job)
             return {"job_id": job_id, "status": "failed", **result_payload}
         except TimeoutError:
             _fail_job(
@@ -287,7 +339,7 @@ def execute_scene_media_job(
                 message="The media provider timed out.",
             )
             session.commit()
-            aggregate_parent_job(jobs, job.parent_job_id)
+            _settle_terminal_job(session, jobs, job)
             return {"job_id": job_id, "status": "failed", **result_payload}
         except Exception:
             _fail_job(
@@ -297,7 +349,7 @@ def execute_scene_media_job(
                 message="Scene generation failed unexpectedly.",
             )
             session.commit()
-            aggregate_parent_job(jobs, job.parent_job_id)
+            _settle_terminal_job(session, jobs, job)
             return {"job_id": job_id, "status": "failed", **result_payload}
         return {"job_id": job_id, "status": job.status.value, **result_payload}
 

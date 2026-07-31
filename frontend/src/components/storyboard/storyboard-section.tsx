@@ -23,6 +23,7 @@ import {
 import type { AspectRatio, Scene } from "@/types";
 import { SceneCard } from "./scene-card";
 import { SceneEditDialog } from "./scene-edit-dialog";
+import { useCredits } from "@/components/credits/credits-provider";
 
 interface StoryboardSectionProps {
   projectId: string;
@@ -41,6 +42,7 @@ export function StoryboardSection({
   markDirty,
   onRefreshProject,
 }: StoryboardSectionProps) {
+  const { credits, estimate, canAfford, refresh: refreshCredits } = useCredits();
   const [editingScene, setEditingScene] = useState<Scene | null>(null);
   const [deletingSceneId, setDeletingSceneId] = useState<string | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -137,6 +139,7 @@ export function StoryboardSection({
           undefined,
           crypto.randomUUID(),
         );
+        await refreshCredits();
         const completed = await pollPersistedJob(queued.id, {
           onUpdate: () => undefined,
         });
@@ -158,9 +161,15 @@ export function StoryboardSection({
         error instanceof Error ? error.message : "Storyboard generation failed.",
       );
     } finally {
+      if (realSceneGenerationEnabled) {
+        await refreshCredits();
+      }
       setIsRegenerating(false);
     }
   };
+  const storyboardEstimate = estimate({ storyboard_generation: 1 });
+  const storyboardDisabled =
+    realSceneGenerationEnabled && !canAfford(storyboardEstimate);
 
   return (
     <div className="space-y-5">
@@ -195,7 +204,16 @@ export function StoryboardSection({
               Reset
             </Button>
           )}
-          <Button size="sm" onClick={handleRegenerate} disabled={isRegenerating}>
+          <Button
+            size="sm"
+            onClick={handleRegenerate}
+            disabled={isRegenerating || storyboardDisabled}
+            title={
+              credits && storyboardDisabled
+                ? `Requires ${storyboardEstimate} credits; ${credits.available} available`
+                : undefined
+            }
+          >
             {isRegenerating ? (
               <Loader2 className="size-3.5 animate-spin" />
             ) : (
@@ -206,6 +224,11 @@ export function StoryboardSection({
               : scenes.length > 0
                 ? "Regenerate Storyboard"
                 : "Generate Storyboard"}
+            {realSceneGenerationEnabled && (
+              <span className="text-[10px] opacity-70">
+                · est. {storyboardEstimate}
+              </span>
+            )}
           </Button>
         </div>
       </div>
@@ -224,7 +247,7 @@ export function StoryboardSection({
               onClick={
                 realSceneGenerationEnabled ? handleRegenerate : handleAddScene
               }
-              disabled={isBusy || isRegenerating}
+              disabled={isBusy || isRegenerating || storyboardDisabled}
             >
               {isRegenerating ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -238,6 +261,11 @@ export function StoryboardSection({
                   ? "Planning storyboard"
                   : "Generate Storyboard"
                 : "Add Scene"}
+              {realSceneGenerationEnabled && !isRegenerating && (
+                <span className="text-[10px] opacity-70">
+                  · est. {storyboardEstimate}
+                </span>
+              )}
             </Button>
           }
         />

@@ -1,12 +1,15 @@
 from dataclasses import dataclass
 
+from app.billing.pricing import pricing
 from app.core.errors import ApiError
 from app.core.ids import utc_now
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import VideoMode
 from app.models.scene import SceneStatus
+from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import JobRepository, ProjectRepository
 from app.schemas.scene_generation import CreateSceneGenerationRequest
+from app.services.credits import CreditService
 from app.services.idempotency import existing_idempotent_job
 
 
@@ -99,6 +102,15 @@ class SceneGenerationService:
             input_payload=payload,
             idempotency_key=scoped_key,
         )
+        CreditService(
+            BillingRepository(self.jobs.session, job.user_id)
+        ).reserve(
+            job=job,
+            amount=pricing.scene_generation(
+                generate_video=request.generate_video
+            ),
+            description="Scene media generation reservation",
+        )
         scene.status = SceneStatus.QUEUED
         self.jobs.commit()
         return QueuedSceneGeneration(
@@ -118,4 +130,5 @@ class SceneGenerationService:
         job.updated_at = utc_now()
         if job.scene is not None:
             job.scene.status = SceneStatus.FAILED
+        CreditService(BillingRepository(self.jobs.session)).settle(job.id)
         self.jobs.commit()

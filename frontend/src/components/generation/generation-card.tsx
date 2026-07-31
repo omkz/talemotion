@@ -28,6 +28,8 @@ interface GenerationCardProps {
   onApprove: () => void;
   onShowDetails: () => void;
   persistedMode?: boolean;
+  estimatedCredits?: number;
+  insufficientCredits?: boolean;
 }
 
 export function GenerationCard({
@@ -41,6 +43,8 @@ export function GenerationCard({
   onApprove,
   onShowDetails,
   persistedMode = false,
+  estimatedCredits,
+  insufficientCredits = false,
 }: GenerationCardProps) {
   const asset = scene.versions.find((v) => v.version === scene.activeVersion)?.asset ?? null;
   const isActive =
@@ -141,14 +145,38 @@ export function GenerationCard({
 
         <div className="mt-auto flex flex-wrap items-center gap-1 pt-1">
           {scene.status === "draft" && (
-            <Button size="sm" onClick={onGenerate}>
+            <Button
+              size="sm"
+              onClick={onGenerate}
+              disabled={insufficientCredits}
+              title={
+                insufficientCredits
+                  ? `Requires ${estimatedCredits} credits`
+                  : undefined
+              }
+            >
               <Sparkles className="size-3.5" />
               Generate Scene
+              {estimatedCredits !== undefined && (
+                <span className="text-[10px] opacity-70">
+                  · est. {estimatedCredits}
+                </span>
+              )}
             </Button>
           )}
 
           {scene.status === "failed" && canRetry && (
-            <Button size="sm" variant="outline" onClick={onRetry}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onRetry}
+              disabled={insufficientCredits}
+              title={
+                insufficientCredits
+                  ? `Requires ${estimatedCredits} credits`
+                  : undefined
+              }
+            >
               <RotateCcw className="size-3.5" />
               Retry
             </Button>
@@ -173,7 +201,13 @@ export function GenerationCard({
               )}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button size="icon-sm" variant="ghost" onClick={onRegenerate} aria-label="Regenerate scene">
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    onClick={onRegenerate}
+                    aria-label="Regenerate scene"
+                    disabled={insufficientCredits}
+                  >
                     <Sparkles className="size-3.5" />
                   </Button>
                 </TooltipTrigger>

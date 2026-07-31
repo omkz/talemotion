@@ -1,15 +1,19 @@
 from dataclasses import dataclass
 
+from app.billing.pricing import pricing
 from app.core.errors import ApiError
 from app.core.ids import utc_now
+from app.models.credits import UsageOperation
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import Project, ProjectStatus, VideoMode
 from app.models.scene import SceneStatus
+from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import JobRepository, ProjectRepository
 from app.schemas.storyboard import (
     CreateProjectGenerationRequest,
     CreateStoryboardRequest,
 )
+from app.services.credits import CreditService
 from app.services.idempotency import existing_idempotent_job
 
 
@@ -80,6 +84,13 @@ class ProjectGenerationService:
             input_payload=payload,
             max_retries=2,
             idempotency_key=scoped_key,
+        )
+        CreditService(
+            BillingRepository(self.jobs.session, job.user_id)
+        ).reserve(
+            job=job,
+            amount=pricing.rate(UsageOperation.STORYBOARD_GENERATION),
+            description="Storyboard generation reservation",
         )
         project.status = ProjectStatus.STORYBOARD_PENDING
         self.jobs.commit()
@@ -157,6 +168,16 @@ class ProjectGenerationService:
             )
             for scene in scenes
         ]
+        CreditService(
+            BillingRepository(self.jobs.session, parent.user_id)
+        ).reserve(
+            job=parent,
+            amount=pricing.project_generation(
+                scene_count=len(scenes),
+                generate_video=request.generate_video,
+            ),
+            description="Generate-all scene media reservation",
+        )
         for scene in scenes:
             scene.status = SceneStatus.QUEUED
         project.status = ProjectStatus.MEDIA_GENERATING
@@ -187,6 +208,9 @@ class ProjectGenerationService:
         project = self.projects.get_for_update(project_id)
         if project is not None:
             project.status = ProjectStatus.FAILED
+        credits = CreditService(BillingRepository(self.jobs.session))
+        for job_id in job_ids:
+            credits.settle(job_id)
         self.jobs.commit()
 
     def _historical_project(self, project_id: str) -> Project:

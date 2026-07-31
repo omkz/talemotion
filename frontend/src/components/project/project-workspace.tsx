@@ -34,6 +34,7 @@ import {
 import type { ModeBrief, Render, Scene, VideoProject } from "@/types";
 import { BriefSection } from "./brief-section";
 import { ProjectHeader, type SaveState } from "./project-header";
+import { useCredits } from "@/components/credits/credits-provider";
 
 type WorkspaceTab = "brief" | "storyboard" | "generate" | "final";
 
@@ -45,6 +46,7 @@ function initialTabFor(project: VideoProject): WorkspaceTab {
 }
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
+  const { estimate, canAfford, refresh: refreshCredits } = useCredits();
   const [project, setProject] = useState<VideoProject | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("brief");
@@ -328,6 +330,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           captions_enabled: project.output.captionsEnabled,
           music_enabled: project.output.musicEnabled,
         }, undefined, crypto.randomUUID());
+        await refreshCredits();
         const completed = await pollPersistedJob(queued.id, {
           onUpdate: (job) => {
             setRenderProgress(job.progress);
@@ -370,10 +373,20 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         error instanceof Error ? error.message : "Final rendering failed.",
       );
     } finally {
+      if (realSceneGenerationEnabled) {
+        await refreshCredits();
+      }
       setIsRendering(false);
       setRenderStage(null);
     }
   };
+
+  const renderEstimate = estimate({
+    final_render: 1,
+    tts_generation:
+      project.output.narrationEnabled === false ? 0 : scenes.length,
+    music_generation: project.output.musicEnabled ? 1 : 0,
+  });
 
   const primaryActionFor = (): { label: string; onClick: () => void; disabled?: boolean; loading?: boolean } => {
     switch (activeTab) {
@@ -393,9 +406,14 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         };
       case "final":
         return {
-          label: render ? "Render New Version" : "Render Final Video",
+          label: `${render ? "Render New Version" : "Render Final Video"}${
+            realSceneGenerationEnabled ? ` — estimated ${renderEstimate} credits` : ""
+          }`,
           onClick: handleStartRender,
-          disabled: !allScenesGenerated || isRendering,
+          disabled:
+            !allScenesGenerated ||
+            isRendering ||
+            (realSceneGenerationEnabled && !canAfford(renderEstimate)),
           loading: isRendering,
         };
     }

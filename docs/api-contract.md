@@ -26,6 +26,9 @@ session. Browser clients never store access tokens in localStorage.
 | `POST /auth/register`, `POST /auth/login` | Create an account or session |
 | `POST /auth/logout`, `GET /auth/me` | Revoke or inspect the current session |
 | `GET /auth/csrf` | Rotate and return the current session's CSRF token |
+| `GET /credits` | Current balance, reservations, availability, and rates |
+| `GET /credits/transactions` | Current user's immutable credit ledger |
+| `GET /usage` | Current user's provider-operation usage records |
 | `GET`, `POST /projects` | Cursor list or atomically create a project |
 | `GET`, `PATCH`, `DELETE /projects/{id}` | Read, update safe fields, soft-delete |
 | `POST /projects/{id}/storyboard` | Queue structured historical storyboard planning |
@@ -72,6 +75,28 @@ need to become accessible to a registered account.
 Migration `0007_session_csrf` adds the per-session CSRF hash. It revokes
 pre-existing sessions because their raw CSRF values cannot be reconstructed;
 users and owned resources are unaffected.
+
+Migration `0008_usage_credits` adds decimal-safe credit accounts,
+transactions, and usage records. Existing development users receive one
+documented initial grant; registration creates the same configurable grant
+atomically with the user.
+
+## Credits and provider usage
+
+Credits use PostgreSQL `NUMERIC`, never floating point. Storyboard, scene,
+regeneration, Generate All, TTS/music work inside rendering, and final
+assembly use centralized configurable rates. A generation transaction locks
+the user's account, reserves its maximum estimate, and creates the job in the
+same database transaction. Insufficient availability returns HTTP 402
+`insufficient_credits` and no task is enqueued.
+
+Workers persist actual successful provider operations. Terminal settlement
+charges only billable usage and releases the unused reservation; a failure
+before provider usage releases it all. A project-generation parent owns the
+aggregate reservation for its children. Database uniqueness keys tie
+reservations and charges to jobs and usage records to one provider operation,
+so task retries do not double-charge. Redis is never the balance source of
+truth.
 
 ## Persistence and lifecycle
 

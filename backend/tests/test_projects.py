@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models.chapter import Chapter
 from app.models.project import Project
+from app.repositories.auth import AuthRepository
 from app.repositories.sqlalchemy import ProjectRepository
 from app.schemas.project import CreateProjectRequest
 from app.services.projects import ProjectService
@@ -30,9 +31,16 @@ def test_project_creation_is_atomic_on_chapter_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with session_factory() as session:
-        repository = ProjectRepository(session)
+        owner = AuthRepository(session).create_user(
+            email="owner@example.com",
+            password_hash="unused-hash",
+            name="Test Owner",
+        )
+        session.commit()
+        repository = ProjectRepository(session, owner.id)
 
         def fail_after_add(project: Project) -> Project:
+            project.user_id = owner.id
             session.add(project)
             session.flush()
             raise RuntimeError("chapter persistence failed")

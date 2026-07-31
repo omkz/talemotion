@@ -1,17 +1,20 @@
 from dataclasses import dataclass
 
+from app.billing.pricing import pricing
 from app.core.errors import ApiError
 from app.core.ids import utc_now
 from app.models.asset import AssetStatus, AssetType
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import ProjectStatus
 from app.models.render import Render, RenderStatus
+from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import (
     JobRepository,
     ProjectRepository,
     RenderRepository,
 )
 from app.schemas.render import CreateRenderRequest
+from app.services.credits import CreditService
 from app.services.idempotency import existing_idempotent_job
 
 
@@ -142,6 +145,17 @@ class RenderService:
             input_payload={"render_id": render.id, **payload},
             idempotency_key=scoped_key,
         )
+        CreditService(
+            BillingRepository(self.jobs.session, job.user_id)
+        ).reserve(
+            job=job,
+            amount=pricing.render(
+                scene_count=len(scenes),
+                narration_enabled=narration_enabled,
+                music_enabled=music_enabled,
+            ),
+            description="Final video rendering reservation",
+        )
         render.job_id = job.id
         project.status = ProjectStatus.RENDERING
         project.generation_progress = 0
@@ -203,4 +217,5 @@ class RenderService:
             render.status = RenderStatus.FAILED
             render.completed_at = utc_now()
             render.project.status = ProjectStatus.FAILED
+        CreditService(BillingRepository(self.jobs.session)).settle(job_id)
         self.renders.commit()

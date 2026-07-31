@@ -20,6 +20,9 @@ without deleting completed assets.
 TaleMotion uses server-side cookie sessions. Password and session tokens are
 never returned or stored in browser localStorage; all product resources are
 scoped to their owning user, and mutations use CSRF protection.
+PostgreSQL also stores each user's internal credit account, immutable
+transaction ledger, and provider usage. This metering layer has no Stripe or
+payment-processing integration.
 
 ## Native infrastructure
 

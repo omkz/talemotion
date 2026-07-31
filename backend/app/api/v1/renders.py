@@ -29,6 +29,7 @@ ERROR_RESPONSES = {
     400: {"model": ErrorResponse},
     404: {"model": ErrorResponse},
     409: {"model": ErrorResponse},
+    402: {"model": ErrorResponse},
     502: {"model": ErrorResponse},
     503: {"model": ErrorResponse},
 }

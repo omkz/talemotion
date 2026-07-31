@@ -55,6 +55,11 @@ an HTTP-only SameSite session cookie plus a readable, independently random
 CSRF cookie. Passwords are hashed with Argon2 through `pwdlib`; only SHA-256
 hashes of session and CSRF tokens are persisted.
 
+New accounts receive the configurable `NEW_USER_FREE_CREDITS` grant.
+Generation rates are configured with the `CREDIT_RATE_*` variables. Values
+are internal product credits—not currency—and no payment processing is
+implemented.
+
 ## Run and migrate
 
 ```bash
@@ -139,6 +144,17 @@ least eight characters.
 The ownership migration assigns existing local records to a locked
 `development@talemotion.local` account so no project is deleted. Reassign
 legacy rows deliberately if they should belong to a newly registered user.
+
+## Usage metering
+
+`GET /api/v1/credits`, `GET /api/v1/credits/transactions`, and
+`GET /api/v1/usage` expose only the current user's account ledger and provider
+usage. Paid jobs reserve a maximum estimate while holding the account row
+lock. Workers record successful provider operations, convert the reservation
+to the actual charge, and release the remainder. Failures before billable
+usage release the full reservation. Job/type and usage idempotency constraints
+prevent Celery retries from charging twice. Insufficient requests fail with
+HTTP 402 before queue dispatch.
 
 ## Final render workflow
 

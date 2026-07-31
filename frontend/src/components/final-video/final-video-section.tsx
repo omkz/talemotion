@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { SettingChip } from "@/components/shared/setting-chip";
+import { useCredits } from "@/components/credits/credits-provider";
 import { generateThumbnail } from "@/lib/mock-api";
 import { realSceneGenerationEnabled } from "@/lib/api/scene-generation-jobs";
 import type { Render, VideoProject } from "@/types";
@@ -37,8 +38,16 @@ export function FinalVideoSection({
   onStartRender,
 }: FinalVideoSectionProps) {
   const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
+  const { credits, estimate, canAfford } = useCredits();
 
   const allScenesReady = scenesCompleted === totalScenes && totalScenes > 0;
+  const renderEstimate = estimate({
+    final_render: 1,
+    tts_generation: project.output.narrationEnabled !== false ? totalScenes : 0,
+    music_generation: project.output.musicEnabled ? 1 : 0,
+  });
+  const insufficientCredits =
+    realSceneGenerationEnabled && !canAfford(renderEstimate);
 
   const handleGenerateThumbnail = async () => {
     if (!render) return;
@@ -146,13 +155,24 @@ export function FinalVideoSection({
             )}
 
             <div className="mt-5 flex flex-wrap items-center gap-2">
-              <Button onClick={onStartRender} disabled={isRendering || !allScenesReady}>
+              <Button
+                onClick={onStartRender}
+                disabled={isRendering || !allScenesReady || insufficientCredits}
+                title={
+                  insufficientCredits
+                    ? `Requires ${renderEstimate} credits; ${credits?.available ?? 0} available`
+                    : undefined
+                }
+              >
                 {isRendering ? (
                   <Loader2 className="size-4 animate-spin" />
                 ) : (
                   <Sparkles className="size-4" />
                 )}
                 {render ? "Render New Version" : "Render Final Video"}
+                <span className="text-[10px] opacity-70">
+                  · est. {renderEstimate}
+                </span>
               </Button>
               {!realSceneGenerationEnabled && (
                 <Button

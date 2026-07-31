@@ -59,7 +59,10 @@ export function StepOutputSettings({
           <FormItem>
             <FormLabel>Title</FormLabel>
             <FormControl>
-              <Input placeholder="The Rise of Majapahit" {...field} />
+              <Input
+                placeholder={appliedTemplate?.example.title ?? "The Rise of Majapahit"}
+                {...field}
+              />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -270,11 +273,7 @@ export function StepOutputSettings({
                 <p className="text-xs text-muted-foreground">Burn in synced captions</p>
               </div>
               <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                  disabled={realHistoricalOnly}
-                />
+                <Switch checked={field.value} onCheckedChange={field.onChange} />
               </FormControl>
             </FormItem>
           )}
@@ -289,11 +288,7 @@ export function StepOutputSettings({
                 <p className="text-xs text-muted-foreground">Add a mood-matched score</p>
               </div>
               <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={field.onChange}
-                  disabled={realHistoricalOnly}
-                />
+                <Switch checked={field.value} onCheckedChange={field.onChange} />
               </FormControl>
             </FormItem>
           )}

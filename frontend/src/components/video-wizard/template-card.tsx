@@ -1,12 +1,11 @@
 import {
-  BadgeDollarSign,
-  Clapperboard,
   Clock,
   Crown,
   Layers,
   Rows3,
   ScrollText,
   Search,
+  Swords,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -18,10 +17,9 @@ import type {
 
 const TEMPLATE_ICONS: Record<TemplateIconKey, LucideIcon> = {
   "historical-fact": ScrollText,
+  "battle-and-betrayal": Swords,
   empire: Crown,
-  microdrama: Clapperboard,
   mystery: Search,
-  "product-solution": BadgeDollarSign,
 };
 
 interface TemplateCardProps {

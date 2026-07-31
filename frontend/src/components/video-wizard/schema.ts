@@ -2,7 +2,10 @@ import { z } from "zod";
 
 export const wizardSchema = z
   .object({
-    startMode: z.enum(["scratch", "template"]),
+    // Every wizard run currently starts from a template — see
+    // step-starting-point.tsx for why Custom Setup is hidden for now.
+    // templateId stays nullable because CreateVideoProjectInput/mock data
+    // already model a template-less project as a valid, persisted state.
     templateId: z.string().nullable(),
     mode: z.enum(["historical-documentary", "microdrama", "product-advertisement"]),
 
@@ -67,7 +70,7 @@ export const wizardSchema = z
 export type WizardFormValues = z.infer<typeof wizardSchema>;
 
 export const STEP_FIELDS: Record<number, (keyof WizardFormValues)[]> = {
-  1: ["startMode", "mode"],
+  1: ["templateId", "mode"],
   2: [
     "topic",
     "additionalDirection",
@@ -96,7 +99,6 @@ export const STEP_FIELDS: Record<number, (keyof WizardFormValues)[]> = {
 };
 
 export const WIZARD_DEFAULT_VALUES: WizardFormValues = {
-  startMode: "scratch",
   templateId: null,
   mode: "historical-documentary",
   topic: "",

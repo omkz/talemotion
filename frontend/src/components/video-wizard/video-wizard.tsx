@@ -15,7 +15,6 @@ import {
 } from "@/lib/api/persisted-projects";
 import { realSceneGenerationEnabled } from "@/lib/api/scene-generation-jobs";
 import { VIDEO_TEMPLATES, type VideoTemplatePreset } from "@/lib/mock-data";
-import type { VideoMode } from "@/types";
 import { WizardStepper } from "./wizard-stepper";
 import { StepStartingPoint } from "./step-starting-point";
 import { StepContentForm } from "./step-content-form";
@@ -24,7 +23,7 @@ import { STEP_FIELDS, WIZARD_DEFAULT_VALUES, wizardSchema, type WizardFormValues
 import { mapWizardValuesToProjectInput } from "./map-to-project";
 
 const STEP_TITLES = [
-  "How do you want to start?",
+  "Choose a story format",
   "Add your content",
   "Output settings",
 ];
@@ -32,7 +31,6 @@ const STEP_TITLES = [
 const DEFAULT_TEMPLATE = VIDEO_TEMPLATES[0];
 const INITIAL_WIZARD_VALUES: WizardFormValues = {
   ...WIZARD_DEFAULT_VALUES,
-  startMode: "template",
   templateId: DEFAULT_TEMPLATE.id,
   mode: DEFAULT_TEMPLATE.mode,
   duration: String(DEFAULT_TEMPLATE.duration) as WizardFormValues["duration"],
@@ -53,9 +51,9 @@ export function VideoWizard() {
     mode: "onChange",
   });
 
-  const [startMode, templateId, mode] = useWatch({
+  const [templateId, mode] = useWatch({
     control: form.control,
-    name: ["startMode", "templateId", "mode"],
+    name: ["templateId", "mode"],
   });
   const appliedTemplate = VIDEO_TEMPLATES.find((t) => t.id === templateId) ?? null;
 
@@ -66,25 +64,6 @@ export function VideoWizard() {
 
   const goBack = () => setStep((s) => Math.max(1, s - 1));
 
-  const handleSelectScratch = () => {
-    form.setValue("startMode", "scratch", { shouldValidate: true });
-    form.setValue("templateId", null, { shouldValidate: true });
-    form.setValue("duration", WIZARD_DEFAULT_VALUES.duration);
-    form.setValue("aspectRatio", WIZARD_DEFAULT_VALUES.aspectRatio);
-    form.setValue(
-      "sceneCount",
-      realSceneGenerationEnabled ? "4" : WIZARD_DEFAULT_VALUES.sceneCount,
-    );
-    form.setValue("visualStyle", WIZARD_DEFAULT_VALUES.visualStyle);
-    form.setValue("narrationStyle", WIZARD_DEFAULT_VALUES.narrationStyle);
-  };
-
-  const handleSelectMode = (value: VideoMode) => {
-    form.setValue("startMode", "scratch", { shouldValidate: true });
-    form.setValue("templateId", null, { shouldValidate: true });
-    form.setValue("mode", value, { shouldValidate: true });
-  };
-
   const applyTemplateDefaults = (template: VideoTemplatePreset) => {
     form.setValue("duration", String(template.duration) as WizardFormValues["duration"]);
     form.setValue("aspectRatio", template.aspectRatio);
@@ -94,7 +73,6 @@ export function VideoWizard() {
   };
 
   const handleSelectTemplate = (template: VideoTemplatePreset) => {
-    form.setValue("startMode", "template", { shouldValidate: true });
     form.setValue("templateId", template.id, { shouldValidate: true });
     form.setValue("mode", template.mode, { shouldValidate: true });
     applyTemplateDefaults(template);
@@ -169,20 +147,15 @@ export function VideoWizard() {
 
             {step === 1 && (
               <StepStartingPoint
-                startMode={startMode}
-                mode={mode}
                 templateId={templateId}
-                onSelectScratch={handleSelectScratch}
-                onSelectMode={handleSelectMode}
                 onSelectTemplate={handleSelectTemplate}
-                realHistoricalOnly={realSceneGenerationEnabled}
               />
             )}
             {step === 2 && (
               <StepContentForm
                 mode={mode}
                 control={form.control}
-                guidance={appliedTemplate?.guidance}
+                appliedTemplate={appliedTemplate}
               />
             )}
             {step === 3 && (

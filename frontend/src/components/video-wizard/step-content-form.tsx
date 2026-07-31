@@ -8,29 +8,38 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import type { VideoTemplatePreset } from "@/lib/mock-data";
 import type { VideoMode } from "@/types";
 import type { WizardFormValues } from "./schema";
 
 interface StepContentFormProps {
   mode: VideoMode;
   control: Control<WizardFormValues>;
-  guidance?: string;
+  appliedTemplate?: VideoTemplatePreset | null;
 }
 
-export function StepContentForm({ mode, control, guidance }: StepContentFormProps) {
+export function StepContentForm({ mode, control, appliedTemplate }: StepContentFormProps) {
   return (
     <div className="grid gap-5">
-      {guidance && (
+      {appliedTemplate && (
         <p className="rounded-lg border border-accent/25 bg-accent/8 px-3.5 py-2.5 text-sm text-foreground/90">
-          {guidance}
+          {appliedTemplate.guidance}
         </p>
       )}
-      <StepContentFields mode={mode} control={control} />
+      <StepContentFields mode={mode} control={control} appliedTemplate={appliedTemplate} />
     </div>
   );
 }
 
-function StepContentFields({ mode, control }: { mode: VideoMode; control: Control<WizardFormValues> }) {
+function StepContentFields({
+  mode,
+  control,
+  appliedTemplate,
+}: {
+  mode: VideoMode;
+  control: Control<WizardFormValues>;
+  appliedTemplate?: VideoTemplatePreset | null;
+}) {
   if (mode === "microdrama") {
     return (
       <div className="grid gap-5">
@@ -188,7 +197,10 @@ function StepContentFields({ mode, control }: { mode: VideoMode; control: Contro
             <FormLabel>Topic</FormLabel>
             <FormControl>
               <Textarea
-                placeholder="The founding of the Majapahit Empire — how Raden Wijaya turned defeat into the birth of a kingdom."
+                placeholder={
+                  appliedTemplate?.example.topic ??
+                  "The founding of the Majapahit Empire — how Raden Wijaya turned defeat into the birth of a kingdom."
+                }
                 rows={3}
                 {...field}
               />
@@ -205,7 +217,10 @@ function StepContentFields({ mode, control }: { mode: VideoMode; control: Contro
             <FormLabel>Additional direction</FormLabel>
             <FormControl>
               <Textarea
-                placeholder="Emphasize strategy and resilience over spectacle. Keep tone reverent and cinematic."
+                placeholder={
+                  appliedTemplate?.example.additionalDirection ??
+                  "Emphasize strategy and resilience over spectacle. Keep tone reverent and cinematic."
+                }
                 rows={2}
                 {...field}
               />

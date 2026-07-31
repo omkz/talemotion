@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sqlalchemy import Select, func, or_, select
+from datetime import datetime
+
+from sqlalchemy import Select, and_, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.models.asset import Asset, AssetStatus, AssetType
@@ -133,6 +135,7 @@ class JobRepository:
         input_payload: dict[str, object] | None = None,
         retry_count: int = 0,
         max_retries: int = 2,
+        idempotency_key: str | None = None,
     ) -> GenerationJob:
         job = GenerationJob(
             project_id=project_id,
@@ -145,6 +148,7 @@ class JobRepository:
             input_payload=input_payload or {},
             retry_count=retry_count,
             max_retries=max_retries,
+            idempotency_key=idempotency_key,
         )
         self.session.add(job)
         self.session.flush()
@@ -165,6 +169,81 @@ class JobRepository:
             select(GenerationJob)
             .where(GenerationJob.id == job_id)
             .with_for_update()
+        )
+
+    def by_idempotency_key(self, key: str) -> GenerationJob | None:
+        return self.session.scalar(
+            select(GenerationJob)
+            .where(GenerationJob.idempotency_key == key)
+            .options(
+                selectinload(GenerationJob.children),
+                selectinload(GenerationJob.scene).selectinload(Scene.chapter),
+            )
+        )
+
+    def lock_idempotency_key(self, key: str) -> None:
+        self.session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtext(key)))
+        )
+
+    def list_for_project(
+        self,
+        project_id: str,
+        *,
+        active_only: bool = False,
+    ) -> list[GenerationJob]:
+        statement = (
+            select(GenerationJob)
+            .where(GenerationJob.project_id == project_id)
+            .options(
+                selectinload(GenerationJob.children),
+                selectinload(GenerationJob.scene).selectinload(Scene.chapter),
+            )
+            .order_by(
+                GenerationJob.created_at.desc(),
+                GenerationJob.id.desc(),
+            )
+        )
+        if active_only:
+            statement = statement.where(
+                GenerationJob.status.in_(
+                    (
+                        JobStatus.QUEUED,
+                        JobStatus.RUNNING,
+                        JobStatus.CANCEL_REQUESTED,
+                    )
+                )
+            )
+        return list(self.session.scalars(statement).unique())
+
+    def stale_jobs(
+        self,
+        *,
+        queued_before: datetime,
+        running_before: datetime,
+    ) -> list[GenerationJob]:
+        return list(
+            self.session.scalars(
+                select(GenerationJob)
+                .where(
+                    or_(
+                        and_(
+                            GenerationJob.status == JobStatus.QUEUED,
+                            GenerationJob.created_at < queued_before,
+                        ),
+                        and_(
+                            GenerationJob.status.in_(
+                                (
+                                    JobStatus.RUNNING,
+                                    JobStatus.CANCEL_REQUESTED,
+                                )
+                            ),
+                            GenerationJob.updated_at < running_before,
+                        ),
+                    )
+                )
+                .with_for_update(skip_locked=True)
+            )
         )
 
     def active_for_scene(self, scene_id: str) -> GenerationJob | None:
@@ -305,6 +384,7 @@ class AssetRepository:
         file_size_bytes: int | None,
         sha256: str | None,
         provenance_object_key: str | None,
+        parent_asset_id: str | None = None,
     ) -> Asset:
         asset = Asset(
             project_id=project_id,
@@ -322,6 +402,7 @@ class AssetRepository:
             file_size_bytes=file_size_bytes,
             sha256=sha256,
             provenance_object_key=provenance_object_key,
+            parent_asset_id=parent_asset_id,
         )
         self.session.add(asset)
         self.session.flush()

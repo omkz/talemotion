@@ -125,6 +125,8 @@ paths:
       summary: Queue media generation for all four storyboard scenes
       parameters:
         - {$ref: "#/components/parameters/ProjectId"}
+        - {$ref: "#/components/parameters/IdempotencyKey"}
+        - {$ref: "#/components/parameters/IdempotencyKey"}
       requestBody:
         required: true
         content:
@@ -157,6 +159,7 @@ paths:
       summary: Queue final MP4 rendering
       parameters:
         - {$ref: "#/components/parameters/ProjectId"}
+        - {$ref: "#/components/parameters/IdempotencyKey"}
       requestBody:
         required: false
         content:
@@ -275,6 +278,7 @@ paths:
       summary: Queue real media generation for a persisted scene
       parameters:
         - {$ref: "#/components/parameters/SceneId"}
+        - {$ref: "#/components/parameters/IdempotencyKey"}
       requestBody:
         required: true
         content:
@@ -289,6 +293,41 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
         "409": {$ref: "#/components/responses/Error"}
         "503": {$ref: "#/components/responses/Error"}
+  /scenes/{scene_id}/regenerations:
+    post:
+      tags: [Scenes]
+      summary: Queue a new scene media version
+      parameters:
+        - {$ref: "#/components/parameters/SceneId"}
+        - {$ref: "#/components/parameters/IdempotencyKey"}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateSceneRegenerationRequest"}
+      responses:
+        "202":
+          description: Persisted queued regeneration job
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/GenerationJobResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /jobs:
+    get:
+      tags: [Jobs]
+      summary: List persisted project jobs
+      parameters:
+        - {name: project_id, in: query, required: true, schema: {type: string}}
+        - {name: active_only, in: query, schema: {type: boolean, default: false}}
+      responses:
+        "200":
+          description: Project jobs, newest first
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/GenerationJobListResponse"}
+        "404": {$ref: "#/components/responses/Error"}
   /jobs/{job_id}:
     get:
       tags: [Jobs]
@@ -318,18 +357,17 @@ paths:
   /jobs/{job_id}/retry:
     post:
       tags: [Jobs]
-      summary: Retry a failed or cancelled scene-generation job
-      description: Creates a new child attempt and preserves prior job history.
+      summary: Retry failed or cancelled generation work
+      description: Creates a new attempt and preserves completed assets and prior job history.
       parameters:
         - {$ref: "#/components/parameters/JobId"}
       responses:
         "200":
-          description: New queued scene-generation job
+          description: New queued retry job
           content:
             application/json:
               schema: {$ref: "#/components/schemas/GenerationJobResponse"}
         "409": {$ref: "#/components/responses/Error"}
-        "501": {$ref: "#/components/responses/Error"}
   /assets/{asset_id}:
     get:
       tags: [Assets]
@@ -392,6 +430,11 @@ components:
     ChapterId: {name: chapter_id, in: path, required: true, schema: {type: string}}
     SceneId: {name: scene_id, in: path, required: true, schema: {type: string}}
     JobId: {name: job_id, in: path, required: true, schema: {type: string}}
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: {type: string, minLength: 1, maxLength: 128}
   responses:
     Error:
       description: Consistent error envelope
@@ -520,6 +563,14 @@ components:
       properties:
         duration_seconds: {type: integer, minimum: 1, maximum: 60, default: 5}
         generate_video: {type: boolean, default: true}
+    CreateSceneRegenerationRequest:
+      type: object
+      additionalProperties: false
+      required: [additional_instruction]
+      properties:
+        additional_instruction: {type: string, minLength: 1, maxLength: 2000}
+        duration_seconds: {type: integer, minimum: 1, maximum: 60, default: 5}
+        generate_video: {type: boolean, default: true}
     CreateStoryboardRequest:
       type: object
       additionalProperties: false
@@ -589,15 +640,24 @@ components:
         children:
           type: array
           items: {$ref: "#/components/schemas/GenerationJobChildResponse"}
+    GenerationJobListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/GenerationJobResponse"}
     GenerationJobChildResponse:
       type: object
-      required: [id, scene_id, status, progress, result_asset_id]
+      required: [id, scene_id, status, progress, result_asset_id, error_code, error_message]
       properties:
         id: {type: string}
         scene_id: {type: [string, "null"]}
         status: {$ref: "#/components/schemas/JobStatus"}
         progress: {type: integer, minimum: 0, maximum: 100}
         result_asset_id: {type: [string, "null"]}
+        error_code: {type: [string, "null"]}
+        error_message: {type: [string, "null"]}
     AssetResponse:
       type: object
       required: [id, project_id, type, status, version, generation_parameters, created_at, updated_at]

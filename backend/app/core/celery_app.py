@@ -24,6 +24,7 @@ celery_app.conf.update(
     task_default_queue="system",
     task_routes={
         "app.tasks.system.database_worker_health": {"queue": "system"},
+        "app.tasks.system.cleanup_abandoned_jobs": {"queue": "system"},
         "app.tasks.media.generate_scene_media": {"queue": "media"},
         "app.tasks.storyboard.generate_project_storyboard": {
             "queue": "storyboard"
@@ -41,4 +42,10 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
     task_soft_time_limit=3300,
     task_time_limit=3600,
+    beat_schedule={
+        "cleanup-abandoned-generation-jobs": {
+            "task": "app.tasks.system.cleanup_abandoned_jobs",
+            "schedule": 300.0,
+        }
+    },
 )

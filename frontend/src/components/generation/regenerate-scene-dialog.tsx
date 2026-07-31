@@ -22,6 +22,7 @@ interface RegenerateSceneDialogProps {
   onOpenChange: (open: boolean) => void;
   onComplete: (sceneId: string, version: SceneVersion) => void;
   instructionPlaceholder?: string;
+  onRealRegenerate?: (scene: Scene, instruction: string) => Promise<void>;
 }
 
 const STAGE_LABEL: Partial<Record<GenerationStage, string>> = {
@@ -37,6 +38,7 @@ export function RegenerateSceneDialog({
   onOpenChange,
   onComplete,
   instructionPlaceholder,
+  onRealRegenerate,
 }: RegenerateSceneDialogProps) {
   return (
     <Dialog open={scene !== null} onOpenChange={onOpenChange}>
@@ -56,6 +58,7 @@ export function RegenerateSceneDialog({
             instructionPlaceholder={instructionPlaceholder}
             onOpenChange={onOpenChange}
             onComplete={onComplete}
+            onRealRegenerate={onRealRegenerate}
           />
         )}
       </DialogContent>
@@ -68,11 +71,13 @@ function RegenerateForm({
   instructionPlaceholder,
   onOpenChange,
   onComplete,
+  onRealRegenerate,
 }: {
   scene: Scene;
   instructionPlaceholder?: string;
   onOpenChange: (open: boolean) => void;
   onComplete: (sceneId: string, version: SceneVersion) => void;
+  onRealRegenerate?: (scene: Scene, instruction: string) => Promise<void>;
 }) {
   const [instruction, setInstruction] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -83,24 +88,30 @@ function RegenerateForm({
 
   const handleRegenerate = async () => {
     setIsGenerating(true);
-    const { asset } = await regenerateScene({
-      sceneId: scene.id,
-      nextVersion,
-      onProgress: (value, stage) => {
-        setProgress(value);
-        setStageLabel(STAGE_LABEL[stage] ?? "");
-      },
-    });
-
-    onComplete(scene.id, {
-      version: nextVersion,
-      visualPrompt: scene.visualPrompt,
-      instruction: instruction.trim() || null,
-      asset,
-      createdAt: new Date().toISOString(),
-    });
-    setIsGenerating(false);
-    onOpenChange(false);
+    try {
+      if (onRealRegenerate) {
+        await onRealRegenerate(scene, instruction.trim());
+      } else {
+        const { asset } = await regenerateScene({
+          sceneId: scene.id,
+          nextVersion,
+          onProgress: (value, stage) => {
+            setProgress(value);
+            setStageLabel(STAGE_LABEL[stage] ?? "");
+          },
+        });
+        onComplete(scene.id, {
+          version: nextVersion,
+          visualPrompt: scene.visualPrompt,
+          instruction: instruction.trim() || null,
+          asset,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      onOpenChange(false);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -166,7 +177,10 @@ function RegenerateForm({
         <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isGenerating}>
           Cancel
         </Button>
-        <Button onClick={handleRegenerate} disabled={isGenerating}>
+        <Button
+          onClick={handleRegenerate}
+          disabled={isGenerating || (onRealRegenerate !== undefined && !instruction.trim())}
+        >
           {isGenerating ? (
             <Loader2 className="size-4 animate-spin" />
           ) : (

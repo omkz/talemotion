@@ -21,10 +21,5 @@ export function createConfiguredVideoProjectApi(): VideoProjectApi {
   return new MockVideoProjectApi();
 }
 
-/**
- * Explicitly active provider. Existing UI modules still call the underlying
- * mock functions directly; migrations can move feature-by-feature to this
- * interface without enabling HTTP requests.
- */
 export const videoProjectApi: VideoProjectApi =
-  new MockVideoProjectApi();
+  createConfiguredVideoProjectApi();

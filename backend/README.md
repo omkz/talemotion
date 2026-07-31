@@ -103,6 +103,12 @@ commits a queued job, dispatches `app.tasks.media.generate_scene_media` to the
 fetches `GET /api/v1/assets/{asset_id}` and requests a signed preview with
 `POST /api/v1/assets/{asset_id}/preview-url`.
 
+Storyboard, scene, project-generation, regeneration, and render requests accept
+`Idempotency-Key`. Job state can be restored with
+`GET /api/v1/jobs?project_id=...`; retries create new attempts while preserving
+successful assets. Run `uv run celery -A app.core.celery_app beat` with the
+worker to clean up abandoned queued or heartbeat-stale jobs.
+
 The worker records real stage progress, persists the image before starting
 video generation, and preserves that image if video generation fails. Media
 is stored under:

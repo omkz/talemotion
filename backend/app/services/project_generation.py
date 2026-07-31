@@ -10,12 +10,20 @@ from app.schemas.storyboard import (
     CreateProjectGenerationRequest,
     CreateStoryboardRequest,
 )
+from app.services.idempotency import existing_idempotent_job
+
+
+@dataclass(frozen=True, slots=True)
+class QueuedStoryboard:
+    job: GenerationJob
+    created: bool
 
 
 @dataclass(slots=True)
 class ProjectGenerationJobs:
     parent: GenerationJob
     children: list[GenerationJob]
+    created: bool
 
 
 class ProjectGenerationService:
@@ -31,8 +39,24 @@ class ProjectGenerationService:
         self,
         project_id: str,
         request: CreateStoryboardRequest,
-    ) -> GenerationJob:
+        *,
+        idempotency_key: str | None = None,
+    ) -> QueuedStoryboard:
         project = self._historical_project(project_id)
+        payload: dict[str, object] = {
+            "replace_existing": request.replace_existing
+        }
+        existing, scoped_key = existing_idempotent_job(
+            self.jobs,
+            operation=f"project:{project.id}:storyboard",
+            key=idempotency_key,
+            project_id=project.id,
+            scene_id=None,
+            job_type=JobType.STORYBOARD,
+            input_payload=payload,
+        )
+        if existing is not None:
+            return QueuedStoryboard(existing, created=False)
         active = self.jobs.active_for_project(project.id, JobType.STORYBOARD)
         if active is not None:
             raise ApiError(
@@ -53,20 +77,41 @@ class ProjectGenerationService:
             project_id=project.id,
             job_type=JobType.STORYBOARD,
             current_stage="queued",
-            input_payload={"replace_existing": request.replace_existing},
+            input_payload=payload,
             max_retries=2,
+            idempotency_key=scoped_key,
         )
         project.status = ProjectStatus.STORYBOARD_PENDING
         self.jobs.commit()
-        return self.jobs.get(job.id) or job
+        return QueuedStoryboard(self.jobs.get(job.id) or job, created=True)
 
     def queue_all_scenes(
         self,
         project_id: str,
         request: CreateProjectGenerationRequest,
+        *,
+        idempotency_key: str | None = None,
     ) -> ProjectGenerationJobs:
         project = self._historical_project(project_id)
         scenes = project.chapters[0].scenes
+        payload: dict[str, object] = {
+            "generate_video": request.generate_video
+        }
+        existing, scoped_key = existing_idempotent_job(
+            self.jobs,
+            operation=f"project:{project.id}:generation",
+            key=idempotency_key,
+            project_id=project.id,
+            scene_id=None,
+            job_type=JobType.PROJECT_GENERATION,
+            input_payload=payload,
+        )
+        if existing is not None:
+            return ProjectGenerationJobs(
+                parent=existing,
+                children=self.jobs.children(existing.id),
+                created=False,
+            )
         if project.status is not ProjectStatus.STORYBOARD_READY:
             raise ApiError(
                 status_code=409,
@@ -95,7 +140,8 @@ class ProjectGenerationService:
             project_id=project.id,
             job_type=JobType.PROJECT_GENERATION,
             current_stage="queued",
-            input_payload={"generate_video": request.generate_video},
+            input_payload=payload,
+            idempotency_key=scoped_key,
         )
         children = [
             self.jobs.create(
@@ -120,6 +166,7 @@ class ProjectGenerationService:
         return ProjectGenerationJobs(
             parent=persisted_parent,
             children=children,
+            created=True,
         )
 
     def mark_queue_failure(
@@ -143,7 +190,7 @@ class ProjectGenerationService:
         self.jobs.commit()
 
     def _historical_project(self, project_id: str) -> Project:
-        project = self.projects.get(project_id)
+        project = self.projects.get_for_update(project_id)
         if project is None:
             raise ApiError(
                 status_code=404,

@@ -1,7 +1,8 @@
 import { ApiClient } from "./client";
 
 export const realSceneGenerationEnabled =
-  process.env.NEXT_PUBLIC_REAL_SCENE_GENERATION === "true";
+  process.env.NEXT_PUBLIC_REAL_SCENE_GENERATION === "true" ||
+  process.env.NEXT_PUBLIC_API_MODE === "http";
 
 export type PersistedJobStatus =
   | "queued"
@@ -17,6 +18,8 @@ export interface PersistedJobChild {
   status: PersistedJobStatus;
   progress: number;
   result_asset_id: string | null;
+  error_code: string | null;
+  error_message: string | null;
 }
 
 export interface PersistedGenerationJob {
@@ -69,10 +72,29 @@ function client(): ApiClient {
 export function createSceneGeneration(
   sceneId: string,
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<PersistedGenerationJob> {
   return client().post(`/scenes/${sceneId}/generations`, {
     body: { duration_seconds: 5, generate_video: true },
     signal,
+    idempotencyKey,
+  });
+}
+
+export function createSceneRegeneration(
+  sceneId: string,
+  additionalInstruction: string,
+  signal?: AbortSignal,
+  idempotencyKey?: string,
+): Promise<PersistedGenerationJob> {
+  return client().post(`/scenes/${sceneId}/regenerations`, {
+    body: {
+      additional_instruction: additionalInstruction,
+      duration_seconds: 5,
+      generate_video: true,
+    },
+    signal,
+    idempotencyKey,
   });
 }
 
@@ -80,20 +102,24 @@ export function createStoryboardGeneration(
   projectId: string,
   replaceExisting: boolean,
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<PersistedGenerationJob> {
   return client().post(`/projects/${projectId}/storyboard`, {
     body: { replace_existing: replaceExisting },
     signal,
+    idempotencyKey,
   });
 }
 
 export function createProjectGeneration(
   projectId: string,
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<PersistedGenerationJob> {
   return client().post(`/projects/${projectId}/generations`, {
     body: { generate_video: true },
     signal,
+    idempotencyKey,
   });
 }
 
@@ -109,6 +135,33 @@ export function retryPersistedJob(
   signal?: AbortSignal,
 ): Promise<PersistedGenerationJob> {
   return client().post(`/jobs/${jobId}/retry`, { signal });
+}
+
+export function cancelPersistedJob(
+  jobId: string,
+  signal?: AbortSignal,
+): Promise<PersistedGenerationJob> {
+  return client().post(`/jobs/${jobId}/cancel`, { signal });
+}
+
+export async function listPersistedJobs(
+  projectId: string,
+  options?: {
+    activeOnly?: boolean;
+    signal?: AbortSignal;
+  },
+): Promise<PersistedGenerationJob[]> {
+  const response = await client().get<{ items: PersistedGenerationJob[] }>(
+    "/jobs",
+    {
+      query: {
+        project_id: projectId,
+        active_only: options?.activeOnly,
+      },
+      signal: options?.signal,
+    },
+  );
+  return response.items;
 }
 
 export function getPersistedAsset(

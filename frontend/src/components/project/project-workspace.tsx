@@ -20,6 +20,7 @@ import {
   updatePersistedProject,
 } from "@/lib/api/persisted-projects";
 import {
+  listPersistedJobs,
   pollPersistedJob,
   realSceneGenerationEnabled,
 } from "@/lib/api/scene-generation-jobs";
@@ -69,12 +70,91 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         }
         setProject(data);
         if (realSceneGenerationEnabled) {
-          void getLatestProjectRender(projectId)
-            .then((latest) => {
-              if (!cancelled) setRender(latest);
+          void Promise.all([
+            getLatestProjectRender(projectId).catch((error: unknown) => {
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "Could not restore the latest video preview.",
+              );
+              return null;
+            }),
+            listPersistedJobs(projectId),
+          ])
+            .then(async ([latest, jobs]) => {
+              if (cancelled) return;
+              setRender(latest);
+              const activeRender = jobs.find(
+                (job) =>
+                  job.type === "render" &&
+                  (job.status === "queued" ||
+                    job.status === "running" ||
+                    job.status === "cancel_requested"),
+              );
+              if (!activeRender) {
+                const failedRender = jobs.find(
+                  (job) =>
+                    job.type === "render" &&
+                    (job.status === "failed" ||
+                      job.status === "cancelled"),
+                );
+                if (failedRender) {
+                  setActiveTab("final");
+                  setRenderProgress(failedRender.progress);
+                  setRenderStage(failedRender.current_stage);
+                  toast.error(
+                    failedRender.error_message ??
+                      "The latest final render did not complete.",
+                  );
+                }
+                return;
+              }
+              setActiveTab("final");
+              setIsRendering(true);
+              const completed = await pollPersistedJob(activeRender.id, {
+                onUpdate: (job) => {
+                  if (cancelled) return;
+                  setRenderProgress(job.progress);
+                  setRenderStage(job.current_stage);
+                },
+              });
+              if (cancelled) return;
+              if (completed.status === "completed") {
+                const renderId =
+                  typeof completed.result_payload?.render_id === "string"
+                    ? completed.result_payload.render_id
+                    : typeof completed.input_payload.render_id === "string"
+                      ? completed.input_payload.render_id
+                      : null;
+                if (renderId) {
+                  const [persisted, previewUrl] = await Promise.all([
+                    getPersistedRender(renderId),
+                    getRenderPreviewUrl(renderId),
+                  ]);
+                  if (!cancelled) {
+                    setRender(mapPersistedRender(persisted, previewUrl));
+                  }
+                }
+              } else {
+                toast.error(
+                  completed.error_message ?? "Final rendering failed.",
+                );
+              }
             })
-            .catch(() => {
-              if (!cancelled) setRender(null);
+            .catch((error: unknown) => {
+              if (!cancelled) {
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : "Could not restore render state.",
+                );
+              }
+            })
+            .finally(() => {
+              if (!cancelled) {
+                setIsRendering(false);
+                setRenderStage(null);
+              }
             });
         } else {
           setRender(buildInitialRender(data));
@@ -247,7 +327,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           narration_enabled: project.output.narrationEnabled !== false,
           captions_enabled: project.output.captionsEnabled,
           music_enabled: project.output.musicEnabled,
-        });
+        }, undefined, crypto.randomUUID());
         const completed = await pollPersistedJob(queued.id, {
           onUpdate: (job) => {
             setRenderProgress(job.progress);

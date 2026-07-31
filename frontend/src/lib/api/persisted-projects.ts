@@ -100,6 +100,7 @@ function mapScene(scene: PersistedSceneResponse): Scene {
     durationSeconds: scene.duration_seconds,
     status: mapSceneStatus(scene.status),
     activeVersion,
+    activeAssetId: scene.active_asset_id,
     versions: [
       {
         version: activeVersion,
@@ -167,6 +168,33 @@ export async function getPersistedProject(
   }
 }
 
+export async function createPersistedHistoricalProject(
+  input: {
+    title: string;
+    topic: string;
+    additional_direction: string;
+    language: string;
+    duration_seconds: 30 | 45;
+    visual_style: string;
+    narration_style: string;
+    captions_enabled: boolean;
+    narration_enabled: boolean;
+    music_enabled: boolean;
+    historical_accuracy_note?: string | null;
+  },
+  signal?: AbortSignal,
+): Promise<VideoProject> {
+  const response = await client().post<PersistedProjectResponse>("/projects", {
+    body: {
+      mode: "historical_documentary",
+      aspect_ratio: "9:16",
+      ...input,
+    },
+    signal,
+  });
+  return mapPersistedProject(response);
+}
+
 export async function listPersistedProjects(
   signal?: AbortSignal,
 ): Promise<VideoProject[]> {
@@ -195,4 +223,20 @@ export async function updatePersistedProject(
     { body: patch, signal },
   );
   return mapPersistedProject(response);
+}
+
+export async function updatePersistedScene(
+  sceneId: string,
+  patch: {
+    title: string;
+    narration: string;
+    visual_prompt: string;
+    duration_seconds: number;
+  },
+  signal?: AbortSignal,
+): Promise<void> {
+  await client().patch(`/scenes/${sceneId}`, {
+    body: patch,
+    signal,
+  });
 }

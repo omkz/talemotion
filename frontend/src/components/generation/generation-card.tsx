@@ -27,6 +27,7 @@ interface GenerationCardProps {
   onEditPrompt: () => void;
   onApprove: () => void;
   onShowDetails: () => void;
+  persistedMode?: boolean;
 }
 
 export function GenerationCard({
@@ -39,6 +40,7 @@ export function GenerationCard({
   onEditPrompt,
   onApprove,
   onShowDetails,
+  persistedMode = false,
 }: GenerationCardProps) {
   const asset = scene.versions.find((v) => v.version === scene.activeVersion)?.asset ?? null;
   const isActive =
@@ -154,19 +156,21 @@ export function GenerationCard({
 
           {scene.status === "completed" && (
             <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    size="icon-sm"
-                    variant={scene.approved ? "secondary" : "outline"}
-                    onClick={onApprove}
-                    aria-label={scene.approved ? "Approved" : `Approve scene ${scene.position}`}
-                  >
-                    <Check className="size-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{scene.approved ? "Approved" : "Approve"}</TooltipContent>
-              </Tooltip>
+              {!persistedMode && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="icon-sm"
+                      variant={scene.approved ? "secondary" : "outline"}
+                      onClick={onApprove}
+                      aria-label={scene.approved ? "Approved" : `Approve scene ${scene.position}`}
+                    >
+                      <Check className="size-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>{scene.approved ? "Approved" : "Approve"}</TooltipContent>
+                </Tooltip>
+              )}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button size="icon-sm" variant="ghost" onClick={onRegenerate} aria-label="Regenerate scene">

@@ -35,6 +35,8 @@ class AppConfig(BaseSettings):
     media_preview_ttl_seconds: int = 900
     ffmpeg_binary: str = "ffmpeg"
     ffmpeg_timeout_seconds: int = 900
+    queued_job_timeout_seconds: int = 1800
+    running_job_timeout_seconds: int = 7200
 
     model_config = SettingsConfigDict(
         env_file=".env",

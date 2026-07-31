@@ -29,17 +29,21 @@ created atomically with one `Main` chapter at position `1`.
 | `GET`, `PATCH`, `DELETE /scenes/{id}` | Scene CRUD |
 | `POST /scenes/{id}/duplicate` | Insert a draft copy after the source |
 | `POST /scenes/{id}/generations` | Commit and enqueue a real scene-media job |
+| `POST /scenes/{id}/regenerations` | Preserve prior assets and enqueue a new version |
+| `GET /jobs?project_id=…` | Restore persisted project job state after reload |
 | `GET /jobs/{id}` | Inspect persisted job state |
 | `POST /jobs/{id}/cancel` | Request cancellation of queued/running work |
-| `POST /jobs/{id}/retry` | Create and enqueue a new failed scene-job attempt |
+| `POST /jobs/{id}/retry` | Resume eligible storyboard, scene, project, or render work |
 | `GET /assets/{id}` | Read persisted generated-asset metadata |
 | `POST /assets/{id}/preview-url` | Request a short-lived signed B2 URL |
 | `GET /renders/{id}` | Read a persisted render |
 | `POST /renders/{id}/preview-url` | Request its signed final-video URL |
 
-Retries preserve failed job history. A replacement child points to the same
-parent; parent aggregation uses the latest attempt for each scene and never
-regenerates already successful siblings.
+Generation endpoints accept `Idempotency-Key`. Keys are persisted and protected
+with a PostgreSQL advisory transaction lock, so repeated requests return the
+original job rather than enqueueing duplicate work. Retries preserve failed job
+history and completed B2 assets. Project retries enqueue only failed or
+cancelled scenes and never regenerate successful siblings.
 
 ## Persistence and lifecycle
 
@@ -57,6 +61,11 @@ Job statuses are `queued`, `running`, `completed`, `failed`,
 `cancel_requested`, and `cancelled`. Cancellation is a request until a worker
 confirms it. Job JSONB input/result payloads, retry counts, errors, lineage, and
 timestamps remain persisted for inspection.
+
+Workers cooperatively confirm cancellation between provider/storage/render
+stages. A periodic system task marks abandoned queued or heartbeat-stale jobs
+failed (or cancelled when requested), without deleting completed Asset rows or
+B2 objects. Run Celery beat alongside workers to schedule this cleanup.
 
 ## Errors and request IDs
 
@@ -107,11 +116,15 @@ Parent progress is the persisted completed-child ratio (0/25/50/75/100), and
 
 ## Real scene media vertical slice
 
-With `NEXT_PUBLIC_REAL_SCENE_GENERATION=true`, Generate posts to
+With `NEXT_PUBLIC_API_MODE=http` (or the legacy
+`NEXT_PUBLIC_REAL_SCENE_GENERATION=true` feature flag), Generate posts to
 `/scenes/{scene_id}/generations`, receives a job ID, and polls
 `/jobs/{job_id}` every 1.5 seconds. `result_payload.image_asset_id` becomes
 available as soon as the keyframe is stored; `video_asset_id` replaces it when
 animation succeeds. Failures retain the image asset ID when one exists.
+The same mode also creates projects through PostgreSQL, persists scene edits,
+uses the regeneration endpoint, and restores active jobs and completed renders
+from the API after a browser refresh. It never falls back to mock media.
 
 GMICloud calls are made through Genblaze providers. `ObjectStorageSink` and
 `genblaze-s3` persist assets and Genblaze manifests to Backblaze B2 under:

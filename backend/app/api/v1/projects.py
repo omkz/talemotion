@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Response, status
+from fastapi import APIRouter, Header, Query, Response, status
 
 from app.api.dependencies import DatabaseSession
 from app.core.errors import ApiError
@@ -46,12 +46,20 @@ def _generation(session: DatabaseSession) -> ProjectGenerationService:
 
 
 def enqueue_storyboard(job_id: str) -> None:
-    generate_project_storyboard.apply_async(args=[job_id], queue="storyboard")
+    generate_project_storyboard.apply_async(
+        args=[job_id],
+        queue="storyboard",
+        task_id=job_id,
+    )
 
 
 def enqueue_project_children(job_ids: list[str]) -> None:
     for job_id in job_ids:
-        generate_scene_media.apply_async(args=[job_id], queue="media")
+        generate_scene_media.apply_async(
+            args=[job_id],
+            queue="media",
+            task_id=job_id,
+        )
 
 
 @router.get("", response_model=ProjectListResponse, responses=ERROR_RESPONSES)
@@ -126,20 +134,26 @@ def create_storyboard(
     project_id: str,
     request: CreateStoryboardRequest,
     session: DatabaseSession,
+    idempotency_key: Annotated[str | None, Header()] = None,
 ) -> GenerationJobResponse:
     service = _generation(session)
-    job = service.queue_storyboard(project_id, request)
+    queued = service.queue_storyboard(
+        project_id,
+        request,
+        idempotency_key=idempotency_key,
+    )
     try:
-        enqueue_storyboard(job.id)
+        if queued.created:
+            enqueue_storyboard(queued.job.id)
     except Exception as error:
-        service.mark_queue_failure([job.id], project_id=project_id)
+        service.mark_queue_failure([queued.job.id], project_id=project_id)
         raise ApiError(
             status_code=503,
             code="dependency_unavailable",
             message="The storyboard worker queue is unavailable.",
-            details={"job_id": job.id},
+            details={"job_id": queued.job.id},
         ) from error
-    return job_to_response(job)
+    return job_to_response(queued.job)
 
 
 @router.post(
@@ -152,11 +166,17 @@ def create_project_generation(
     project_id: str,
     request: CreateProjectGenerationRequest,
     session: DatabaseSession,
+    idempotency_key: Annotated[str | None, Header()] = None,
 ) -> GenerationJobResponse:
     service = _generation(session)
-    queued = service.queue_all_scenes(project_id, request)
+    queued = service.queue_all_scenes(
+        project_id,
+        request,
+        idempotency_key=idempotency_key,
+    )
     try:
-        enqueue_project_children([child.id for child in queued.children])
+        if queued.created:
+            enqueue_project_children([child.id for child in queued.children])
     except Exception as error:
         service.mark_queue_failure(
             [queued.parent.id, *[child.id for child in queued.children]],

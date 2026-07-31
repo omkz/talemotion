@@ -40,6 +40,7 @@ export interface Scene {
   durationSeconds: number;
   status: SceneStatus;
   activeVersion: number;
+  activeAssetId?: string | null;
   versions: SceneVersion[];
   currentJob: GenerationJob | null;
   approved: boolean;

@@ -6,7 +6,7 @@ from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import session_scope
 from app.core.ids import new_resource_id, utc_now
-from app.media import SceneMediaGenerator
+from app.media import SceneMediaError, SceneMediaGenerator
 from app.media.genblaze_scene import GenblazeSceneGenerator
 from app.models.asset import Asset, AssetType
 from app.models.job import GenerationJob, JobStatus
@@ -51,6 +51,7 @@ def _create_asset(
     job: GenerationJob,
     scene: Scene,
     event: SceneImageCompletedEvent | SceneVideoCompletedEvent,
+    prompt: str,
 ) -> Asset:
     asset_type = (
         AssetType.IMAGE
@@ -65,7 +66,7 @@ def _create_asset(
         version=version,
         provider=event.asset.provider,
         model_name=event.asset.model,
-        prompt=scene.visual_prompt,
+        prompt=prompt,
         generation_parameters={
             "duration_seconds": job.input_payload.get("duration_seconds"),
             "generate_video": job.input_payload.get("generate_video"),
@@ -76,6 +77,11 @@ def _create_asset(
         file_size_bytes=event.asset.file_size_bytes,
         sha256=event.asset.sha256,
         provenance_object_key=event.manifest_object_key,
+        parent_asset_id=(
+            str(job.input_payload["parent_asset_id"])
+            if job.input_payload.get("parent_asset_id")
+            else None
+        ),
     )
 
 
@@ -135,11 +141,18 @@ def execute_scene_media_job(
         session.commit()
         aggregate_parent_job(jobs, job.parent_job_id)
 
+        additional_instruction = job.input_payload.get("additional_instruction")
+        effective_prompt = scene.visual_prompt
+        if isinstance(additional_instruction, str) and additional_instruction:
+            effective_prompt = (
+                f"{scene.visual_prompt}\n\nRegeneration instruction: "
+                f"{additional_instruction}"
+            )
         request = SceneRunRequest(
             project_id=job.project_id,
             scene_id=scene.id,
             title=scene.title,
-            visual_prompt=scene.visual_prompt,
+            visual_prompt=effective_prompt,
             aspect_ratio=scene.chapter.project.aspect_ratio.value,
             duration_seconds=int(job.input_payload.get("duration_seconds", 5)),
             generate_video=bool(job.input_payload.get("generate_video", True)),
@@ -159,7 +172,11 @@ def execute_scene_media_job(
                         stage="cancelled",
                     )
                     job.completed_at = utc_now()
-                    scene.status = SceneStatus.READY
+                    scene.status = (
+                        SceneStatus.COMPLETED
+                        if scene.active_asset_id
+                        else SceneStatus.READY
+                    )
                     session.commit()
                     aggregate_parent_job(jobs, job.parent_job_id)
                     return {"job_id": job_id, "status": "cancelled"}
@@ -181,6 +198,7 @@ def execute_scene_media_job(
                         job=job,
                         scene=scene,
                         event=event,
+                        prompt=effective_prompt,
                     )
                     scene.active_asset_id = image.id
                     scene.active_asset_version = image.version
@@ -207,6 +225,7 @@ def execute_scene_media_job(
                         job=job,
                         scene=scene,
                         event=event,
+                        prompt=effective_prompt,
                     )
                     scene.active_asset_id = video.id
                     scene.active_asset_version = video.version
@@ -250,6 +269,26 @@ def execute_scene_media_job(
                 )
                 session.commit()
                 aggregate_parent_job(jobs, job.parent_job_id)
+        except SceneMediaError as error:
+            _fail_job(
+                job,
+                scene=scene,
+                code=error.code,
+                message=error.message,
+            )
+            session.commit()
+            aggregate_parent_job(jobs, job.parent_job_id)
+            return {"job_id": job_id, "status": "failed", **result_payload}
+        except TimeoutError:
+            _fail_job(
+                job,
+                scene=scene,
+                code="provider_timeout",
+                message="The media provider timed out.",
+            )
+            session.commit()
+            aggregate_parent_job(jobs, job.parent_job_id)
+            return {"job_id": job_id, "status": "failed", **result_payload}
         except Exception:
             _fail_job(
                 job,

@@ -212,6 +212,44 @@ def test_render_job_creation_and_version_increment(
     assert second_render["version"] == 2
 
 
+def test_render_idempotency_does_not_create_another_version(
+    client: TestClient,
+    project_payload: dict[str, object],
+    session_factory: sessionmaker[Session],
+    monkeypatch,
+) -> None:
+    gateway = FakeRenderGateway()
+    project_id, _ = _project_with_assets(
+        client, project_payload, session_factory, gateway
+    )
+    dispatched: list[str] = []
+    monkeypatch.setattr(render_routes, "enqueue_render", dispatched.append)
+    headers = {"Idempotency-Key": "final-render-once"}
+    options = {
+        "narration_enabled": False,
+        "captions_enabled": False,
+        "music_enabled": False,
+    }
+    first = client.post(
+        f"/api/v1/projects/{project_id}/renders",
+        json=options,
+        headers=headers,
+    )
+    second = client.post(
+        f"/api/v1/projects/{project_id}/renders",
+        json=options,
+        headers=headers,
+    )
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert second.json()["id"] == first.json()["id"]
+    assert dispatched == [first.json()["id"]]
+    renders = client.get(
+        f"/api/v1/projects/{project_id}/renders"
+    ).json()["items"]
+    assert len(renders) == 1
+
+
 def test_worker_renders_all_optional_stages_and_persists_final_asset(
     client: TestClient,
     project_payload: dict[str, object],
@@ -346,7 +384,7 @@ def test_worker_failure_marks_job_and_cleans_workspace(
 
     assert result["status"] == "failed"
     job = client.get(f"/api/v1/jobs/{queued['id']}").json()
-    assert job["error_code"] == "render_composition_failed"
+    assert job["error_code"] == "ffmpeg_failed"
     assert composer.workspace is not None and not composer.workspace.exists()
 
 

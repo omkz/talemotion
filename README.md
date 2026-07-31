@@ -12,6 +12,10 @@ The backend persists projects, validated four-scene historical storyboards,
 parent/child generation jobs, generated assets, and versioned final renders.
 Celery workers use Genblaze for GMICloud generation, Backblaze B2 for durable
 media, and FFmpeg for H.264/AAC final assembly.
+Generation requests support persisted idempotency keys, and the frontend
+restores current job and render state from PostgreSQL after reload. Run Celery
+beat with the workers so abandoned queued or heartbeat-stale jobs are finalized
+without deleting completed assets.
 
 ## Native infrastructure
 
@@ -57,13 +61,15 @@ In another terminal:
 cd backend
 uv run celery -A app.core.celery_app worker \
   -Q storyboard,media,rendering,system --loglevel=info
+uv run celery -A app.core.celery_app beat --loglevel=info
 ```
 
 Workers run storyboard planning, scene media generation, and the safe
 `app.tasks.system.database_worker_health` diagnostic. Start the frontend
-separately with `cd frontend && pnpm dev`. Persisted storyboard and generation
-actions are enabled only with `NEXT_PUBLIC_REAL_SCENE_GENERATION=true`; other
-frontend features keep their existing mock boundary.
+separately with `cd frontend && pnpm dev`. Set `NEXT_PUBLIC_API_MODE=http` for
+the persisted Historical Documentary workflow; the legacy
+`NEXT_PUBLIC_REAL_SCENE_GENERATION=true` flag remains supported during local
+migration. HTTP mode never silently falls back to mock data.
 
 See [docs/api-contract.md](docs/api-contract.md) for implementation status and
 the testing workflow.

@@ -41,10 +41,12 @@ export function createFinalRender(
     music_enabled: boolean;
   },
   signal?: AbortSignal,
+  idempotencyKey?: string,
 ): Promise<PersistedGenerationJob> {
   return client().post(`/projects/${projectId}/renders`, {
     body: options,
     signal,
+    idempotencyKey,
   });
 }
 

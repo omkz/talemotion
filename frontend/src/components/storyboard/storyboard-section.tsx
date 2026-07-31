@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, Plus, RotateCcw, Sparkles, Film } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
 } from "@/lib/mock-api";
 import {
   createStoryboardGeneration,
+  listPersistedJobs,
   pollPersistedJob,
   realSceneGenerationEnabled,
 } from "@/lib/api/scene-generation-jobs";
@@ -44,6 +45,50 @@ export function StoryboardSection({
   const [deletingSceneId, setDeletingSceneId] = useState<string | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
+  const refreshProjectRef = useRef(onRefreshProject);
+
+  useEffect(() => {
+    refreshProjectRef.current = onRefreshProject;
+  }, [onRefreshProject]);
+
+  useEffect(() => {
+    if (!realSceneGenerationEnabled) return;
+    const controller = new AbortController();
+    void listPersistedJobs(projectId, {
+      activeOnly: true,
+      signal: controller.signal,
+    })
+      .then((jobs) => {
+        const active = jobs.find((job) => job.type === "storyboard");
+        if (!active) return;
+        setIsRegenerating(true);
+        return pollPersistedJob(active.id, {
+          signal: controller.signal,
+          onUpdate: () => undefined,
+        }).then(async (completed) => {
+          if (completed.status === "completed") {
+            await refreshProjectRef.current?.();
+          } else {
+            toast.error(
+              completed.error_message ?? "Storyboard generation failed.",
+            );
+          }
+        });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Could not restore storyboard state.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsRegenerating(false);
+      });
+    return () => controller.abort();
+  }, [projectId]);
 
   const runAction = async (action: () => Promise<Scene[]>) => {
     setIsBusy(true);
@@ -89,6 +134,8 @@ export function StoryboardSection({
         const queued = await createStoryboardGeneration(
           projectId,
           scenes.length > 0,
+          undefined,
+          crypto.randomUUID(),
         );
         const completed = await pollPersistedJob(queued.id, {
           onUpdate: () => undefined,

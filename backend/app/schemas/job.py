@@ -12,6 +12,8 @@ class GenerationJobChildResponse(StrictSchema):
     status: JobStatus
     progress: int
     result_asset_id: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
 
 
 class GenerationJobResponse(StrictSchema):
@@ -35,6 +37,10 @@ class GenerationJobResponse(StrictSchema):
     completed_at: datetime | None
     updated_at: datetime
     children: list[GenerationJobChildResponse] = Field(default_factory=list)
+
+
+class GenerationJobListResponse(StrictSchema):
+    items: list[GenerationJobResponse] = Field(default_factory=list)
 
 
 def job_to_response(job: GenerationJob) -> GenerationJobResponse:
@@ -81,6 +87,8 @@ def job_to_response(job: GenerationJob) -> GenerationJobResponse:
                     and isinstance(child.result_payload.get("asset_id"), str)
                     else None
                 ),
+                error_code=child.error_code,
+                error_message=child.error_message,
             )
             for child in current_children
         ],

@@ -446,6 +446,12 @@ class GenblazeSceneGenerator:
     def _map_error(self, error: Exception) -> SceneMediaError:
         if isinstance(error, SceneMediaError):
             return error
+        if isinstance(error, TimeoutError):
+            return SceneMediaError(
+                "provider_timeout",
+                "The media provider did not respond before the timeout.",
+                True,
+            )
         if isinstance(error, ProviderError):
             if error.error_code is ProviderErrorCode.AUTH_FAILURE:
                 return SceneMediaError(
@@ -612,11 +618,21 @@ class GenblazeRenderMediaGateway:
         self.config = config
 
     def download(self, key: str) -> bytes:
-        backend = self._backend()
+        backend: S3StorageBackend | None = None
         try:
+            backend = self._backend()
             return backend.get(key)
+        except SceneMediaError:
+            raise
+        except (StorageError, OSError) as error:
+            raise SceneMediaError(
+                "storage_failed",
+                "A required render asset could not be downloaded from storage.",
+                True,
+            ) from error
         finally:
-            backend.close()
+            if backend is not None:
+                backend.close()
 
     def upload(
         self,
@@ -625,11 +641,21 @@ class GenblazeRenderMediaGateway:
         data: bytes,
         media_type: str,
     ) -> StoredMediaArtifact:
-        backend = self._backend()
+        backend: S3StorageBackend | None = None
         try:
+            backend = self._backend()
             backend.put(key, data, content_type=media_type)
+        except SceneMediaError:
+            raise
+        except (StorageError, OSError) as error:
+            raise SceneMediaError(
+                "storage_failed",
+                "The render artifact could not be uploaded to storage.",
+                True,
+            ) from error
         finally:
-            backend.close()
+            if backend is not None:
+                backend.close()
         return StoredMediaArtifact(
             storage_object_key=key,
             media_type=media_type,

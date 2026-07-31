@@ -80,6 +80,68 @@ def test_scene_generation_rejects_a_second_active_job(
     assert second.json()["error"]["code"] == "state_conflict"
 
 
+def test_scene_generation_idempotency_returns_the_original_job(
+    client: TestClient,
+    project_payload: dict[str, object],
+    monkeypatch,
+) -> None:
+    dispatched: list[str] = []
+    monkeypatch.setattr(scene_routes, "enqueue_scene_media", dispatched.append)
+    scene_id = _create_scene(client, project_payload)
+    headers = {"Idempotency-Key": "scene-generate-once"}
+
+    first = client.post(
+        f"/api/v1/scenes/{scene_id}/generations",
+        json={},
+        headers=headers,
+    )
+    second = client.post(
+        f"/api/v1/scenes/{scene_id}/generations",
+        json={},
+        headers=headers,
+    )
+
+    assert first.status_code == 202
+    assert second.status_code == 202
+    assert second.json()["id"] == first.json()["id"]
+    assert dispatched == [first.json()["id"]]
+
+
+def test_scene_regeneration_persists_instruction_and_lineage(
+    client: TestClient,
+    project_payload: dict[str, object],
+    session_factory: sessionmaker[Session],
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(scene_routes, "enqueue_scene_media", lambda _job_id: None)
+    scene_id = _create_scene(client, project_payload)
+    original = client.post(
+        f"/api/v1/scenes/{scene_id}/generations",
+        json={"generate_video": True},
+    ).json()
+
+    @contextmanager
+    def test_session_scope() -> Iterator[Session]:
+        with session_factory() as session:
+            yield session
+
+    monkeypatch.setattr(media_tasks, "session_scope", test_session_scope)
+    media_tasks.execute_scene_media_job(
+        original["id"],
+        generator=FakeSceneMediaGenerator(),
+    )
+    active_asset_id = client.get(f"/api/v1/scenes/{scene_id}").json()[
+        "active_asset_id"
+    ]
+    response = client.post(
+        f"/api/v1/scenes/{scene_id}/regenerations",
+        json={"additional_instruction": "Use warmer sunrise light."},
+    )
+    assert response.status_code == 202
+    assert response.json()["type"] == "scene_regeneration"
+    assert response.json()["input_payload"]["parent_asset_id"] == active_asset_id
+
+
 class FakeSceneMediaGenerator:
     def run(
         self, request: SceneRunRequest, run_id: str

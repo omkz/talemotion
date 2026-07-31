@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Response, status
+from typing import Annotated
+
+from fastapi import APIRouter, Header, Response, status
 
 from app.api.dependencies import DatabaseSession
 from app.core.errors import ApiError
@@ -13,13 +15,17 @@ from app.schemas.scene import (
     UpdateSceneRequest,
     scene_to_response,
 )
-from app.schemas.scene_generation import CreateSceneGenerationRequest
+from app.schemas.scene_generation import (
+    CreateSceneGenerationRequest,
+    CreateSceneRegenerationRequest,
+)
 from app.services.scene_generation import SceneGenerationService
 from app.services.scenes import SceneService
 from app.tasks.media import generate_scene_media
 
 router = APIRouter(tags=["Scenes"])
 ERROR_RESPONSES = {
+    400: {"model": ErrorResponse},
     404: {"model": ErrorResponse},
     409: {"model": ErrorResponse},
     422: {"model": ErrorResponse},
@@ -38,7 +44,11 @@ def _generation(session: DatabaseSession) -> SceneGenerationService:
 
 
 def enqueue_scene_media(job_id: str) -> None:
-    generate_scene_media.apply_async(args=[job_id], queue="media")
+    generate_scene_media.apply_async(
+        args=[job_id],
+        queue="media",
+        task_id=job_id,
+    )
 
 
 @router.post(
@@ -115,17 +125,60 @@ def create_scene_generation(
     scene_id: str,
     request: CreateSceneGenerationRequest,
     session: DatabaseSession,
+    idempotency_key: Annotated[str | None, Header()] = None,
 ) -> GenerationJobResponse:
     service = _generation(session)
-    job = service.queue(scene_id, request)
+    queued = service.queue(
+        scene_id,
+        request,
+        idempotency_key=idempotency_key,
+    )
     try:
-        enqueue_scene_media(job.id)
+        if queued.created:
+            enqueue_scene_media(queued.job.id)
     except Exception as error:
-        service.mark_dispatch_failed(job.id)
+        service.mark_dispatch_failed(queued.job.id)
         raise ApiError(
             status_code=503,
             code="dependency_unavailable",
             message="The media worker queue is unavailable.",
-            details={"job_id": job.id},
+            details={"job_id": queued.job.id},
         ) from error
-    return job_to_response(job)
+    return job_to_response(queued.job)
+
+
+@router.post(
+    "/scenes/{scene_id}/regenerations",
+    response_model=GenerationJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses=ERROR_RESPONSES,
+    summary="Queue a new persisted media version for a scene",
+)
+def create_scene_regeneration(
+    scene_id: str,
+    request: CreateSceneRegenerationRequest,
+    session: DatabaseSession,
+    idempotency_key: Annotated[str | None, Header()] = None,
+) -> GenerationJobResponse:
+    service = _generation(session)
+    queued = service.queue(
+        scene_id,
+        CreateSceneGenerationRequest(
+            duration_seconds=request.duration_seconds,
+            generate_video=request.generate_video,
+        ),
+        idempotency_key=idempotency_key,
+        additional_instruction=request.additional_instruction.strip(),
+    )
+    try:
+        if queued.created:
+            enqueue_scene_media(queued.job.id)
+    except Exception as error:
+        service.mark_dispatch_failed(queued.job.id)
+        raise ApiError(
+            status_code=503,
+            code="dependency_unavailable",
+            message="The media worker queue is unavailable.",
+            details={"job_id": queued.job.id},
+        ) from error
+    return job_to_response(queued.job)

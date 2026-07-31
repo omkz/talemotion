@@ -12,12 +12,14 @@ from app.repositories.sqlalchemy import (
     RenderRepository,
 )
 from app.schemas.render import CreateRenderRequest
+from app.services.idempotency import existing_idempotent_job
 
 
 @dataclass(frozen=True, slots=True)
 class QueuedRender:
     render: Render
     job: GenerationJob
+    created: bool
 
 
 class RenderService:
@@ -35,6 +37,8 @@ class RenderService:
         self,
         project_id: str,
         request: CreateRenderRequest,
+        *,
+        idempotency_key: str | None = None,
     ) -> QueuedRender:
         project = self.projects.get_for_update(project_id)
         if project is None:
@@ -43,14 +47,6 @@ class RenderService:
                 code="project_not_found",
                 message="Project not found.",
                 details={"project_id": project_id},
-            )
-        active = self.renders.active_for_project(project_id)
-        if active is not None:
-            raise ApiError(
-                status_code=409,
-                code="state_conflict",
-                message="This project already has an active render.",
-                details={"project_id": project_id, "render_id": active.id},
             )
         scenes = [
             scene
@@ -95,6 +91,43 @@ class RenderService:
             if request.music_enabled is None
             else request.music_enabled
         )
+        payload: dict[str, object] = {
+            "narration_enabled": narration_enabled,
+            "captions_enabled": captions_enabled,
+            "music_enabled": music_enabled,
+        }
+        existing, scoped_key = existing_idempotent_job(
+            self.jobs,
+            operation=f"project:{project_id}:render",
+            key=idempotency_key,
+            project_id=project_id,
+            scene_id=None,
+            job_type=JobType.RENDER,
+            input_payload=payload,
+        )
+        if existing is not None:
+            render_id = existing.input_payload.get("render_id")
+            render = (
+                self.renders.get(render_id)
+                if isinstance(render_id, str)
+                else None
+            )
+            if render is None:
+                raise ApiError(
+                    status_code=409,
+                    code="state_conflict",
+                    message="The idempotent render record is unavailable.",
+                    details={"job_id": existing.id},
+                )
+            return QueuedRender(render, existing, created=False)
+        active = self.renders.active_for_project(project_id)
+        if active is not None:
+            raise ApiError(
+                status_code=409,
+                code="state_conflict",
+                message="This project already has an active render.",
+                details={"project_id": project_id, "render_id": active.id},
+            )
         render = self.renders.create(
             project_id=project_id,
             version=self.renders.next_version(project_id),
@@ -106,18 +139,18 @@ class RenderService:
             project_id=project_id,
             job_type=JobType.RENDER,
             current_stage="queued",
-            input_payload={
-                "render_id": render.id,
-                "narration_enabled": narration_enabled,
-                "captions_enabled": captions_enabled,
-                "music_enabled": music_enabled,
-            },
+            input_payload={"render_id": render.id, **payload},
+            idempotency_key=scoped_key,
         )
         render.job_id = job.id
         project.status = ProjectStatus.RENDERING
         project.generation_progress = 0
         self.renders.commit()
-        return QueuedRender(render=render, job=self.jobs.get(job.id) or job)
+        return QueuedRender(
+            render=render,
+            job=self.jobs.get(job.id) or job,
+            created=True,
+        )
 
     def get(self, render_id: str) -> Render:
         render = self.renders.get(render_id)

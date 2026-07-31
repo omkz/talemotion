@@ -98,6 +98,11 @@ class GenerationJob(Base):
     input_payload: Mapped[dict[str, object]] = mapped_column(
         JSONB, default=dict, server_default="{}"
     )
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(200),
+        unique=True,
+        index=True,
+    )
     result_payload: Mapped[dict[str, object] | None] = mapped_column(JSONB)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, default=2)

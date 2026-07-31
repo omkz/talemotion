@@ -10,6 +10,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Form } from "@/components/ui/form";
 import { createProject } from "@/lib/mock-api";
+import {
+  createPersistedHistoricalProject,
+} from "@/lib/api/persisted-projects";
+import { realSceneGenerationEnabled } from "@/lib/api/scene-generation-jobs";
 import { VIDEO_TEMPLATES, type VideoTemplatePreset } from "@/lib/mock-data";
 import type { VideoMode } from "@/types";
 import { WizardStepper } from "./wizard-stepper";
@@ -67,7 +71,10 @@ export function VideoWizard() {
     form.setValue("templateId", null, { shouldValidate: true });
     form.setValue("duration", WIZARD_DEFAULT_VALUES.duration);
     form.setValue("aspectRatio", WIZARD_DEFAULT_VALUES.aspectRatio);
-    form.setValue("sceneCount", WIZARD_DEFAULT_VALUES.sceneCount);
+    form.setValue(
+      "sceneCount",
+      realSceneGenerationEnabled ? "4" : WIZARD_DEFAULT_VALUES.sceneCount,
+    );
     form.setValue("visualStyle", WIZARD_DEFAULT_VALUES.visualStyle);
     form.setValue("narrationStyle", WIZARD_DEFAULT_VALUES.narrationStyle);
   };
@@ -102,10 +109,29 @@ export function VideoWizard() {
   const onSubmit = async (values: WizardFormValues) => {
     setIsCreating(true);
     try {
-      const project = await createProject(mapWizardValuesToProjectInput(values));
-      toast.success("Storyboard created", {
-        description: `${project.output.title} is ready for review.`,
-      });
+      const project = realSceneGenerationEnabled
+        ? await createPersistedHistoricalProject({
+            title: values.title,
+            topic: values.topic ?? "",
+            additional_direction: values.additionalDirection ?? "",
+            language: "English",
+            duration_seconds: Number(values.duration) as 30 | 45,
+            visual_style: values.visualStyle,
+            narration_style: values.narrationStyle,
+            narration_enabled: true,
+            captions_enabled: values.captionsEnabled,
+            music_enabled: values.musicEnabled,
+            historical_accuracy_note: values.sourceNotes?.trim() || null,
+          })
+        : await createProject(mapWizardValuesToProjectInput(values));
+      toast.success(
+        realSceneGenerationEnabled ? "Project created" : "Storyboard created",
+        {
+          description: realSceneGenerationEnabled
+            ? `${project.output.title} is ready for storyboard planning.`
+            : `${project.output.title} is ready for review.`,
+        },
+      );
       router.push(`/projects/${project.id}`);
     } catch {
       toast.error("Something went wrong creating the storyboard.");
@@ -149,7 +175,7 @@ export function VideoWizard() {
                 onSelectScratch={handleSelectScratch}
                 onSelectMode={handleSelectMode}
                 onSelectTemplate={handleSelectTemplate}
-                realHistoricalOnly={false}
+                realHistoricalOnly={realSceneGenerationEnabled}
               />
             )}
             {step === 2 && (
@@ -164,7 +190,7 @@ export function VideoWizard() {
                 control={form.control}
                 appliedTemplate={appliedTemplate}
                 onResetToTemplateDefaults={handleResetToTemplateDefaults}
-                realHistoricalOnly={false}
+                realHistoricalOnly={realSceneGenerationEnabled}
               />
             )}
 

@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProjectGeneration,
+  createSceneRegeneration,
   createStoryboardGeneration,
+  listPersistedJobs,
   pollPersistedJob,
   resultAssetId,
 } from "./scene-generation-jobs";
@@ -66,13 +68,60 @@ describe("persisted scene-generation jobs", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    await createStoryboardGeneration("project_123", true);
+    await createStoryboardGeneration(
+      "project_123",
+      true,
+      undefined,
+      "storyboard-key",
+    );
 
     const [, request] = fetchMock.mock.calls[0] as [URL, RequestInit];
     expect(request.method).toBe("POST");
     expect(JSON.parse(String(request.body))).toEqual({
       replace_existing: true,
     });
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe(
+      "storyboard-key",
+    );
+  });
+
+  it("submits regeneration instructions and restores project jobs", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(completedJob), {
+          status: 202,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ items: [completedJob] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await createSceneRegeneration(
+      "scene_123",
+      "Use a wider harbor view.",
+      undefined,
+      "regenerate-key",
+    );
+    const jobs = await listPersistedJobs("project_123", { activeOnly: true });
+
+    const [, regenerationRequest] = fetchMock.mock.calls[0] as [
+      URL,
+      RequestInit,
+    ];
+    expect(JSON.parse(String(regenerationRequest.body))).toMatchObject({
+      additional_instruction: "Use a wider harbor view.",
+    });
+    expect(new Headers(regenerationRequest.headers).get("Idempotency-Key")).toBe(
+      "regenerate-key",
+    );
+    expect(jobs).toEqual([completedJob]);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("active_only=true");
   });
 
   it("preserves parent child summaries while polling Generate All", async () => {
@@ -89,6 +138,8 @@ describe("persisted scene-generation jobs", () => {
           status: "completed",
           progress: 100,
           result_asset_id: "asset_video",
+          error_code: null,
+          error_message: null,
         },
       ],
     };

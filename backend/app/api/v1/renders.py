@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Header, status
 
 from app.api.dependencies import DatabaseSession
 from app.core.config import settings
@@ -25,6 +26,7 @@ from app.tasks.rendering import render_project_video
 
 router = APIRouter(tags=["Renders"])
 ERROR_RESPONSES = {
+    400: {"model": ErrorResponse},
     404: {"model": ErrorResponse},
     409: {"model": ErrorResponse},
     502: {"model": ErrorResponse},
@@ -41,7 +43,11 @@ def _renders(session: DatabaseSession) -> RenderService:
 
 
 def enqueue_render(job_id: str) -> None:
-    render_project_video.apply_async(args=[job_id], queue="rendering")
+    render_project_video.apply_async(
+        args=[job_id],
+        queue="rendering",
+        task_id=job_id,
+    )
 
 
 @router.post(
@@ -55,11 +61,17 @@ def create_render(
     project_id: str,
     session: DatabaseSession,
     request: CreateRenderRequest | None = None,
+    idempotency_key: Annotated[str | None, Header()] = None,
 ) -> GenerationJobResponse:
     service = _renders(session)
-    queued = service.queue(project_id, request or CreateRenderRequest())
+    queued = service.queue(
+        project_id,
+        request or CreateRenderRequest(),
+        idempotency_key=idempotency_key,
+    )
     try:
-        enqueue_render(queued.job.id)
+        if queued.created:
+            enqueue_render(queued.job.id)
     except Exception as error:
         service.mark_dispatch_failed(queued.job.id, queued.render.id)
         raise ApiError(

@@ -5,6 +5,8 @@ import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from sqlalchemy.orm import Session
+
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import session_scope
@@ -110,6 +112,16 @@ def execute_render_job(
         if job is None:
             return {"job_id": job_id, "status": "not_found"}
         render_id = job.input_payload.get("render_id")
+        if job.status is JobStatus.CANCEL_REQUESTED:
+            render = (
+                renders.get(render_id, for_update=True)
+                if isinstance(render_id, str)
+                else None
+            )
+            project = projects.get(job.project_id)
+            _cancel(job, render, project)
+            session.commit()
+            return {"job_id": job.id, "status": "cancelled"}
         if job.status is not JobStatus.QUEUED or not isinstance(render_id, str):
             return {"job_id": job.id, "status": job.status.value}
         render = renders.get(render_id, for_update=True)
@@ -148,6 +160,8 @@ def execute_render_job(
                 composition_scenes: list[SceneMediaInput] = []
                 project_segment = _safe_segment(project.id)
                 for index, scene in enumerate(scenes, start=1):
+                    if _cancel_if_requested(session, job, render, project):
+                        return {"job_id": job.id, "status": "cancelled"}
                     active = next(
                         asset
                         for asset in scene.assets
@@ -231,6 +245,8 @@ def execute_render_job(
 
                 music_path: Path | None = None
                 if render.music_enabled:
+                    if _cancel_if_requested(session, job, render, project):
+                        return {"job_id": job.id, "status": "cancelled"}
                     _set_stage(job, stage="generating_music", progress=45)
                     session.commit()
                     music_prompt = (
@@ -286,6 +302,8 @@ def execute_render_job(
 
                 captions_path: Path | None = None
                 if render.captions_enabled:
+                    if _cancel_if_requested(session, job, render, project):
+                        return {"job_id": job.id, "status": "cancelled"}
                     _set_stage(job, stage="building_subtitles", progress=55)
                     session.commit()
                     subtitle_bytes = build_srt(
@@ -327,6 +345,8 @@ def execute_render_job(
 
                 _set_stage(job, stage="composing_video", progress=70)
                 session.commit()
+                if _cancel_if_requested(session, job, render, project):
+                    return {"job_id": job.id, "status": "cancelled"}
                 final_path = workspace / "final.mp4"
                 video_composer.compose(
                     RenderComposition(
@@ -339,6 +359,8 @@ def execute_render_job(
                 )
                 _set_stage(job, stage="uploading_final_video", progress=90)
                 session.commit()
+                if _cancel_if_requested(session, job, render, project):
+                    return {"job_id": job.id, "status": "cancelled"}
                 final_bytes = final_path.read_bytes()
                 final_key = (
                     f"talemotion/projects/{project_segment}/renders/"
@@ -389,7 +411,7 @@ def execute_render_job(
             code = (
                 error.code
                 if isinstance(error, SceneMediaError)
-                else "render_composition_failed"
+                else error.code
             )
             message = (
                 error.message
@@ -429,6 +451,36 @@ def _fail(
         render.completed_at = utc_now()
     if project is not None:
         project.status = ProjectStatus.FAILED
+
+
+def _cancel(
+    job: GenerationJob,
+    render: Render | None,
+    project: Project | None,
+) -> None:
+    job.status = JobStatus.CANCELLED
+    job.current_stage = "cancelled"
+    job.completed_at = utc_now()
+    job.updated_at = utc_now()
+    if render is not None:
+        render.status = RenderStatus.CANCELLED
+        render.completed_at = utc_now()
+    if project is not None:
+        project.status = ProjectStatus.READY
+
+
+def _cancel_if_requested(
+    session: Session,
+    job: GenerationJob,
+    render: Render,
+    project: Project,
+) -> bool:
+    session.refresh(job)
+    if job.status is not JobStatus.CANCEL_REQUESTED:
+        return False
+    _cancel(job, render, project)
+    session.commit()
+    return True
 
 
 @celery_app.task(name="app.tasks.rendering.render_project_video")

@@ -45,11 +45,16 @@ describe("final render jobs", () => {
       );
     vi.stubGlobal("fetch", fetchMock);
 
-    const queued = await createFinalRender("project_123", {
-      narration_enabled: true,
-      captions_enabled: false,
-      music_enabled: false,
-    });
+    const queued = await createFinalRender(
+      "project_123",
+      {
+        narration_enabled: true,
+        captions_enabled: false,
+        music_enabled: false,
+      },
+      undefined,
+      "render-key",
+    );
     const completed = await pollPersistedJob(queued.id, {
       onUpdate: () => undefined,
     });
@@ -61,6 +66,9 @@ describe("final render jobs", () => {
       captions_enabled: false,
       music_enabled: false,
     });
+    expect(new Headers(request.headers).get("Idempotency-Key")).toBe(
+      "render-key",
+    );
   });
 
   it("maps a completed persisted render to the video player model", async () => {

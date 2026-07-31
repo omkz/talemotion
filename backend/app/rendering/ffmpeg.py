@@ -7,7 +7,9 @@ from pathlib import Path
 
 
 class RenderCompositionError(RuntimeError):
-    pass
+    def __init__(self, code: str, message: str | None = None) -> None:
+        super().__init__(message or code)
+        self.code = code if message is not None else "ffmpeg_failed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +46,10 @@ class FFmpegComposer:
 
     def compose(self, composition: RenderComposition) -> None:
         if not composition.scenes:
-            raise RenderCompositionError("No scene media was supplied.")
+            raise RenderCompositionError(
+                "render_input_invalid",
+                "No scene media was supplied.",
+            )
         composition.workspace.mkdir(parents=True, exist_ok=True)
         segment_paths: list[Path] = []
         narration_paths: list[Path] = []
@@ -253,11 +258,13 @@ class FFmpegComposer:
                 timeout=self.timeout_seconds,
                 cwd=cwd,
             )
-        except (
-            OSError,
-            subprocess.CalledProcessError,
-            subprocess.TimeoutExpired,
-        ) as error:
+        except subprocess.TimeoutExpired as error:
             raise RenderCompositionError(
-                "FFmpeg could not compose the final video."
+                "ffmpeg_timeout",
+                "FFmpeg exceeded the configured render timeout.",
+            ) from error
+        except (OSError, subprocess.CalledProcessError) as error:
+            raise RenderCompositionError(
+                "ffmpeg_failed",
+                "FFmpeg could not compose the final video.",
             ) from error

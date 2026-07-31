@@ -7,12 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { EmptyState } from "@/components/shared/empty-state";
 import { generateAllScenes, retryScene } from "@/lib/mock-api";
+import { updatePersistedScene } from "@/lib/api/persisted-projects";
 import {
   createProjectGeneration,
+  createSceneRegeneration,
   createSceneGeneration,
   getAssetPreviewUrl,
   getPersistedAsset,
   getPersistedJob,
+  listPersistedJobs,
   pollPersistedJob,
   realSceneGenerationEnabled,
   resultAssetId,
@@ -65,15 +68,19 @@ export function GenerationSection({
   const failedJobIds = useRef(new Map<string, string>());
   const parentJobIdRef = useRef<string | null>(null);
   const scenesRef = useRef(scenes);
+  const restoredProjectRef = useRef<string | null>(null);
 
   useEffect(() => {
     scenesRef.current = scenes;
   });
 
   useEffect(
-    () => () => {
-      cancelRef.current();
-      for (const controller of realControllers.current.values()) controller.abort();
+    () => {
+      const controllers = realControllers.current;
+      return () => {
+        cancelRef.current();
+        for (const controller of controllers.values()) controller.abort();
+      };
     },
     [],
   );
@@ -168,9 +175,175 @@ export function GenerationSection({
       : ("waiting" as const);
   };
 
+  const isRetryableJob = (job: PersistedGenerationJob) =>
+    ![
+      "missing_configuration",
+      "provider_authentication_failed",
+      "invalid_request",
+    ].includes(job.error_code ?? "");
+
+  useEffect(() => {
+    if (
+      !realSceneGenerationEnabled ||
+      restoredProjectRef.current === projectId
+    ) {
+      return;
+    }
+    restoredProjectRef.current = projectId;
+    const controller = new AbortController();
+    const controllers = realControllers.current;
+    controllers.set(`restore:${projectId}`, controller);
+
+    const restore = async () => {
+      for (const scene of scenesRef.current) {
+        if (!scene.activeAssetId) continue;
+        await showPersistedAsset(
+          scene,
+          scene.activeAssetId,
+          controller.signal,
+          scene.status === "completed",
+        );
+      }
+      const jobs = await listPersistedJobs(projectId, {
+        signal: controller.signal,
+      });
+      const latestByScene = new Map<string, PersistedGenerationJob>();
+      for (const job of jobs) {
+        if (
+          job.scene_id &&
+          (job.type === "scene_generation" ||
+            job.type === "scene_regeneration") &&
+          !latestByScene.has(job.scene_id)
+        ) {
+          latestByScene.set(job.scene_id, job);
+        }
+      }
+      for (const [sceneId, job] of latestByScene) {
+        const scene = scenesRef.current.find((item) => item.id === sceneId);
+        if (!scene) continue;
+        if (job.status === "failed" || job.status === "cancelled") {
+          failedJobIds.current.set(sceneId, job.id);
+          if (isRetryableJob(job)) {
+            setRetryableScenes((current) => new Set(current).add(sceneId));
+          }
+        }
+        if (
+          job.status === "queued" ||
+          job.status === "running" ||
+          job.status === "cancel_requested"
+        ) {
+          patchScene(sceneId, {
+            status: stageForJob(job),
+            currentJob: {
+              id: job.id,
+              sceneId,
+              stage: stageForJob(job),
+              progress: job.progress,
+              errorMessage: job.error_message,
+              startedAt: new Date().toISOString(),
+              completedAt: null,
+            },
+          });
+          void pollPersistedJob(job.id, {
+            signal: controller.signal,
+            onUpdate: async (updated) => {
+              const assetId = resultAssetId(updated);
+              if (assetId) {
+                await showPersistedAsset(
+                  scene,
+                  assetId,
+                  controller.signal,
+                  updated.status === "completed",
+                );
+              }
+              if (updated.status !== "completed") {
+                patchScene(sceneId, {
+                  status: stageForJob(updated),
+                  currentJob: {
+                    id: updated.id,
+                    sceneId,
+                    stage: stageForJob(updated),
+                    progress: updated.progress,
+                    errorMessage: updated.error_message,
+                    startedAt: new Date().toISOString(),
+                    completedAt: null,
+                  },
+                });
+              }
+            },
+          }).catch((error: unknown) => {
+            if (!controller.signal.aborted) {
+              const message =
+                error instanceof Error
+                  ? error.message
+                  : "Could not restore scene generation.";
+              patchScene(sceneId, {
+                status: "failed",
+                currentJob: {
+                  id: job.id,
+                  sceneId,
+                  stage: "failed",
+                  progress: job.progress,
+                  errorMessage: message,
+                  startedAt: new Date().toISOString(),
+                  completedAt: new Date().toISOString(),
+                },
+              });
+              toast.error(message);
+            }
+          });
+        }
+      }
+      const activeParent = jobs.find(
+        (job) =>
+          job.type === "project_generation" &&
+          (job.status === "queued" ||
+            job.status === "running" ||
+            job.status === "cancel_requested"),
+      );
+      if (activeParent) {
+        parentJobIdRef.current = activeParent.id;
+        setIsGeneratingAll(true);
+        setOverallProgress(activeParent.progress);
+        void pollPersistedJob(activeParent.id, {
+          signal: controller.signal,
+          onUpdate: (updated) => setOverallProgress(updated.progress),
+        })
+          .then(() => onRefreshProject?.())
+          .catch((error: unknown) => {
+            if (!controller.signal.aborted) {
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : "Could not restore project generation.",
+              );
+            }
+          })
+          .finally(() => setIsGeneratingAll(false));
+      }
+    };
+    void restore().catch((error: unknown) => {
+      if (!controller.signal.aborted) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not restore generation state.",
+        );
+      }
+    });
+    return () => {
+      controller.abort();
+      controllers.delete(`restore:${projectId}`);
+    };
+    // Restoration intentionally runs once per project; mutable scene state is
+    // read through refs while polling.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
   const handleRealGeneration = async (
     scene: Scene,
     failedJobId?: string,
+    additionalInstruction?: string,
   ) => {
     realControllers.current.get(scene.id)?.abort();
     const controller = new AbortController();
@@ -180,7 +353,18 @@ export function GenerationSection({
     try {
       const queuedJob = failedJobId
         ? await retryPersistedJob(failedJobId, controller.signal)
-        : await createSceneGeneration(scene.id, controller.signal);
+        : additionalInstruction
+          ? await createSceneRegeneration(
+              scene.id,
+              additionalInstruction,
+              controller.signal,
+              crypto.randomUUID(),
+            )
+          : await createSceneGeneration(
+              scene.id,
+              controller.signal,
+              crypto.randomUUID(),
+            );
       patchScene(scene.id, {
         status: "waiting",
         currentJob: {
@@ -247,7 +431,11 @@ export function GenerationSection({
           return next;
         });
         failedJobIds.current.delete(scene.id);
-        toast.success(`Scene ${scene.position} media generated`);
+        toast.success(
+          additionalInstruction
+            ? `Scene ${scene.position} regenerated`
+            : `Scene ${scene.position} media generated`,
+        );
         if (failedJobId && parentJobIdRef.current) {
           const parent = await getPersistedJob(
             parentJobIdRef.current,
@@ -260,7 +448,11 @@ export function GenerationSection({
         }
       } else {
         failedJobIds.current.set(scene.id, completedJob.id);
-        setRetryableScenes((currentSet) => new Set(currentSet).add(scene.id));
+        if (isRetryableJob(completedJob)) {
+          setRetryableScenes(
+            (currentSet) => new Set(currentSet).add(scene.id),
+          );
+        }
         toast.error(
           completedJob.error_message ?? "Scene generation did not complete.",
         );
@@ -297,7 +489,11 @@ export function GenerationSection({
     setOverallProgress(0);
     onGenerationStart?.();
     try {
-      const queued = await createProjectGeneration(projectId, controller.signal);
+      const queued = await createProjectGeneration(
+        projectId,
+        controller.signal,
+        crypto.randomUUID(),
+      );
       parentJobIdRef.current = queued.id;
       const completed = await pollPersistedJob(queued.id, {
         signal: controller.signal,
@@ -340,7 +536,9 @@ export function GenerationSection({
                   stage,
                   progress: child.progress,
                   errorMessage:
-                    child.status === "failed" ? "Scene generation failed." : null,
+                    child.status === "failed"
+                      ? child.error_message ?? "Scene generation failed."
+                      : null,
                   startedAt: new Date().toISOString(),
                   completedAt:
                     child.status === "failed" || child.status === "cancelled"
@@ -351,9 +549,17 @@ export function GenerationSection({
             }
             if (child.status === "failed" || child.status === "cancelled") {
               failedJobIds.current.set(sceneId, child.id);
-              setRetryableScenes(
-                (currentSet) => new Set(currentSet).add(sceneId),
-              );
+              if (
+                ![
+                  "missing_configuration",
+                  "provider_authentication_failed",
+                  "invalid_request",
+                ].includes(child.error_code ?? "")
+              ) {
+                setRetryableScenes(
+                  (currentSet) => new Set(currentSet).add(sceneId),
+                );
+              }
             }
           }
         },
@@ -460,15 +666,25 @@ export function GenerationSection({
     });
   };
 
-  const handleEditPromptSave = (
+  const handleEditPromptSave = async (
     sceneId: string,
     patch: Pick<
       Scene,
       "title" | "narration" | "visualPrompt" | "durationSeconds"
     >,
   ) => {
-    patchScene(sceneId, patch);
-    markDirty();
+    if (realSceneGenerationEnabled) {
+      await updatePersistedScene(sceneId, {
+        title: patch.title,
+        narration: patch.narration,
+        visual_prompt: patch.visualPrompt,
+        duration_seconds: patch.durationSeconds,
+      });
+      await onRefreshProject?.();
+    } else {
+      patchScene(sceneId, patch);
+      markDirty();
+    }
     toast.success("Prompt updated");
   };
 
@@ -540,11 +756,7 @@ export function GenerationSection({
             canRetry={
               !realSceneGenerationEnabled || retryableScenes.has(scene.id)
             }
-            onRegenerate={() =>
-              realSceneGenerationEnabled
-                ? void handleRealGeneration(scene)
-                : setRegenerateTarget(scene)
-            }
+            onRegenerate={() => setRegenerateTarget(scene)}
             onEditPrompt={() => setEditPromptTarget(scene)}
             onApprove={() => handleApprove(scene.id)}
             onShowDetails={() =>
@@ -554,17 +766,24 @@ export function GenerationSection({
                 )?.asset ?? null,
               )
             }
+            persistedMode={realSceneGenerationEnabled}
           />
         ))}
       </div>
 
       <RegenerateSceneDialog
-        scene={realSceneGenerationEnabled ? null : regenerateTarget}
+        scene={regenerateTarget}
         onOpenChange={(open) => !open && setRegenerateTarget(null)}
         onComplete={handleRegenerateComplete}
         instructionPlaceholder={
           regenerateTarget
             ? regenerateInstructionPlaceholder?.(regenerateTarget.id)
+            : undefined
+        }
+        onRealRegenerate={
+          realSceneGenerationEnabled
+            ? (scene, instruction) =>
+                handleRealGeneration(scene, undefined, instruction)
             : undefined
         }
       />

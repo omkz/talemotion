@@ -34,6 +34,10 @@ def execute_storyboard_job(
         job = jobs.get_for_update(job_id)
         if job is None:
             return {"job_id": job_id, "status": "not_found"}
+        if job.status is JobStatus.CANCEL_REQUESTED:
+            _cancel(job)
+            session.commit()
+            return {"job_id": job.id, "status": "cancelled"}
         if job.status is not JobStatus.QUEUED:
             return {"job_id": job.id, "status": job.status.value}
         project = projects.get(job.project_id)
@@ -53,6 +57,12 @@ def execute_storyboard_job(
         last_error: Exception | None = None
         attempts = max(1, min(settings.talemotion_storyboard_max_attempts, 5))
         for attempt in range(attempts):
+            session.refresh(job)
+            if job.status is JobStatus.CANCEL_REQUESTED:
+                _cancel(job)
+                project.status = ProjectStatus.DRAFT
+                session.commit()
+                return {"job_id": job.id, "status": "cancelled"}
             try:
                 candidate = storyboard_generator.generate(
                     topic=project.topic,
@@ -92,6 +102,12 @@ def execute_storyboard_job(
             session.commit()
             return {"job_id": job.id, "status": "failed"}
 
+        session.refresh(job)
+        if job.status is JobStatus.CANCEL_REQUESTED:
+            _cancel(job)
+            project.status = ProjectStatus.DRAFT
+            session.commit()
+            return {"job_id": job.id, "status": "cancelled"}
         locked_project = projects.get_for_update(project.id)
         if locked_project is None:
             _fail(job, "project_not_found", "The project no longer exists.")
@@ -145,6 +161,13 @@ def _fail(job: GenerationJob, code: str, message: str) -> None:
     job.current_stage = "failed"
     job.error_code = code
     job.error_message = message
+    job.completed_at = utc_now()
+    job.updated_at = utc_now()
+
+
+def _cancel(job: GenerationJob) -> None:
+    job.status = JobStatus.CANCELLED
+    job.current_stage = "cancelled"
     job.completed_at = utc_now()
     job.updated_at = utc_now()
 

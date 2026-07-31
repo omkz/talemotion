@@ -120,6 +120,30 @@ def test_storyboard_job_creation_and_duplicate_active_rejection(
     assert second.json()["error"]["code"] == "state_conflict"
 
 
+def test_storyboard_idempotency_returns_one_job(
+    client: TestClient,
+    project_payload: dict[str, object],
+    monkeypatch,
+) -> None:
+    project = _create_project(client, project_payload)
+    queued_ids: list[str] = []
+    monkeypatch.setattr(project_routes, "enqueue_storyboard", queued_ids.append)
+    headers = {"Idempotency-Key": "storyboard-once"}
+    first = client.post(
+        f"/api/v1/projects/{project['id']}/storyboard",
+        json={},
+        headers=headers,
+    )
+    second = client.post(
+        f"/api/v1/projects/{project['id']}/storyboard",
+        json={},
+        headers=headers,
+    )
+    assert second.status_code == 202
+    assert second.json()["id"] == first.json()["id"]
+    assert queued_ids == [first.json()["id"]]
+
+
 def test_storyboard_worker_persists_exactly_four_ordered_scenes(
     client: TestClient,
     project_payload: dict[str, object],
@@ -330,7 +354,7 @@ def test_failed_child_can_retry_without_recreating_successful_children(
     monkeypatch.setattr(
         job_routes.generate_scene_media,
         "apply_async",
-        lambda *, args, queue: queued_retries.extend(args),
+        lambda *, args, queue, task_id=None: queued_retries.extend(args),
     )
     retried = client.post(f"/api/v1/jobs/{failed_id}/retry")
     assert retried.status_code == 200

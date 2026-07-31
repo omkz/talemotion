@@ -85,6 +85,15 @@ export async function updateProject(
   return updated;
 }
 
+export async function deleteProject(id: string): Promise<void> {
+  await delay(250);
+  const store = getProjectsStore();
+  if (!store.some((project) => project.id === id)) {
+    throw new Error(`Project not found: ${id}`);
+  }
+  setProjectsStore(store.filter((project) => project.id !== id));
+}
+
 export function replaceProject(project: VideoProject): void {
   const store = getProjectsStore();
   setProjectsStore(

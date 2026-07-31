@@ -1,5 +1,13 @@
 import Link from "next/link";
-import { ArrowLeft, Check, Clock, Globe, Layers, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  Clock,
+  Globe,
+  Layers,
+  Loader2,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ProjectStatusBadge } from "@/components/shared/status-badge";
 import { formatMode } from "@/lib/format";
@@ -16,9 +24,17 @@ interface ProjectHeaderProps {
     disabled?: boolean;
     loading?: boolean;
   };
+  onDelete: () => void;
+  deleting?: boolean;
 }
 
-export function ProjectHeader({ project, saveState, primaryAction }: ProjectHeaderProps) {
+export function ProjectHeader({
+  project,
+  saveState,
+  primaryAction,
+  onDelete,
+  deleting = false,
+}: ProjectHeaderProps) {
   return (
     <div className="border-b border-border bg-background/95 px-4 py-4 sm:px-6 lg:px-8">
       <Link
@@ -70,14 +86,29 @@ export function ProjectHeader({ project, saveState, primaryAction }: ProjectHead
           </div>
         </div>
 
-        <Button
-          onClick={primaryAction.onClick}
-          disabled={primaryAction.disabled || primaryAction.loading}
-          className="shrink-0"
-        >
-          {primaryAction.loading && <Loader2 className="size-4 animate-spin" />}
-          {primaryAction.label}
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={onDelete}
+            disabled={deleting}
+            aria-label={`Delete ${project.output.title}`}
+          >
+            {deleting ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Trash2 className="size-4" />
+            )}
+          </Button>
+          <Button
+            onClick={primaryAction.onClick}
+            disabled={primaryAction.disabled || primaryAction.loading}
+          >
+            {primaryAction.loading && <Loader2 className="size-4 animate-spin" />}
+            {primaryAction.label}
+          </Button>
+        </div>
       </div>
     </div>
   );

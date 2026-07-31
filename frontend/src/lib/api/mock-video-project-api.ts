@@ -4,6 +4,7 @@ import {
   generateAllScenes as mockGenerateAllScenes,
   generateStoryboard as mockGenerateStoryboard,
   getAsset as mockGetAsset,
+  deleteProject as mockDeleteProject,
   getProject as mockGetProject,
   getSettings as mockGetSettings,
   listAssets as mockListAssets,
@@ -111,10 +112,8 @@ export class MockVideoProjectApi implements VideoProjectApi {
     return project;
   }
 
-  async deleteProject() {
-    throw new Error(
-      "Project deletion is only defined by the future HTTP contract."
-    );
+  deleteProject(projectId: string) {
+    return mockDeleteProject(projectId);
   }
 
   async generateStoryboard(projectId: string) {

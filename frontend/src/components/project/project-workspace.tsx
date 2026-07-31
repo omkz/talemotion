@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -16,6 +17,7 @@ import { GenerationSection } from "@/components/generation/generation-section";
 import { FinalVideoSection } from "@/components/final-video/final-video-section";
 import { MAJAPAHIT_REGENERATION_EXAMPLE } from "@/lib/mock-data";
 import {
+  deletePersistedProject,
   getPersistedProject,
   updatePersistedProject,
 } from "@/lib/api/persisted-projects";
@@ -35,6 +37,8 @@ import type { ModeBrief, Render, Scene, VideoProject } from "@/types";
 import { BriefSection } from "./brief-section";
 import { ProjectHeader, type SaveState } from "./project-header";
 import { useCredits } from "@/components/credits/credits-provider";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
+import { videoProjectApi } from "@/lib/api/provider";
 
 type WorkspaceTab = "brief" | "storyboard" | "generate" | "final";
 
@@ -46,6 +50,7 @@ function initialTabFor(project: VideoProject): WorkspaceTab {
 }
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
+  const router = useRouter();
   const { estimate, canAfford, refresh: refreshCredits } = useCredits();
   const [project, setProject] = useState<VideoProject | null>(null);
   const [notFound, setNotFound] = useState(false);
@@ -55,6 +60,8 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
   const [renderStage, setRenderStage] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoadedRef = useRef(false);
 
@@ -421,9 +428,40 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
 
   const primaryAction = primaryActionFor();
 
+  const handleDeleteProject = async () => {
+    if (!project) return;
+    setDeleting(true);
+    try {
+      if (realSceneGenerationEnabled) {
+        await deletePersistedProject(project.id);
+      } else {
+        await videoProjectApi.deleteProject(project.id);
+      }
+      toast.success("Project deleted", {
+        description: `${project.output.title} was removed from your projects.`,
+      });
+      router.replace("/projects");
+      router.refresh();
+    } catch (deleteError) {
+      toast.error("Project could not be deleted", {
+        description:
+          deleteError instanceof Error
+            ? deleteError.message
+            : "Please try again.",
+      });
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="flex min-h-full flex-col">
-      <ProjectHeader project={project} saveState={saveState} primaryAction={primaryAction} />
+      <ProjectHeader
+        project={project}
+        saveState={saveState}
+        primaryAction={primaryAction}
+        onDelete={() => setDeleteOpen(true)}
+        deleting={deleting}
+      />
 
       <div className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as WorkspaceTab)}>
@@ -488,6 +526,16 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           </TabsContent>
         </Tabs>
       </div>
+
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={(open) => !deleting && setDeleteOpen(open)}
+        title="Delete this project?"
+        description={`“${project.output.title}” will be removed from your project list. This action cannot be undone from TaleMotion.`}
+        confirmLabel={deleting ? "Deleting…" : "Delete project"}
+        destructive
+        onConfirm={() => void handleDeleteProject()}
+      />
     </div>
   );
 }

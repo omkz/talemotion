@@ -204,6 +204,13 @@ export async function listPersistedProjects(
   return response.items.map(mapPersistedProject);
 }
 
+export async function deletePersistedProject(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await client().delete<void>(`/projects/${projectId}`, { signal });
+}
+
 export async function updatePersistedProject(
   projectId: string,
   patch: {

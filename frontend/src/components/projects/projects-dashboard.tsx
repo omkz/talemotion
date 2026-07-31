@@ -6,10 +6,15 @@ import { Film, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { videoProjectApi } from "@/lib/api/provider";
-import { listPersistedProjects } from "@/lib/api/persisted-projects";
+import {
+  deletePersistedProject,
+  listPersistedProjects,
+} from "@/lib/api/persisted-projects";
 import { realSceneGenerationEnabled } from "@/lib/api/scene-generation-jobs";
 import type { VideoProject } from "@/types";
+import { toast } from "sonner";
 import { ProjectCard } from "./project-card";
 import { ProjectFilters, type ProjectFilter } from "./project-filters";
 import { ProjectsGridSkeleton } from "./projects-grid-skeleton";
@@ -18,6 +23,8 @@ export function ProjectsDashboard() {
   const [projects, setProjects] = useState<VideoProject[] | null>(null);
   const [error, setError] = useState(false);
   const [filter, setFilter] = useState<ProjectFilter>("all");
+  const [deleteTarget, setDeleteTarget] = useState<VideoProject | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,6 +48,34 @@ export function ProjectsDashboard() {
     if (filter === "all") return projects;
     return projects.filter((project) => project.status === filter);
   }, [projects, filter]);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      if (realSceneGenerationEnabled) {
+        await deletePersistedProject(deleteTarget.id);
+      } else {
+        await videoProjectApi.deleteProject(deleteTarget.id);
+      }
+      setProjects((current) =>
+        current?.filter((project) => project.id !== deleteTarget.id) ?? null,
+      );
+      toast.success("Project deleted", {
+        description: `${deleteTarget.output.title} was removed from your projects.`,
+      });
+      setDeleteTarget(null);
+    } catch (deleteError) {
+      toast.error("Project could not be deleted", {
+        description:
+          deleteError instanceof Error
+            ? deleteError.message
+            : "Please try again.",
+      });
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
@@ -97,10 +132,28 @@ export function ProjectsDashboard() {
       {!error && projects !== null && filtered.length > 0 && (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filtered.map((project) => (
-            <ProjectCard key={project.id} project={project} />
+            <ProjectCard
+              key={project.id}
+              project={project}
+              onDelete={() => setDeleteTarget(project)}
+            />
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}
+        title="Delete this project?"
+        description={
+          deleteTarget
+            ? `“${deleteTarget.output.title}” will be removed from your project list. This action cannot be undone from TaleMotion.`
+            : "This project will be removed."
+        }
+        confirmLabel={deleting ? "Deleting…" : "Delete project"}
+        destructive
+        onConfirm={() => void handleDelete()}
+      />
     </div>
   );
 }

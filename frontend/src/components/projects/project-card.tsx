@@ -1,19 +1,32 @@
 import Link from "next/link";
-import { Clock, Layers } from "lucide-react";
+import { Clock, Layers, MoreHorizontal, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Progress } from "@/components/ui/progress";
 import { MediaPlaceholder } from "@/components/shared/media-placeholder";
 import { ProjectStatusBadge } from "@/components/shared/status-badge";
 import { formatMode, formatRelativeTime } from "@/lib/format";
 import type { VideoProject } from "@/types";
 
-export function ProjectCard({ project }: { project: VideoProject }) {
+export function ProjectCard({
+  project,
+  onDelete,
+}: {
+  project: VideoProject;
+  onDelete: () => void;
+}) {
   return (
-    <Link
-      href={`/projects/${project.id}`}
-      className="group block rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-    >
-      <Card className="gap-0 overflow-hidden py-0 transition-colors group-hover:ring-foreground/20">
+    <Card className="group relative gap-0 overflow-hidden py-0 transition-colors hover:ring-foreground/20">
+      <Link
+        href={`/projects/${project.id}`}
+        className="block rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
         <MediaPlaceholder
           aspectRatio={project.output.aspectRatio}
           className="rounded-none border-0 border-b border-border"
@@ -53,7 +66,26 @@ export function ProjectCard({ project }: { project: VideoProject }) {
             </div>
           )}
         </div>
-      </Card>
-    </Link>
+      </Link>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="secondary"
+            size="icon-sm"
+            className="absolute top-2 right-2 z-10"
+            aria-label={`Project actions for ${project.output.title}`}
+          >
+            <MoreHorizontal className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+            <Trash2 />
+            Delete project
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </Card>
   );
 }

@@ -10,6 +10,7 @@ export interface Render {
   durationSeconds: number;
   fileSizeMb: number;
   captionsBurned: boolean;
+  narrationIncluded?: boolean;
   musicIncluded: boolean;
   thumbnailUrl: string | null;
   shareUrl: string | null;

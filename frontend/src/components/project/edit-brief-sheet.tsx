@@ -27,6 +27,7 @@ export interface BriefSaveValues {
   brief: ModeBrief;
   visualStyle: string;
   narrationStyle: string;
+  narrationEnabled: boolean;
   captionsEnabled: boolean;
   musicEnabled: boolean;
   historicalAccuracyNote: string | null;
@@ -92,6 +93,9 @@ function EditBriefForm({
   const [draft, setDraft] = useState<ModeBrief>(brief);
   const [visualStyle, setVisualStyle] = useState(output.visualStyle);
   const [narrationStyle, setNarrationStyle] = useState(output.narrationStyle);
+  const [narrationEnabled, setNarrationEnabled] = useState(
+    output.narrationEnabled !== false,
+  );
   const [captionsEnabled, setCaptionsEnabled] = useState(output.captionsEnabled);
   const [musicEnabled, setMusicEnabled] = useState(output.musicEnabled);
   const [accuracyNote, setAccuracyNote] = useState(historicalAccuracyNote ?? "");
@@ -101,6 +105,7 @@ function EditBriefForm({
       brief: draft,
       visualStyle,
       narrationStyle,
+      narrationEnabled,
       captionsEnabled,
       musicEnabled,
       historicalAccuracyNote: draft.mode === "historical-documentary" ? accuracyNote : historicalAccuracyNote,
@@ -248,6 +253,16 @@ function EditBriefForm({
           </div>
         </div>
 
+        <div className="flex items-center justify-between rounded-lg border border-border p-3">
+          <Label htmlFor="brief-narration" className="text-sm font-normal">
+            AI narration enabled
+          </Label>
+          <Switch
+            id="brief-narration"
+            checked={narrationEnabled}
+            onCheckedChange={setNarrationEnabled}
+          />
+        </div>
         <div className="flex items-center justify-between rounded-lg border border-border p-3">
           <Label htmlFor="brief-captions" className="text-sm font-normal">
             Captions enabled

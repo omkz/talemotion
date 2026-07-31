@@ -18,6 +18,7 @@ class CreateProjectRequest(StrictSchema):
     visual_style: NonEmptyText = "cinematic historical realism"
     narration_style: NonEmptyText = "dramatic documentary"
     captions_enabled: bool = True
+    narration_enabled: bool = True
     music_enabled: bool = True
     historical_accuracy_note: str | None = None
 
@@ -32,6 +33,7 @@ class UpdateProjectRequest(StrictSchema):
     visual_style: NonEmptyText | None = None
     narration_style: NonEmptyText | None = None
     captions_enabled: bool | None = None
+    narration_enabled: bool | None = None
     music_enabled: bool | None = None
     historical_accuracy_note: str | None = None
 
@@ -49,6 +51,7 @@ class ProjectResponse(StrictSchema):
     visual_style: str
     narration_style: str
     captions_enabled: bool
+    narration_enabled: bool
     music_enabled: bool
     historical_accuracy_note: str | None
     generation_progress: int
@@ -77,6 +80,7 @@ def project_to_response(project: Project) -> ProjectResponse:
         visual_style=project.visual_style,
         narration_style=project.narration_style,
         captions_enabled=project.captions_enabled,
+        narration_enabled=project.narration_enabled,
         music_enabled=project.music_enabled,
         historical_accuracy_note=project.historical_accuracy_note,
         generation_progress=project.generation_progress,

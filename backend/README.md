@@ -44,6 +44,12 @@ supported clip durations are configurable through `TALEMOTION_IMAGE_MODEL`,
 starts without these keys; a generation request reports
 `missing_configuration` instead of inventing a successful result.
 
+Final rendering additionally uses `TALEMOTION_TTS_PROVIDER`,
+`TALEMOTION_TTS_MODEL`, `TALEMOTION_MUSIC_PROVIDER`, and
+`TALEMOTION_MUSIC_MODEL` when their corresponding project options are enabled.
+`FFMPEG_BINARY` defaults to `ffmpeg`; the executable must be installed on the
+worker host.
+
 ## Run and migrate
 
 ```bash
@@ -108,6 +114,14 @@ talemotion/projects/{safe_project}/scenes/{safe_scene}/runs/{run_id}/
 Signed preview URLs expire after approximately 15 minutes. Credentials and
 raw provider errors are never stored in job payloads or returned by the API.
 
-Narration audio, music, captions, full-project rendering, and long-form
-generation remain unimplemented. The frontend uses these workflows only when
-`NEXT_PUBLIC_REAL_SCENE_GENERATION=true`.
+## Final render workflow
+
+`POST /api/v1/projects/{project_id}/renders` validates all active scene assets,
+creates a render plus job, and dispatches the rendering queue. The worker
+downloads B2 media, optionally creates reusable narration and music, stores an
+SRT subtitle asset, and invokes FFmpeg from `app/rendering/` using argument
+arrays. The H.264/AAC MP4 is uploaded to B2 and exposed through
+`POST /api/v1/renders/{render_id}/preview-url`.
+
+Long-form generation remains unimplemented. Provider-backed workflows are
+enabled in the frontend only when `NEXT_PUBLIC_REAL_SCENE_GENERATION=true`.

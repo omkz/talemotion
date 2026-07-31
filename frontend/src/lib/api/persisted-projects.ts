@@ -48,6 +48,7 @@ export interface PersistedProjectResponse {
   visual_style: string;
   narration_style: string;
   captions_enabled: boolean;
+  narration_enabled: boolean;
   music_enabled: boolean;
   historical_accuracy_note: string | null;
   generation_progress: number;
@@ -133,6 +134,7 @@ export function mapPersistedProject(response: PersistedProjectResponse): VideoPr
       narrationStyle: response.narration_style,
       sceneCount: 4,
       captionsEnabled: response.captions_enabled,
+      narrationEnabled: response.narration_enabled,
       musicEnabled: response.music_enabled,
     },
     chapters: response.chapters.map((chapter) => ({
@@ -172,4 +174,25 @@ export async function listPersistedProjects(
     signal,
   });
   return response.items.map(mapPersistedProject);
+}
+
+export async function updatePersistedProject(
+  projectId: string,
+  patch: {
+    topic?: string;
+    additional_direction?: string;
+    visual_style?: string;
+    narration_style?: string;
+    narration_enabled?: boolean;
+    captions_enabled?: boolean;
+    music_enabled?: boolean;
+    historical_accuracy_note?: string | null;
+  },
+  signal?: AbortSignal,
+): Promise<VideoProject> {
+  const response = await client().patch<PersistedProjectResponse>(
+    `/projects/${projectId}`,
+    { body: patch, signal },
+  );
+  return mapPersistedProject(response);
 }

@@ -16,6 +16,7 @@ const completedJob: PersistedGenerationJob = {
   status: "completed",
   progress: 100,
   current_stage: "completed",
+  input_payload: {},
   result_payload: {
     image_asset_id: "asset_image",
     video_asset_id: "asset_video",

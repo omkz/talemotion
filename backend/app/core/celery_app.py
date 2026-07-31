@@ -6,7 +6,12 @@ from app.core.config import settings
 celery_app = Celery(
     "talemotion",
     broker=settings.celery_broker_url,
-    include=["app.tasks.media", "app.tasks.storyboard", "app.tasks.system"],
+    include=[
+        "app.tasks.media",
+        "app.tasks.rendering",
+        "app.tasks.storyboard",
+        "app.tasks.system",
+    ],
 )
 celery_app.conf.update(
     task_ignore_result=True,
@@ -23,6 +28,7 @@ celery_app.conf.update(
         "app.tasks.storyboard.generate_project_storyboard": {
             "queue": "storyboard"
         },
+        "app.tasks.rendering.render_project_video": {"queue": "rendering"},
     },
     task_track_started=True,
     task_serializer="json",

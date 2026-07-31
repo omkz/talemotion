@@ -9,10 +9,9 @@ docs/       API contract and OpenAPI specification
 ```
 
 The backend persists projects, validated four-scene historical storyboards,
-parent/child generation jobs, and generated asset metadata. Celery workers use
-Genblaze for GMICloud image/video generation and store media plus manifests in
-Backblaze B2. Narration audio, music, captions, FFmpeg rendering, and final
-video production are not implemented.
+parent/child generation jobs, generated assets, and versioned final renders.
+Celery workers use Genblaze for GMICloud generation, Backblaze B2 for durable
+media, and FFmpeg for H.264/AAC final assembly.
 
 ## Native infrastructure
 

@@ -21,6 +21,8 @@ created atomically with one `Main` chapter at position `1`.
 | `GET`, `PATCH`, `DELETE /projects/{id}` | Read, update safe fields, soft-delete |
 | `POST /projects/{id}/storyboard` | Queue structured historical storyboard planning |
 | `POST /projects/{id}/generations` | Queue one parent and four scene-media children |
+| `POST /projects/{id}/renders` | Queue asynchronous final-video assembly |
+| `GET /projects/{id}/renders` | List persisted render versions |
 | `GET /chapters/{id}` | Chapter with scenes ordered by position |
 | `POST /chapters/{id}/scenes` | Append or insert a scene |
 | `POST /chapters/{id}/scenes/reorder` | Apply a complete scene order |
@@ -32,6 +34,8 @@ created atomically with one `Main` chapter at position `1`.
 | `POST /jobs/{id}/retry` | Create and enqueue a new failed scene-job attempt |
 | `GET /assets/{id}` | Read persisted generated-asset metadata |
 | `POST /assets/{id}/preview-url` | Request a short-lived signed B2 URL |
+| `GET /renders/{id}` | Read a persisted render |
+| `POST /renders/{id}/preview-url` | Request its signed final-video URL |
 
 Retries preserve failed job history. A replacement child points to the same
 parent; parent aggregation uses the latest attempt for each scene and never
@@ -126,8 +130,31 @@ minutes.
 is present; it performs no paid generation call. Required variables and
 configurable model slugs are documented in `backend/.env.example`.
 
+## Final rendering
+
+A render request validates that each ordered scene has an available active
+image or video. It persists a `Render` and `render` generation job before
+dispatching `app.tasks.rendering.render_project_video` to the `rendering`
+queue. Narration, captions, and music default to the persisted project output
+settings and may be overridden per render.
+
+The worker downloads scene media through `genblaze-s3`, reuses matching
+narration/music assets, and generates missing audio through the configured
+Genblaze GMICloud audio provider. Captions are deterministic SRT files derived
+from scene narration and duration. FFmpeg normalizes every visual to 1080×1920,
+loops images, concatenates scenes in position order, pads narration per scene,
+mixes music below narration, burns captions when enabled, and emits H.264/AAC
+MP4. The final object is stored under:
+
+```text
+talemotion/projects/{safe_project}/renders/v{version}/final.mp4
+```
+
+Progress stages and terminal errors are persisted in PostgreSQL. Temporary
+files are scoped to one worker invocation and removed on success or failure.
+
 ## Explicitly deferred
 
-Narration audio, music, captions, FFmpeg/final rendering, and long-form
-chapter generation are not part of this workflow. SSE is not used as the
-primary generation workflow.
+Long-form chapter generation remains deferred. Provider-backed audio and final
+rendering require configured credentials and FFmpeg; no mock-success fallback
+is used.

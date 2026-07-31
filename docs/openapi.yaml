@@ -139,6 +139,38 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
         "409": {$ref: "#/components/responses/Error"}
         "503": {$ref: "#/components/responses/Error"}
+  /projects/{project_id}/renders:
+    get:
+      tags: [Renders]
+      summary: List project render versions
+      parameters:
+        - {$ref: "#/components/parameters/ProjectId"}
+      responses:
+        "200":
+          description: Render versions, newest first
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RenderListResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+    post:
+      tags: [Renders]
+      summary: Queue final MP4 rendering
+      parameters:
+        - {$ref: "#/components/parameters/ProjectId"}
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/CreateRenderRequest"}
+      responses:
+        "202":
+          description: Persisted queued render job
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/GenerationJobResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
   /chapters/{chapter_id}:
     get:
       tags: [Chapters]
@@ -326,6 +358,34 @@ paths:
         "404": {$ref: "#/components/responses/Error"}
         "409": {$ref: "#/components/responses/Error"}
         "502": {$ref: "#/components/responses/Error"}
+  /renders/{render_id}:
+    get:
+      tags: [Renders]
+      summary: Get a persisted render
+      parameters:
+        - {name: render_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Render metadata
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/RenderResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+  /renders/{render_id}/preview-url:
+    post:
+      tags: [Renders]
+      summary: Create a signed final-video preview URL
+      parameters:
+        - {name: render_id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Signed final-video preview
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/SignedPreviewUrlResponse"}
+        "404": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "502": {$ref: "#/components/responses/Error"}
 components:
   parameters:
     ProjectId: {name: project_id, in: path, required: true, schema: {type: string}}
@@ -390,6 +450,7 @@ components:
         visual_style: {type: string}
         narration_style: {type: string}
         captions_enabled: {type: boolean, default: true}
+        narration_enabled: {type: boolean, default: true}
         music_enabled: {type: boolean, default: true}
         historical_accuracy_note: {type: [string, "null"]}
     UpdateProjectRequest:
@@ -405,6 +466,7 @@ components:
         visual_style: {type: string}
         narration_style: {type: string}
         captions_enabled: {type: boolean}
+        narration_enabled: {type: boolean}
         music_enabled: {type: boolean}
         historical_accuracy_note: {type: [string, "null"]}
     ProjectResponse:
@@ -468,6 +530,13 @@ components:
       additionalProperties: false
       properties:
         generate_video: {type: boolean, default: true}
+    CreateRenderRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        narration_enabled: {type: [boolean, "null"]}
+        captions_enabled: {type: [boolean, "null"]}
+        music_enabled: {type: [boolean, "null"]}
     UpdateSceneRequest:
       type: object
       additionalProperties: false
@@ -559,6 +628,41 @@ components:
       properties:
         url: {type: string, format: uri}
         expires_at: {type: string, format: date-time}
+    RenderResponse:
+      type: object
+      required:
+        - id
+        - project_id
+        - version
+        - status
+        - narration_enabled
+        - captions_enabled
+        - music_enabled
+        - created_at
+        - updated_at
+      properties:
+        id: {type: string}
+        project_id: {type: string}
+        job_id: {type: [string, "null"]}
+        version: {type: integer, minimum: 1}
+        status: {type: string, enum: [queued, rendering, completed, failed, cancelled]}
+        asset_id: {type: [string, "null"]}
+        duration_seconds: {type: [integer, "null"]}
+        file_size_bytes: {type: [integer, "null"]}
+        narration_enabled: {type: boolean}
+        captions_enabled: {type: boolean}
+        music_enabled: {type: boolean}
+        created_at: {type: string, format: date-time}
+        started_at: {type: [string, "null"], format: date-time}
+        completed_at: {type: [string, "null"], format: date-time}
+        updated_at: {type: string, format: date-time}
+    RenderListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: {$ref: "#/components/schemas/RenderResponse"}
     ErrorResponse:
       type: object
       required: [error]

@@ -7,6 +7,7 @@ from app.models.asset import Asset, AssetStatus, AssetType
 from app.models.chapter import Chapter
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import Project, ProjectStatus, VideoMode
+from app.models.render import Render, RenderStatus
 from app.models.scene import Scene
 
 
@@ -245,23 +246,65 @@ class AssetRepository:
         )
         return (latest or 0) + 1
 
+    def next_project_version(
+        self,
+        project_id: str,
+        asset_type: AssetType,
+    ) -> int:
+        latest = self.session.scalar(
+            select(func.max(Asset.version)).where(
+                Asset.project_id == project_id,
+                Asset.scene_id.is_(None),
+                Asset.type == asset_type,
+            )
+        )
+        return (latest or 0) + 1
+
+    def reusable_audio(
+        self,
+        *,
+        project_id: str,
+        scene_id: str | None,
+        prompt: str,
+        provider: str,
+        model_name: str,
+        purpose: str,
+        configuration: str,
+    ) -> Asset | None:
+        return self.session.scalar(
+            select(Asset)
+            .where(
+                Asset.project_id == project_id,
+                Asset.scene_id == scene_id,
+                Asset.type == AssetType.AUDIO,
+                Asset.status == AssetStatus.AVAILABLE,
+                Asset.prompt == prompt,
+                Asset.provider == provider,
+                Asset.model_name == model_name,
+                Asset.generation_parameters["purpose"].astext == purpose,
+                Asset.generation_parameters["configuration"].astext
+                == configuration,
+            )
+            .order_by(Asset.created_at.desc())
+        )
+
     def create(
         self,
         *,
         project_id: str,
-        scene_id: str,
+        scene_id: str | None,
         asset_type: AssetType,
         version: int,
-        provider: str,
-        model_name: str,
-        prompt: str,
+        provider: str | None,
+        model_name: str | None,
+        prompt: str | None,
         generation_parameters: dict[str, object],
-        storage_bucket: str,
+        storage_bucket: str | None,
         storage_object_key: str,
         mime_type: str,
         file_size_bytes: int | None,
-        sha256: str,
-        provenance_object_key: str,
+        sha256: str | None,
+        provenance_object_key: str | None,
     ) -> Asset:
         asset = Asset(
             project_id=project_id,
@@ -283,6 +326,79 @@ class AssetRepository:
         self.session.add(asset)
         self.session.flush()
         return asset
+
+    def commit(self) -> None:
+        self.session.commit()
+
+
+class RenderRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def create(
+        self,
+        *,
+        project_id: str,
+        version: int,
+        narration_enabled: bool,
+        captions_enabled: bool,
+        music_enabled: bool,
+    ) -> Render:
+        render = Render(
+            project_id=project_id,
+            version=version,
+            status=RenderStatus.QUEUED,
+            narration_enabled=narration_enabled,
+            captions_enabled=captions_enabled,
+            music_enabled=music_enabled,
+        )
+        self.session.add(render)
+        self.session.flush()
+        return render
+
+    def get(self, render_id: str, *, for_update: bool = False) -> Render | None:
+        statement = (
+            select(Render)
+            .where(Render.id == render_id)
+            .options(
+                selectinload(Render.asset),
+                selectinload(Render.job),
+                selectinload(Render.project),
+            )
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return self.session.scalar(statement)
+
+    def list_for_project(self, project_id: str) -> list[Render]:
+        return list(
+            self.session.scalars(
+                select(Render)
+                .where(Render.project_id == project_id)
+                .options(selectinload(Render.asset), selectinload(Render.job))
+                .order_by(Render.version.desc())
+            )
+        )
+
+    def next_version(self, project_id: str) -> int:
+        latest = self.session.scalar(
+            select(func.max(Render.version)).where(
+                Render.project_id == project_id
+            )
+        )
+        return (latest or 0) + 1
+
+    def active_for_project(self, project_id: str) -> Render | None:
+        return self.session.scalar(
+            select(Render)
+            .where(
+                Render.project_id == project_id,
+                Render.status.in_(
+                    (RenderStatus.QUEUED, RenderStatus.RENDERING)
+                ),
+            )
+            .order_by(Render.created_at.desc())
+        )
 
     def commit(self) -> None:
         self.session.commit()

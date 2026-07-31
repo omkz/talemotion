@@ -33,6 +33,7 @@ export interface PersistedGenerationJob {
   status: PersistedJobStatus;
   progress: number;
   current_stage: string | null;
+  input_payload: Record<string, unknown>;
   result_payload: Record<string, unknown> | null;
   error_code: string | null;
   error_message: string | null;

@@ -103,6 +103,7 @@ class Project(Base, TimestampMixin):
         default="Documentary",
     )
     captions_enabled: Mapped[bool] = mapped_column(default=True)
+    narration_enabled: Mapped[bool] = mapped_column(default=True)
     music_enabled: Mapped[bool] = mapped_column(default=False)
     generation_progress: Mapped[int] = mapped_column(Integer, default=0)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

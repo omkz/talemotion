@@ -19,6 +19,7 @@ from genblaze_core.models.enums import ProviderErrorCode
 from genblaze_core.pipeline.result import PipelineResult
 from genblaze_core.storage.errors import StorageError
 from genblaze_gmicloud import (
+    GMICloudAudioProvider,
     GMICloudImageProvider,
     GMICloudVideoProvider,
     chat,
@@ -26,7 +27,7 @@ from genblaze_gmicloud import (
 from genblaze_s3 import S3StorageBackend
 
 from app.core.config import AppConfig
-from app.media import SceneMediaError
+from app.media import SceneMediaError, StoredMediaArtifact
 from app.schemas.scene_run import (
     SceneImageCompletedEvent,
     SceneImageProgressEvent,
@@ -602,3 +603,217 @@ Historical and visual requirements:
 - narration must make a coherent factual progression without claiming
   certainty where evidence is disputed.
 """.strip()
+
+
+class GenblazeRenderMediaGateway:
+    """Generate render audio and move render artifacts through genblaze-s3."""
+
+    def __init__(self, config: AppConfig) -> None:
+        self.config = config
+
+    def download(self, key: str) -> bytes:
+        backend = self._backend()
+        try:
+            return backend.get(key)
+        finally:
+            backend.close()
+
+    def upload(
+        self,
+        *,
+        key: str,
+        data: bytes,
+        media_type: str,
+    ) -> StoredMediaArtifact:
+        backend = self._backend()
+        try:
+            backend.put(key, data, content_type=media_type)
+        finally:
+            backend.close()
+        return StoredMediaArtifact(
+            storage_object_key=key,
+            media_type=media_type,
+            file_size_bytes=len(data),
+            sha256=hashlib.sha256(data).hexdigest(),
+            provider="TaleMotion",
+            model="ffmpeg" if media_type == "video/mp4" else "generated",
+        )
+
+    def generate_narration(
+        self,
+        *,
+        project_id: str,
+        scene_id: str,
+        text: str,
+    ) -> StoredMediaArtifact:
+        missing = self.config.missing_tts_configuration()
+        if missing:
+            raise SceneMediaError(
+                "missing_configuration",
+                "Narration generation is not configured. "
+                f"Missing: {', '.join(missing)}.",
+                False,
+            )
+        prefix = (
+            f"talemotion/projects/{_safe_segment(project_id)}/audio/scenes/"
+            f"{_safe_segment(scene_id)}"
+        )
+        pipeline = (
+            Pipeline(
+                "talemotion-scene-narration",
+                tenant_id=_safe_segment(project_id),
+                project_id=project_id,
+                max_concurrency=1,
+            )
+            .metadata(talemotion_scene_id=scene_id, purpose="narration")
+            .cache(StepCache(self.config.genblaze_cache_dir))
+            .step(
+                GMICloudAudioProvider(api_key=self._gmi_key()),
+                model=self.config.talemotion_tts_model or "",
+                prompt=text,
+                modality=Modality.AUDIO,
+                **(
+                    {"voice": self.config.talemotion_tts_voice}
+                    if self.config.talemotion_tts_voice
+                    else {}
+                ),
+            )
+        )
+        return self._run_audio(
+            pipeline,
+            prefix=prefix,
+            model=self.config.talemotion_tts_model or "",
+        )
+
+    def generate_music(
+        self,
+        *,
+        project_id: str,
+        prompt: str,
+        duration_seconds: int,
+    ) -> StoredMediaArtifact:
+        missing = self.config.missing_music_configuration()
+        if missing:
+            raise SceneMediaError(
+                "missing_configuration",
+                f"Music generation is not configured. Missing: {', '.join(missing)}.",
+                False,
+            )
+        prefix = f"talemotion/projects/{_safe_segment(project_id)}/music"
+        pipeline = (
+            Pipeline(
+                "talemotion-project-music",
+                tenant_id=_safe_segment(project_id),
+                project_id=project_id,
+                max_concurrency=1,
+            )
+            .metadata(purpose="background_music")
+            .cache(StepCache(self.config.genblaze_cache_dir))
+            .step(
+                GMICloudAudioProvider(api_key=self._gmi_key()),
+                model=self.config.talemotion_music_model or "",
+                prompt=prompt,
+                modality=Modality.AUDIO,
+                duration_seconds=duration_seconds,
+            )
+        )
+        return self._run_audio(
+            pipeline,
+            prefix=prefix,
+            model=self.config.talemotion_music_model or "",
+        )
+
+    def presign_preview(self, key: str) -> str:
+        if not key.startswith("talemotion/projects/"):
+            raise ValueError("Media key is outside the TaleMotion project prefix.")
+        backend = self._backend()
+        try:
+            return backend.get_url(
+                key,
+                expires_in=self.config.media_preview_ttl_seconds,
+            )
+        finally:
+            backend.close()
+
+    def _run_audio(
+        self,
+        pipeline: Pipeline,
+        *,
+        prefix: str,
+        model: str,
+    ) -> StoredMediaArtifact:
+        try:
+            result = pipeline.run(sink=self._sink(prefix), timeout=600)
+            step_asset = (
+                result.run.steps[-1].assets[0]
+                if result.run.steps and result.run.steps[-1].assets
+                else None
+            )
+            if (
+                step_asset is None
+                or not step_asset.url
+                or not step_asset.sha256
+            ):
+                raise SceneMediaError(
+                    "storage_failed",
+                    "Genblaze did not return a durable audio asset.",
+                    True,
+                )
+            helper = GenblazeSceneGenerator(self.config)
+            key = helper._key_from_url(
+                step_asset.url,
+                expected_prefix=prefix,
+            )
+            _, manifest_key = helper._manifest_reference(
+                result,
+                expected_prefix=prefix,
+            )
+            return StoredMediaArtifact(
+                storage_object_key=key,
+                media_type=step_asset.media_type or "audio/mpeg",
+                file_size_bytes=step_asset.size_bytes or 0,
+                sha256=step_asset.sha256,
+                provider="GMICloud",
+                model=model,
+                manifest_object_key=manifest_key,
+            )
+        except SceneMediaError:
+            raise
+        except Exception as error:
+            mapped = GenblazeSceneGenerator(self.config)._map_error(error)
+            raise mapped from error
+
+    def _backend(self) -> S3StorageBackend:
+        if self.config.missing_storage_configuration():
+            raise SceneMediaError(
+                "missing_configuration",
+                "Backblaze B2 storage is not configured.",
+                False,
+            )
+        return S3StorageBackend.for_backblaze(
+            self.config.b2_bucket_name or "",
+            region=self.config.b2_region or "",
+            key_id=self._secret("b2_key_id"),
+            app_key=self._secret("b2_application_key"),
+            auto_lifecycle=False,
+        )
+
+    def _sink(self, prefix: str) -> ObjectStorageSink:
+        return ObjectStorageSink(
+            self._backend(),
+            prefix=prefix,
+            key_strategy=KeyStrategy.HIERARCHICAL,
+        )
+
+    def _gmi_key(self) -> str:
+        return self._secret("gmi_api_key")
+
+    def _secret(self, field: str) -> str:
+        value = getattr(self.config, field)
+        if value is None:
+            raise SceneMediaError(
+                "missing_configuration",
+                "Render media generation is not configured.",
+                False,
+            )
+        return value.get_secret_value()

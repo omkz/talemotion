@@ -52,6 +52,7 @@ class ProjectService:
             visual_style=request.visual_style,
             narration_style=request.narration_style,
             captions_enabled=request.captions_enabled,
+            narration_enabled=request.narration_enabled,
             music_enabled=request.music_enabled,
             generation_progress=0,
         )

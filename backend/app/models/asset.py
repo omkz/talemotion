@@ -51,6 +51,12 @@ class Asset(Base):
             "scene_id", "type", "version", name="asset_scene_type_version"
         ),
         Index("ix_assets_scene_type_created_at", "scene_id", "type", "created_at"),
+        Index(
+            "ix_assets_project_type_created_at",
+            "project_id",
+            "type",
+            "created_at",
+        ),
     )
 
     id: Mapped[str] = mapped_column(

@@ -66,6 +66,9 @@ class Render(Base):
     )
     duration_seconds: Mapped[int | None] = mapped_column(Integer)
     file_size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    narration_enabled: Mapped[bool] = mapped_column(default=True)
+    captions_enabled: Mapped[bool] = mapped_column(default=True)
+    music_enabled: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,

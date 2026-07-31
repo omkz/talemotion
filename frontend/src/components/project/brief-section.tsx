@@ -17,6 +17,7 @@ interface BriefSectionProps {
     brief: ModeBrief;
     visualStyle: string;
     narrationStyle: string;
+    narrationEnabled: boolean;
     captionsEnabled: boolean;
     musicEnabled: boolean;
     historicalAccuracyNote: string | null;
@@ -93,6 +94,10 @@ export function BriefSection({ brief, output, historicalAccuracyNote, onSave }: 
           <SettingChip label="Aspect ratio" value={output.aspectRatio} />
           <SettingChip label="Visual style" value={output.visualStyle} />
           <SettingChip label="Narration style" value={output.narrationStyle} />
+          <SettingChip
+            label="AI narration"
+            value={output.narrationEnabled === false ? "Disabled" : "Enabled"}
+          />
           <SettingChip
             label="Scene count"
             value={output.sceneCount === "auto" ? "Auto" : `${output.sceneCount} scenes`}

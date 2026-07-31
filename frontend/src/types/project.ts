@@ -50,6 +50,7 @@ export interface OutputConfig {
   visualStyle: string;
   narrationStyle: string;
   sceneCount: SceneCountSetting;
+  narrationEnabled?: boolean;
   captionsEnabled: boolean;
   musicEnabled: boolean;
 }

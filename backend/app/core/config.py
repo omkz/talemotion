@@ -23,11 +23,18 @@ class AppConfig(BaseSettings):
     talemotion_storyboard_provider: str = "gmicloud"
     talemotion_storyboard_model: str | None = None
     talemotion_storyboard_max_attempts: int = 3
+    talemotion_tts_provider: str | None = None
+    talemotion_tts_model: str | None = None
+    talemotion_tts_voice: str | None = None
+    talemotion_music_provider: str | None = None
+    talemotion_music_model: str | None = None
     talemotion_image_model: str = "seedream-5.0-lite"
     talemotion_video_model: str = "wan2.6-i2v"
     talemotion_video_durations: str = "5"
     genblaze_cache_dir: Path = Path(".cache/genblaze")
     media_preview_ttl_seconds: int = 900
+    ffmpeg_binary: str = "ffmpeg"
+    ffmpeg_timeout_seconds: int = 900
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -71,6 +78,35 @@ class AppConfig(BaseSettings):
             missing.append("TALEMOTION_STORYBOARD_PROVIDER=gmicloud")
         if not self.talemotion_storyboard_model:
             missing.append("TALEMOTION_STORYBOARD_MODEL")
+        if not self.gmi_api_key:
+            missing.append("GMI_API_KEY")
+        return missing
+
+    def missing_storage_configuration(self) -> list[str]:
+        configured = {
+            "B2_REGION": self.b2_region,
+            "B2_BUCKET_NAME": self.b2_bucket_name,
+            "B2_KEY_ID": self.b2_key_id,
+            "B2_APPLICATION_KEY": self.b2_application_key,
+        }
+        return [name for name, value in configured.items() if not value]
+
+    def missing_tts_configuration(self) -> list[str]:
+        missing = self.missing_storage_configuration()
+        if self.talemotion_tts_provider != "gmicloud":
+            missing.append("TALEMOTION_TTS_PROVIDER=gmicloud")
+        if not self.talemotion_tts_model:
+            missing.append("TALEMOTION_TTS_MODEL")
+        if not self.gmi_api_key:
+            missing.append("GMI_API_KEY")
+        return missing
+
+    def missing_music_configuration(self) -> list[str]:
+        missing = self.missing_storage_configuration()
+        if self.talemotion_music_provider != "gmicloud":
+            missing.append("TALEMOTION_MUSIC_PROVIDER=gmicloud")
+        if not self.talemotion_music_model:
+            missing.append("TALEMOTION_MUSIC_MODEL")
         if not self.gmi_api_key:
             missing.append("GMI_API_KEY")
         return missing

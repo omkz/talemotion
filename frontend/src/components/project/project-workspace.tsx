@@ -15,8 +15,21 @@ import { StoryboardSection } from "@/components/storyboard/storyboard-section";
 import { GenerationSection } from "@/components/generation/generation-section";
 import { FinalVideoSection } from "@/components/final-video/final-video-section";
 import { MAJAPAHIT_REGENERATION_EXAMPLE } from "@/lib/mock-data";
-import { getPersistedProject } from "@/lib/api/persisted-projects";
-import { realSceneGenerationEnabled } from "@/lib/api/scene-generation-jobs";
+import {
+  getPersistedProject,
+  updatePersistedProject,
+} from "@/lib/api/persisted-projects";
+import {
+  pollPersistedJob,
+  realSceneGenerationEnabled,
+} from "@/lib/api/scene-generation-jobs";
+import {
+  createFinalRender,
+  getLatestProjectRender,
+  getPersistedRender,
+  getRenderPreviewUrl,
+  mapPersistedRender,
+} from "@/lib/api/render-jobs";
 import type { ModeBrief, Render, Scene, VideoProject } from "@/types";
 import { BriefSection } from "./brief-section";
 import { ProjectHeader, type SaveState } from "./project-header";
@@ -38,6 +51,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [render, setRender] = useState<Render | null>(null);
   const [isRendering, setIsRendering] = useState(false);
   const [renderProgress, setRenderProgress] = useState(0);
+  const [renderStage, setRenderStage] = useState<string | null>(null);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoadedRef = useRef(false);
 
@@ -54,7 +68,17 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           return;
         }
         setProject(data);
-        setRender(buildInitialRender(data));
+        if (realSceneGenerationEnabled) {
+          void getLatestProjectRender(projectId)
+            .then((latest) => {
+              if (!cancelled) setRender(latest);
+            })
+            .catch(() => {
+              if (!cancelled) setRender(null);
+            });
+        } else {
+          setRender(buildInitialRender(data));
+        }
         setActiveTab(initialTabFor(data));
       })
       .catch((error: unknown) => {
@@ -150,10 +174,38 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     brief: ModeBrief;
     visualStyle: string;
     narrationStyle: string;
+    narrationEnabled: boolean;
     captionsEnabled: boolean;
     musicEnabled: boolean;
     historicalAccuracyNote: string | null;
   }) => {
+    if (realSceneGenerationEnabled && next.brief.mode === "historical-documentary") {
+      setSaveState("saving");
+      void updatePersistedProject(projectId, {
+        topic: next.brief.topic,
+        additional_direction: next.brief.additionalDirection,
+        visual_style: next.visualStyle,
+        narration_style: next.narrationStyle,
+        narration_enabled: next.narrationEnabled,
+        captions_enabled: next.captionsEnabled,
+        music_enabled: next.musicEnabled,
+        historical_accuracy_note: next.historicalAccuracyNote,
+      })
+        .then((updated) => {
+          setProject(updated);
+          setSaveState("saved");
+          toast.success("Output settings updated");
+        })
+        .catch((error: unknown) => {
+          setSaveState("saved");
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Could not update output settings.",
+          );
+        });
+      return;
+    }
     setProject((prev) =>
       prev
         ? {
@@ -164,6 +216,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
               ...prev.output,
               visualStyle: next.visualStyle,
               narrationStyle: next.narrationStyle,
+              narrationEnabled: next.narrationEnabled,
               captionsEnabled: next.captionsEnabled,
               musicEnabled: next.musicEnabled,
             },
@@ -187,7 +240,42 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const handleStartRender = async () => {
     setIsRendering(true);
     setRenderProgress(0);
+    setRenderStage("queued");
     try {
+      if (realSceneGenerationEnabled) {
+        const queued = await createFinalRender(project.id, {
+          narration_enabled: project.output.narrationEnabled !== false,
+          captions_enabled: project.output.captionsEnabled,
+          music_enabled: project.output.musicEnabled,
+        });
+        const completed = await pollPersistedJob(queued.id, {
+          onUpdate: (job) => {
+            setRenderProgress(job.progress);
+            setRenderStage(job.current_stage);
+          },
+        });
+        if (completed.status !== "completed") {
+          throw new Error(
+            completed.error_message ?? "Final video rendering failed.",
+          );
+        }
+        const renderId =
+          typeof completed.result_payload?.render_id === "string"
+            ? completed.result_payload.render_id
+            : typeof completed.input_payload.render_id === "string"
+              ? completed.input_payload.render_id
+              : null;
+        if (!renderId) throw new Error("The completed render ID is missing.");
+        const [persisted, previewUrl] = await Promise.all([
+          getPersistedRender(renderId),
+          getRenderPreviewUrl(renderId),
+        ]);
+        handleRenderChange(mapPersistedRender(persisted, previewUrl));
+        toast.success(`Rendered v${persisted.version}`, {
+          description: `${project.output.title} is ready to preview.`,
+        });
+        return;
+      }
       const next = await renderFinalVideo({
         project,
         previousVersion: render?.version ?? 0,
@@ -197,8 +285,13 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
       toast.success(`Rendered v${next.version}`, {
         description: `${project.output.title} is ready to share.`,
       });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Final rendering failed.",
+      );
     } finally {
       setIsRendering(false);
+      setRenderStage(null);
     }
   };
 
@@ -291,6 +384,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
               onRenderChange={handleRenderChange}
               isRendering={isRendering}
               renderProgress={renderProgress}
+              renderStage={renderStage}
               onStartRender={handleStartRender}
             />
           </TabsContent>

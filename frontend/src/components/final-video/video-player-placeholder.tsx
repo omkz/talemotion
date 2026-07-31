@@ -8,6 +8,7 @@ import type { AspectRatio } from "@/types";
 interface VideoPlayerPlaceholderProps {
   aspectRatio: AspectRatio;
   durationSeconds: number;
+  sourceUrl?: string | null;
 }
 
 function formatTimestamp(seconds: number): string {
@@ -16,9 +17,27 @@ function formatTimestamp(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function VideoPlayerPlaceholder({ aspectRatio, durationSeconds }: VideoPlayerPlaceholderProps) {
+export function VideoPlayerPlaceholder({
+  aspectRatio,
+  durationSeconds,
+  sourceUrl,
+}: VideoPlayerPlaceholderProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const elapsed = isPlaying ? Math.round(durationSeconds * 0.38) : 0;
+
+  if (sourceUrl) {
+    return (
+      <div className="mx-auto w-full max-w-xs">
+        <video
+          src={sourceUrl}
+          controls
+          preload="metadata"
+          className="w-full rounded-xl bg-black"
+          aria-label="Final rendered TaleMotion video"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-xs">

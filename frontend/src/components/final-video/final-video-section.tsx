@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { SettingChip } from "@/components/shared/setting-chip";
 import { generateThumbnail } from "@/lib/mock-api";
+import { realSceneGenerationEnabled } from "@/lib/api/scene-generation-jobs";
 import type { Render, VideoProject } from "@/types";
 import { ProductionSummary } from "./production-summary";
 import { VideoPlayerPlaceholder } from "./video-player-placeholder";
@@ -20,6 +21,7 @@ interface FinalVideoSectionProps {
   onRenderChange: (render: Render) => void;
   isRendering: boolean;
   renderProgress: number;
+  renderStage?: string | null;
   onStartRender: () => void;
 }
 
@@ -31,6 +33,7 @@ export function FinalVideoSection({
   onRenderChange,
   isRendering,
   renderProgress,
+  renderStage,
   onStartRender,
 }: FinalVideoSectionProps) {
   const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
@@ -61,6 +64,10 @@ export function FinalVideoSection({
 
   const handleDownload = () => {
     if (!render) return;
+    if (realSceneGenerationEnabled && render.shareUrl) {
+      window.open(render.shareUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
     toast("Download started", {
       description: "This is a simulated download — no real file is generated in this prototype.",
     });
@@ -69,12 +76,15 @@ export function FinalVideoSection({
   const summaryItems = [
     { label: `${totalScenes} scenes`, done: true },
     { label: `${project.output.duration} seconds`, done: true },
-    { label: `${project.output.language} narration`, done: true },
+    {
+      label: `${project.output.language} narration`,
+      done: project.output.narrationEnabled !== false,
+    },
     { label: "Captions included", done: project.output.captionsEnabled },
     { label: `${scenesCompleted} of ${totalScenes} scene assets stored`, done: allScenesReady },
     { label: "Provenance manifest created", done: allScenesReady },
-    { label: "Backblaze B2 storage connected", done: allScenesReady },
-    { label: "Genblaze pipeline completed", done: allScenesReady },
+    { label: "Final video stored in Backblaze B2", done: render !== null },
+    { label: "Render pipeline completed", done: render !== null },
   ];
 
   return (
@@ -91,6 +101,7 @@ export function FinalVideoSection({
           <VideoPlayerPlaceholder
             aspectRatio={project.output.aspectRatio}
             durationSeconds={project.output.duration}
+            sourceUrl={render?.shareUrl}
           />
         </Card>
 
@@ -103,6 +114,10 @@ export function FinalVideoSection({
               <SettingChip label="Duration" value={`${project.output.duration}s`} />
               <SettingChip label="File size" value={render ? `${render.fileSizeMb} MB` : "—"} />
               <SettingChip label="Captions" value={render?.captionsBurned ? "Burned in" : "Off"} />
+              <SettingChip
+                label="Narration"
+                value={render?.narrationIncluded ? "Included" : "Off"}
+              />
               <SettingChip label="Music" value={render?.musicIncluded ? "Included" : "Off"} />
               <SettingChip
                 label="Render status"
@@ -119,7 +134,11 @@ export function FinalVideoSection({
             {isRendering && (
               <div className="mt-4 space-y-1.5">
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Rendering final video…</span>
+                  <span>
+                    {renderStage
+                      ? renderStage.replaceAll("_", " ")
+                      : "Rendering final video…"}
+                  </span>
                   <span>{renderProgress}%</span>
                 </div>
                 <Progress value={renderProgress} className="h-1.5" />
@@ -135,18 +154,20 @@ export function FinalVideoSection({
                 )}
                 {render ? "Render New Version" : "Render Final Video"}
               </Button>
-              <Button
-                variant="outline"
-                onClick={handleGenerateThumbnail}
-                disabled={!render || isGeneratingThumbnail}
-              >
-                {isGeneratingThumbnail ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <ImageIcon className="size-4" />
-                )}
-                Generate Thumbnail
-              </Button>
+              {!realSceneGenerationEnabled && (
+                <Button
+                  variant="outline"
+                  onClick={handleGenerateThumbnail}
+                  disabled={!render || isGeneratingThumbnail}
+                >
+                  {isGeneratingThumbnail ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <ImageIcon className="size-4" />
+                  )}
+                  Generate Thumbnail
+                </Button>
+              )}
               <Button variant="outline" onClick={handleCopyLink} disabled={!render}>
                 <LinkIcon className="size-4" />
                 Copy Share Link

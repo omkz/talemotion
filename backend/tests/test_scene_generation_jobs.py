@@ -2,8 +2,10 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.api.v1 import assets as asset_routes
 from app.api.v1 import scenes as scene_routes
 from app.schemas.scene_run import (
     SceneImageCompletedEvent,
@@ -172,6 +174,7 @@ class FakeSceneMediaGenerator:
                 f"{request.scene_id}/runs/{run_id}/image.png"
             ),
             file_size_bytes=1024,
+            provider="test-image-provider",
             model="image-model",
         )
         video = SceneRunAsset(
@@ -184,6 +187,7 @@ class FakeSceneMediaGenerator:
                 f"{request.scene_id}/runs/{run_id}/video.mp4"
             ),
             file_size_bytes=4096,
+            provider="test-video-provider",
             model="video-model",
         )
         yield SceneRunStartedEvent(**common)
@@ -249,4 +253,34 @@ def test_worker_persists_assets_and_completes_job(
     )
     assert video.status_code == 200
     assert video.json()["type"] == "video"
+    assert video.json()["provider"] == "test-video-provider"
     assert video.json()["provenance_object_key"].endswith(".manifest.json")
+    image = client.get(
+        f"/api/v1/assets/{job['result_payload']['image_asset_id']}"
+    )
+    assert image.json()["provider"] == "test-image-provider"
+
+    monkeypatch.setattr(
+        asset_routes.settings, "talemotion_image_provider", "unsupported"
+    )
+    monkeypatch.setattr(asset_routes.settings, "b2_region", "test-region")
+    monkeypatch.setattr(
+        asset_routes.settings, "b2_bucket_name", "test-bucket"
+    )
+    monkeypatch.setattr(
+        asset_routes.settings, "b2_key_id", SecretStr("test-key")
+    )
+    monkeypatch.setattr(
+        asset_routes.settings,
+        "b2_application_key",
+        SecretStr("test-application-key"),
+    )
+    monkeypatch.setattr(
+        asset_routes.B2MediaStorageGateway,
+        "presign_preview",
+        lambda _storage, key: f"https://signed.example.invalid/{key}",
+    )
+    preview = client.post(
+        f"/api/v1/assets/{job['result_payload']['image_asset_id']}/preview-url"
+    )
+    assert preview.status_code == 200

@@ -5,14 +5,12 @@ from fastapi import APIRouter
 from app.api.dependencies import CurrentAuth, DatabaseSession, MutationAuth
 from app.core.config import settings
 from app.core.errors import ApiError
-from app.providers import ProviderCapability
-from app.providers.factory import create_provider_factory
-from app.providers.selection import configured_selections
 from app.repositories.sqlalchemy import AssetRepository
 from app.schemas.asset import AssetResponse, asset_to_response
 from app.schemas.common import ErrorResponse
 from app.schemas.scene_generation import SignedPreviewUrlResponse
 from app.services.assets import AssetService
+from app.storage import B2MediaStorageGateway
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
 ERROR_RESPONSES = {
@@ -53,12 +51,7 @@ def create_preview_url(
 ) -> SignedPreviewUrlResponse:
     asset = _assets(session, auth.user.id).previewable(asset_id)
     try:
-        url = create_provider_factory(settings).scene_media(
-            configured_selections(
-                settings,
-                (ProviderCapability.IMAGE, ProviderCapability.VIDEO),
-            )
-        ).presign_preview(
+        url = B2MediaStorageGateway(settings).presign_preview(
             asset.storage_object_key or ""
         )
     except Exception as error:

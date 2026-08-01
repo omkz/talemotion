@@ -27,7 +27,7 @@ class SceneRunAsset(StrictSchema):
     sha256: str
     storage_object_key: str
     file_size_bytes: int | None = None
-    provider: Literal["GMICloud"] = "GMICloud"
+    provider: NonEmptyText
     model: str
 
 

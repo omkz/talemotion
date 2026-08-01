@@ -2,34 +2,26 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Iterator
-from dataclasses import replace
+from collections.abc import Callable, Iterator
 from typing import Literal
-from urllib.parse import unquote, urlparse
 
 from genblaze_core import (
-    KeyStrategy,
     Modality,
     ObjectStorageSink,
     Pipeline,
     StepCache,
 )
-from genblaze_core.exceptions import ProviderError, SinkError
+from genblaze_core.exceptions import ProviderError
 from genblaze_core.models.enums import ProviderErrorCode
 from genblaze_core.pipeline.result import PipelineResult
-from genblaze_core.storage.errors import StorageError
-from genblaze_gmicloud import (
-    GMICloudAudioProvider,
-    GMICloudImageProvider,
-    GMICloudVideoProvider,
-)
-from genblaze_s3 import S3StorageBackend
+from genblaze_core.providers import BaseProvider
 
 from app.core.config import AppConfig
 from app.media import SceneMediaError, StoredMediaArtifact
 from app.providers import ProviderCapability, ProviderSelection
 from app.providers.catalog import validate_selection
 from app.providers.errors import ProviderError as TaleMotionProviderError
+from app.providers.media.registry import create_media_provider
 from app.schemas.scene_run import (
     SceneImageCompletedEvent,
     SceneImageProgressEvent,
@@ -44,6 +36,7 @@ from app.schemas.scene_run import (
     SceneVideoProgressEvent,
     SceneVideoStartedEvent,
 )
+from app.storage import B2MediaStorageGateway
 
 _SAFE_SEGMENT = re.compile(r"[^a-zA-Z0-9_-]+")
 
@@ -61,8 +54,14 @@ class GenblazeSceneGenerator:
         self,
         config: AppConfig,
         selections: dict[ProviderCapability, ProviderSelection] | None = None,
+        storage: B2MediaStorageGateway | None = None,
+        provider_constructor: Callable[
+            [AppConfig, ProviderSelection], BaseProvider
+        ] = create_media_provider,
     ) -> None:
         self.config = config
+        self.storage = storage or B2MediaStorageGateway(config)
+        self.provider_constructor = provider_constructor
         resolved = selections or {
             capability: config.default_provider_selection(capability)
             for capability in (
@@ -106,18 +105,16 @@ class GenblazeSceneGenerator:
                 ),
             )
             return
-        missing = self.config.missing_storage_configuration()
-        if missing:
+        try:
+            self.storage.validate_configuration()
+        except TaleMotionProviderError as error:
             yield self._failure(
                 request,
                 run_id,
                 SceneMediaError(
-                    code="missing_configuration",
-                    message=(
-                        "Real scene generation is not configured. "
-                        f"Missing: {', '.join(missing)}."
-                    ),
-                    retryable=False,
+                    code=error.code,
+                    message=error.message,
+                    retryable=error.retryable,
                 ),
             )
             return
@@ -136,12 +133,12 @@ class GenblazeSceneGenerator:
                 run_id=run_id,
                 kind="image",
                 pipeline=image_pipeline,
-                sink=self._sink(prefix),
+                sink=self.storage.sink(prefix),
             )
             image = self._asset_reference(
                 image_result,
                 kind="image",
-                model=self.image_selection.model,
+                selection=self.image_selection,
                 expected_prefix=prefix,
             )
             image_manifest, image_manifest_key = self._manifest_reference(
@@ -174,10 +171,10 @@ class GenblazeSceneGenerator:
                 scene_id=request.scene_id,
                 model=self.video_selection.model,
             )
-            image_key = self._key_from_url(
+            image_key = self.storage.key_from_url(
                 image.asset_url, expected_prefix=prefix
             )
-            image_reference = self._signed_url(image_key)
+            image_reference = self.storage.presign_preview(image_key)
             video_pipeline = self._video_pipeline(
                 request, image_result, image_reference
             )
@@ -186,12 +183,12 @@ class GenblazeSceneGenerator:
                 run_id=run_id,
                 kind="video",
                 pipeline=video_pipeline,
-                sink=self._sink(prefix),
+                sink=self.storage.sink(prefix),
             )
             video = self._asset_reference(
                 video_result,
                 kind="video",
-                model=self.video_selection.model,
+                selection=self.video_selection,
                 expected_prefix=prefix,
             )
             video_manifest, video_manifest_key = self._manifest_reference(
@@ -222,12 +219,10 @@ class GenblazeSceneGenerator:
                 image=image,
             )
 
-    def presign_preview(self, key: str) -> str:
-        if not key.startswith("talemotion/"):
-            raise ValueError("Media key is outside the TaleMotion prefix.")
-        return self._signed_url(key)
-
     def _image_pipeline(self, request: SceneRunRequest) -> Pipeline:
+        provider = self.provider_constructor(
+            self.config, self.image_selection
+        )
         return (
             Pipeline(
                 "talemotion-scene-keyframe",
@@ -241,7 +236,7 @@ class GenblazeSceneGenerator:
             )
             .cache(StepCache(self.config.genblaze_cache_dir))
             .step(
-                GMICloudImageProvider(api_key=self._secret("gmi_api_key")),
+                provider,
                 model=self.image_selection.model,
                 prompt=request.visual_prompt,
                 modality=Modality.IMAGE,
@@ -255,9 +250,8 @@ class GenblazeSceneGenerator:
         image_result: PipelineResult,
         image_reference: str,
     ) -> Pipeline:
-        provider = GMICloudVideoProvider(
-            api_key=self._secret("gmi_api_key"),
-            models=self._video_registry(),
+        provider = self.provider_constructor(
+            self.config, self.video_selection
         )
         return (
             Pipeline(
@@ -281,20 +275,6 @@ class GenblazeSceneGenerator:
                 image=image_reference,
             )
         )
-
-    def _video_registry(self):
-        registry = GMICloudVideoProvider.models_default().fork()
-        model = self.video_selection.model
-        if model.startswith("wan") and model.endswith("-i2v"):
-            base = registry.get(model)
-            registry.register(
-                replace(
-                    base,
-                    model_id=model,
-                    param_aliases={**base.param_aliases, "image": "img_url"},
-                )
-            )
-        return registry
 
     def _stream_pipeline(
         self,
@@ -325,9 +305,9 @@ class GenblazeSceneGenerator:
                     progress=progress,
                     elapsed_seconds=event.elapsed_sec,
                     message=(
-                        "GMICloud is generating the scene keyframe."
+                        "The media provider is generating the scene keyframe."
                         if kind == "image"
-                        else "GMICloud is animating the scene keyframe."
+                        else "The media provider is animating the scene keyframe."
                     ),
                 )
             elif event.type in {"pipeline.completed", "pipeline.failed"}:
@@ -347,7 +327,7 @@ class GenblazeSceneGenerator:
         result: PipelineResult,
         *,
         kind: Literal["image", "video"],
-        model: str,
+        selection: ProviderSelection,
         expected_prefix: str,
     ) -> SceneRunAsset:
         steps = result.run.steps
@@ -358,7 +338,9 @@ class GenblazeSceneGenerator:
                 message="Genblaze did not return a durable, hashed B2 asset.",
                 retryable=True,
             )
-        key = self._key_from_url(asset.url, expected_prefix=expected_prefix)
+        key = self.storage.key_from_url(
+            asset.url, expected_prefix=expected_prefix
+        )
         return SceneRunAsset(
             kind=kind,
             media_type=asset.media_type,
@@ -366,7 +348,8 @@ class GenblazeSceneGenerator:
             sha256=asset.sha256,
             storage_object_key=key,
             file_size_bytes=asset.size_bytes,
-            model=model,
+            provider=selection.provider,
+            model=selection.model,
         )
 
     def _manifest_reference(
@@ -381,52 +364,11 @@ class GenblazeSceneGenerator:
             )
         return (
             manifest_url,
-            self._key_from_url(
+            self.storage.key_from_url(
                 manifest_url,
                 expected_prefix=expected_prefix,
             ),
         )
-
-    def _sink(self, prefix: str) -> ObjectStorageSink:
-        return ObjectStorageSink(
-            self._backend(),
-            prefix=prefix,
-            key_strategy=KeyStrategy.HIERARCHICAL,
-        )
-
-    def _backend(self) -> S3StorageBackend:
-        return S3StorageBackend.for_backblaze(
-            self.config.b2_bucket_name,
-            region=self.config.b2_region,
-            key_id=self._secret("b2_key_id"),
-            app_key=self._secret("b2_application_key"),
-            auto_lifecycle=False,
-        )
-
-    def _signed_url(self, key: str) -> str:
-        backend = self._backend()
-        try:
-            return backend.get_url(
-                key, expires_in=self.config.media_preview_ttl_seconds
-            )
-        finally:
-            backend.close()
-
-    def _key_from_url(self, url: str, *, expected_prefix: str) -> str:
-        path = unquote(urlparse(url).path).lstrip("/")
-        bucket = self.config.b2_bucket_name or ""
-        if bucket and path.startswith(f"{bucket}/"):
-            path = path[len(bucket) + 1 :]
-        prefix_at = path.find(f"{expected_prefix}/")
-        if prefix_at >= 0:
-            path = path[prefix_at:]
-        if not path.startswith(f"{expected_prefix}/"):
-            raise SceneMediaError(
-                code="storage_failed",
-                message="The stored asset is outside its TaleMotion run prefix.",
-                retryable=False,
-            )
-        return path
 
     def _run_prefix(self, request: SceneRunRequest, run_id: str) -> str:
         return (
@@ -471,6 +413,9 @@ class GenblazeSceneGenerator:
     def _map_error(self, error: Exception) -> SceneMediaError:
         if isinstance(error, SceneMediaError):
             return error
+        storage_error = self.storage.map_error(error)
+        if storage_error is not None:
+            return storage_error
         if isinstance(error, TimeoutError):
             return SceneMediaError(
                 "provider_timeout",
@@ -506,12 +451,6 @@ class GenblazeSceneGenerator:
                     ProviderErrorCode.UNKNOWN,
                 },
             )
-        if isinstance(error, (StorageError, SinkError)):
-            return SceneMediaError(
-                "storage_failed",
-                "The generated media could not be stored in Backblaze B2.",
-                True,
-            )
         return SceneMediaError(
             "provider_generation_failed",
             "The media provider could not generate this scene.",
@@ -536,17 +475,6 @@ class GenblazeSceneGenerator:
             image=image,
         )
 
-    def _secret(self, field: str) -> str:
-        value = getattr(self.config, field)
-        if value is None:
-            raise SceneMediaError(
-                "missing_configuration",
-                "Real scene generation is not configured.",
-                False,
-            )
-        return value.get_secret_value()
-
-
 class GenblazeRenderMediaGateway:
     """Generate render audio and move render artifacts through genblaze-s3."""
 
@@ -554,26 +482,18 @@ class GenblazeRenderMediaGateway:
         self,
         config: AppConfig,
         selections: dict[ProviderCapability, ProviderSelection] | None = None,
+        storage: B2MediaStorageGateway | None = None,
+        provider_constructor: Callable[
+            [AppConfig, ProviderSelection], BaseProvider
+        ] = create_media_provider,
     ) -> None:
         self.config = config
         self.selections = selections or {}
+        self.storage = storage or B2MediaStorageGateway(config)
+        self.provider_constructor = provider_constructor
 
     def download(self, key: str) -> bytes:
-        backend: S3StorageBackend | None = None
-        try:
-            backend = self._backend()
-            return backend.get(key)
-        except SceneMediaError:
-            raise
-        except (StorageError, OSError) as error:
-            raise SceneMediaError(
-                "storage_failed",
-                "A required render asset could not be downloaded from storage.",
-                True,
-            ) from error
-        finally:
-            if backend is not None:
-                backend.close()
+        return self.storage.download(key)
 
     def upload(
         self,
@@ -582,26 +502,16 @@ class GenblazeRenderMediaGateway:
         data: bytes,
         media_type: str,
     ) -> StoredMediaArtifact:
-        backend: S3StorageBackend | None = None
-        try:
-            backend = self._backend()
-            backend.put(key, data, content_type=media_type)
-        except SceneMediaError:
-            raise
-        except (StorageError, OSError) as error:
-            raise SceneMediaError(
-                "storage_failed",
-                "The render artifact could not be uploaded to storage.",
-                True,
-            ) from error
-        finally:
-            if backend is not None:
-                backend.close()
-        return StoredMediaArtifact(
-            storage_object_key=key,
+        stored = self.storage.upload(
+            key=key,
+            data=data,
             media_type=media_type,
-            file_size_bytes=len(data),
-            sha256=hashlib.sha256(data).hexdigest(),
+        )
+        return StoredMediaArtifact(
+            storage_object_key=stored.storage_object_key,
+            media_type=stored.media_type,
+            file_size_bytes=stored.file_size_bytes,
+            sha256=stored.sha256,
             provider="TaleMotion",
             model="ffmpeg" if media_type == "video/mp4" else "generated",
         )
@@ -617,6 +527,7 @@ class GenblazeRenderMediaGateway:
             self.config.default_provider_selection(ProviderCapability.TTS)
         )
         self._validate_audio_selection(selection)
+        provider = self.provider_constructor(self.config, selection)
         prefix = (
             f"talemotion/projects/{_safe_segment(project_id)}/audio/scenes/"
             f"{_safe_segment(scene_id)}"
@@ -631,7 +542,7 @@ class GenblazeRenderMediaGateway:
             .metadata(talemotion_scene_id=scene_id, purpose="narration")
             .cache(StepCache(self.config.genblaze_cache_dir))
             .step(
-                GMICloudAudioProvider(api_key=self._gmi_key()),
+                provider,
                 model=selection.model,
                 prompt=text,
                 modality=Modality.AUDIO,
@@ -645,7 +556,7 @@ class GenblazeRenderMediaGateway:
         return self._run_audio(
             pipeline,
             prefix=prefix,
-            model=selection.model,
+            selection=selection,
         )
 
     def generate_music(
@@ -659,6 +570,7 @@ class GenblazeRenderMediaGateway:
             self.config.default_provider_selection(ProviderCapability.MUSIC)
         )
         self._validate_audio_selection(selection)
+        provider = self.provider_constructor(self.config, selection)
         prefix = f"talemotion/projects/{_safe_segment(project_id)}/music"
         pipeline = (
             Pipeline(
@@ -670,7 +582,7 @@ class GenblazeRenderMediaGateway:
             .metadata(purpose="background_music")
             .cache(StepCache(self.config.genblaze_cache_dir))
             .step(
-                GMICloudAudioProvider(api_key=self._gmi_key()),
+                provider,
                 model=selection.model,
                 prompt=prompt,
                 modality=Modality.AUDIO,
@@ -680,30 +592,20 @@ class GenblazeRenderMediaGateway:
         return self._run_audio(
             pipeline,
             prefix=prefix,
-            model=selection.model,
+            selection=selection,
         )
-
-    def presign_preview(self, key: str) -> str:
-        if not key.startswith("talemotion/projects/"):
-            raise ValueError("Media key is outside the TaleMotion project prefix.")
-        backend = self._backend()
-        try:
-            return backend.get_url(
-                key,
-                expires_in=self.config.media_preview_ttl_seconds,
-            )
-        finally:
-            backend.close()
 
     def _run_audio(
         self,
         pipeline: Pipeline,
         *,
         prefix: str,
-        model: str,
+        selection: ProviderSelection,
     ) -> StoredMediaArtifact:
         try:
-            result = pipeline.run(sink=self._sink(prefix), timeout=600)
+            result = pipeline.run(
+                sink=self.storage.sink(prefix), timeout=600
+            )
             step_asset = (
                 result.run.steps[-1].assets[0]
                 if result.run.steps and result.run.steps[-1].assets
@@ -719,7 +621,7 @@ class GenblazeRenderMediaGateway:
                     "Genblaze did not return a durable audio asset.",
                     True,
                 )
-            key = self._key_from_url(
+            key = self.storage.key_from_url(
                 step_asset.url,
                 expected_prefix=prefix,
             )
@@ -732,8 +634,8 @@ class GenblazeRenderMediaGateway:
                 media_type=step_asset.media_type or "audio/mpeg",
                 file_size_bytes=step_asset.size_bytes or 0,
                 sha256=step_asset.sha256,
-                provider="GMICloud",
-                model=model,
+                provider=selection.provider,
+                model=selection.model,
                 manifest_object_key=manifest_key,
             )
         except SceneMediaError:
@@ -754,31 +656,18 @@ class GenblazeRenderMediaGateway:
             )
         return (
             manifest_url,
-            self._key_from_url(
+            self.storage.key_from_url(
                 manifest_url,
                 expected_prefix=expected_prefix,
             ),
         )
 
-    def _key_from_url(self, url: str, *, expected_prefix: str) -> str:
-        path = unquote(urlparse(url).path).lstrip("/")
-        bucket = self.config.b2_bucket_name or ""
-        if bucket and path.startswith(f"{bucket}/"):
-            path = path[len(bucket) + 1 :]
-        prefix_at = path.find(f"{expected_prefix}/")
-        if prefix_at >= 0:
-            path = path[prefix_at:]
-        if not path.startswith(f"{expected_prefix}/"):
-            raise SceneMediaError(
-                "storage_failed",
-                "The stored asset is outside its TaleMotion run prefix.",
-                False,
-            )
-        return path
-
     def _map_error(self, error: Exception) -> SceneMediaError:
         if isinstance(error, SceneMediaError):
             return error
+        storage_error = self.storage.map_error(error)
+        if storage_error is not None:
+            return storage_error
         if isinstance(error, TimeoutError):
             return SceneMediaError(
                 "provider_timeout",
@@ -808,12 +697,6 @@ class GenblazeRenderMediaGateway:
                     ProviderErrorCode.UNKNOWN,
                 },
             )
-        if isinstance(error, (StorageError, SinkError)):
-            return SceneMediaError(
-                "storage_failed",
-                "The generated media could not be stored in Backblaze B2.",
-                True,
-            )
         return SceneMediaError(
             "provider_generation_failed",
             "The media provider could not generate audio.",
@@ -829,46 +712,9 @@ class GenblazeRenderMediaGateway:
             raise SceneMediaError(
                 error.code, error.message, error.retryable
             ) from error
-        missing_storage = self.config.missing_storage_configuration()
-        if missing_storage:
+        try:
+            self.storage.validate_configuration()
+        except TaleMotionProviderError as error:
             raise SceneMediaError(
-                "missing_configuration",
-                "Backblaze B2 storage is not configured. Missing: "
-                f"{', '.join(missing_storage)}.",
-                False,
-            )
-
-    def _backend(self) -> S3StorageBackend:
-        if self.config.missing_storage_configuration():
-            raise SceneMediaError(
-                "missing_configuration",
-                "Backblaze B2 storage is not configured.",
-                False,
-            )
-        return S3StorageBackend.for_backblaze(
-            self.config.b2_bucket_name or "",
-            region=self.config.b2_region or "",
-            key_id=self._secret("b2_key_id"),
-            app_key=self._secret("b2_application_key"),
-            auto_lifecycle=False,
-        )
-
-    def _sink(self, prefix: str) -> ObjectStorageSink:
-        return ObjectStorageSink(
-            self._backend(),
-            prefix=prefix,
-            key_strategy=KeyStrategy.HIERARCHICAL,
-        )
-
-    def _gmi_key(self) -> str:
-        return self._secret("gmi_api_key")
-
-    def _secret(self, field: str) -> str:
-        value = getattr(self.config, field)
-        if value is None:
-            raise SceneMediaError(
-                "missing_configuration",
-                "Render media generation is not configured.",
-                False,
-            )
-        return value.get_secret_value()
+                error.code, error.message, error.retryable
+            ) from error

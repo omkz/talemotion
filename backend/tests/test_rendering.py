@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.api.v1 import renders as render_routes
@@ -417,14 +418,25 @@ def test_render_preview_returns_signed_url(
         gateway=gateway,
         composer=FakeComposer(),
     )
-    class PreviewFactory:
-        def render_media(self, _selections):
-            return gateway
-
     monkeypatch.setattr(
-        render_routes,
-        "create_provider_factory",
-        lambda _settings: PreviewFactory(),
+        render_routes.settings, "talemotion_music_provider", "unsupported"
+    )
+    monkeypatch.setattr(render_routes.settings, "b2_region", "test-region")
+    monkeypatch.setattr(
+        render_routes.settings, "b2_bucket_name", "test-bucket"
+    )
+    monkeypatch.setattr(
+        render_routes.settings, "b2_key_id", SecretStr("test-key")
+    )
+    monkeypatch.setattr(
+        render_routes.settings,
+        "b2_application_key",
+        SecretStr("test-application-key"),
+    )
+    monkeypatch.setattr(
+        render_routes.B2MediaStorageGateway,
+        "presign_preview",
+        lambda _storage, key: gateway.presign_preview(key),
     )
 
     response = client.post(

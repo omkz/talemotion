@@ -6,7 +6,6 @@ from fastapi import APIRouter, Header, status
 from app.api.dependencies import CurrentAuth, DatabaseSession, MutationAuth
 from app.core.config import settings
 from app.core.errors import ApiError
-from app.providers.factory import create_provider_factory
 from app.repositories.sqlalchemy import (
     JobRepository,
     ProjectRepository,
@@ -22,6 +21,7 @@ from app.schemas.render import (
 )
 from app.schemas.scene_generation import SignedPreviewUrlResponse
 from app.services.renders import RenderService
+from app.storage import B2MediaStorageGateway
 from app.tasks.rendering import render_project_video
 
 router = APIRouter(tags=["Renders"])
@@ -132,7 +132,7 @@ def create_render_preview(
 ) -> SignedPreviewUrlResponse:
     render = _renders(session, auth.user.id).previewable(render_id)
     try:
-        url = create_provider_factory(settings).render_media({}).presign_preview(
+        url = B2MediaStorageGateway(settings).presign_preview(
             render.asset.storage_object_key if render.asset else ""
         )
     except Exception as error:

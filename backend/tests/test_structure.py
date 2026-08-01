@@ -3,6 +3,7 @@ from pathlib import Path
 
 APP_ROOT = Path(__file__).parents[1] / "app"
 GENBLAZE_BOUNDARY = APP_ROOT / "providers" / "media" / "genblaze.py"
+GMICLOUD_BOUNDARY = APP_ROOT / "providers" / "media" / "gmicloud.py"
 
 
 def _imports(path: Path) -> set[str]:
@@ -16,12 +17,12 @@ def _imports(path: Path) -> set[str]:
     return modules
 
 
-def test_genblaze_imports_are_confined_to_media_boundary() -> None:
+def test_gmicloud_imports_are_confined_to_registration_boundary() -> None:
     offenders = [
         str(path.relative_to(APP_ROOT))
         for path in APP_ROOT.rglob("*.py")
-        if path != GENBLAZE_BOUNDARY
-        and any(name.startswith("genblaze_") for name in _imports(path))
+        if path != GMICLOUD_BOUNDARY
+        and any(name.startswith("genblaze_gmicloud") for name in _imports(path))
     ]
     assert offenders == []
 
@@ -47,3 +48,23 @@ def test_genblaze_boundary_contains_media_but_not_storyboard_llm() -> None:
     assert "class GenblazeRenderMediaGateway" in source
     assert "GenblazeStoryboardGenerator" not in source
     assert "pydantic_ai" not in source
+    assert "GMICloudImageProvider(" not in source
+    assert "GMICloudVideoProvider(" not in source
+    assert "GMICloudAudioProvider(" not in source
+
+
+def test_tasks_do_not_import_concrete_media_providers() -> None:
+    offenders = [
+        str(path.relative_to(APP_ROOT))
+        for path in (APP_ROOT / "tasks").glob("*.py")
+        if any(name.startswith("genblaze_gmicloud") for name in _imports(path))
+        or any(
+            concrete in path.read_text(encoding="utf-8")
+            for concrete in (
+                "GMICloudImageProvider",
+                "GMICloudVideoProvider",
+                "GMICloudAudioProvider",
+            )
+        )
+    ]
+    assert offenders == []

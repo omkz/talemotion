@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from pydantic import SecretStr
+
 from app.providers.capabilities import (
     ModelCapabilities,
     ProviderCapability,
@@ -13,14 +15,66 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, slots=True)
+class CredentialOption:
+    environment_name: str
+    setting_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class CredentialRequirement:
+    alternatives: tuple[CredentialOption, ...]
+
+    @property
+    def label(self) -> str:
+        return " or ".join(
+            option.environment_name for option in self.alternatives
+        )
+
+    def configured_value(self, config: "AppConfig") -> str | None:
+        for option in self.alternatives:
+            value = getattr(config, option.setting_name, None)
+            if isinstance(value, SecretStr):
+                return value.get_secret_value()
+            if isinstance(value, str) and value:
+                return value
+        return None
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderEntry:
     capability: ProviderCapability
     provider: str
     default_model: str
     model_setting: str
-    required_configuration: tuple[str, ...]
+    credential_requirements: tuple[CredentialRequirement, ...]
     adapter_kind: Literal["pydantic_ai", "genblaze"]
     capabilities: ModelCapabilities
+
+    @property
+    def required_configuration(self) -> tuple[str, ...]:
+        return tuple(
+            requirement.label for requirement in self.credential_requirements
+        )
+
+    def missing_configuration(self, config: "AppConfig") -> list[str]:
+        return [
+            requirement.label
+            for requirement in self.credential_requirements
+            if requirement.configured_value(config) is None
+        ]
+
+    def credential(self, config: "AppConfig", index: int = 0) -> str:
+        requirement = self.credential_requirements[index]
+        value = requirement.configured_value(config)
+        if value is None:
+            raise missing_configuration_error([requirement.label])
+        return value
+
+
+def _credential(*options: tuple[str, str]) -> CredentialRequirement:
+    return CredentialRequirement(
+        tuple(CredentialOption(*option) for option in options)
+    )
 
 
 _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
@@ -29,7 +83,12 @@ _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
         "alibaba",
         "qwen-plus",
         "talemotion_storyboard_model",
-        ("DASHSCOPE_API_KEY or ALIBABA_API_KEY",),
+        (
+            _credential(
+                ("DASHSCOPE_API_KEY", "dashscope_api_key"),
+                ("ALIBABA_API_KEY", "alibaba_api_key"),
+            ),
+        ),
         "pydantic_ai",
         ModelCapabilities(supports_structured_output=True),
     ),
@@ -38,7 +97,7 @@ _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
         "openai",
         "gpt-5-mini",
         "talemotion_storyboard_model",
-        ("OPENAI_API_KEY",),
+        (_credential(("OPENAI_API_KEY", "openai_api_key")),),
         "pydantic_ai",
         ModelCapabilities(supports_structured_output=True),
     ),
@@ -47,7 +106,7 @@ _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
         "gmicloud",
         "seedream-5.0-lite",
         "talemotion_image_model",
-        ("GMI_API_KEY",),
+        (_credential(("GMI_API_KEY", "gmi_api_key")),),
         "genblaze",
         ModelCapabilities(
             supported_aspect_ratios=frozenset({"9:16", "16:9"}),
@@ -59,7 +118,7 @@ _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
         "gmicloud",
         "wan2.6-i2v",
         "talemotion_video_model",
-        ("GMI_API_KEY",),
+        (_credential(("GMI_API_KEY", "gmi_api_key")),),
         "genblaze",
         ModelCapabilities(
             supported_aspect_ratios=frozenset({"9:16", "16:9"}),
@@ -73,7 +132,7 @@ _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
         "gmicloud",
         "",
         "talemotion_tts_model",
-        ("GMI_API_KEY",),
+        (_credential(("GMI_API_KEY", "gmi_api_key")),),
         "genblaze",
         ModelCapabilities(supports_tts=True),
     ),
@@ -82,7 +141,7 @@ _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
         "gmicloud",
         "",
         "talemotion_music_model",
-        ("GMI_API_KEY",),
+        (_credential(("GMI_API_KEY", "gmi_api_key")),),
         "genblaze",
         ModelCapabilities(supports_music=True),
     ),
@@ -139,14 +198,7 @@ def missing_provider_configuration(
     missing: list[str] = []
     if not selection.model.strip():
         missing.append(entry.model_setting.upper())
-    if selection.provider == "alibaba":
-        if not (config.dashscope_api_key or config.alibaba_api_key):
-            missing.append("DASHSCOPE_API_KEY or ALIBABA_API_KEY")
-    elif selection.provider == "openai":
-        if not config.openai_api_key:
-            missing.append("OPENAI_API_KEY")
-    elif selection.provider == "gmicloud" and not config.gmi_api_key:
-        missing.append("GMI_API_KEY")
+    missing.extend(entry.missing_configuration(config))
     return missing
 
 

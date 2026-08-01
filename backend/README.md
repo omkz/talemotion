@@ -133,6 +133,18 @@ model constraints. PydanticAI implements storyboard; Genblaze implements the
 four media capabilities. Celery tasks use the provider factory rather than
 Alibaba, OpenAI, or GMICloud classes.
 
+Catalog entries also own credential requirements, including alternative-key
+groups such as `DASHSCOPE_API_KEY or ALIBABA_API_KEY`. The media registry maps
+each catalog capability/provider pair to a concrete Genblaze constructor.
+GMICloud model-registry quirks remain isolated in
+`app/providers/media/gmicloud.py`; the reusable scene and audio pipelines
+receive already-constructed providers and contain no GMICloud branches.
+
+Backblaze operations are composed separately through
+`app/storage/b2.py`. Signing, download, upload, Genblaze sinks, and safe
+TaleMotion key parsing require only B2 configuration. Previewing an existing
+asset therefore does not resolve or validate any AI provider.
+
 At queue time, each job stores credential-free selections in its existing JSON
 payload:
 

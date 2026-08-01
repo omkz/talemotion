@@ -14,8 +14,6 @@ class SceneMediaGenerator(Protocol):
         self, request: SceneRunRequest, run_id: str
     ) -> Iterator[SceneRunEvent]: ...
 
-    def presign_preview(self, key: str) -> str: ...
-
 
 class StoryboardGenerator(Protocol):
     def generate(
@@ -66,5 +64,3 @@ class RenderMediaGateway(Protocol):
         prompt: str,
         duration_seconds: int,
     ) -> StoredMediaArtifact: ...
-
-    def presign_preview(self, key: str) -> str: ...

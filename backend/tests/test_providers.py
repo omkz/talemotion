@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from pydantic import SecretStr
 
 from app.core.config import AppConfig
@@ -7,6 +9,8 @@ from app.providers.catalog import (
     provider_entry,
     validate_selection,
 )
+from app.providers.media import registry as media_registry
+from app.providers.media.genblaze import GenblazeRenderMediaGateway
 from app.providers.selection import (
     configured_selections,
     payload_with_selections,
@@ -99,6 +103,83 @@ def test_missing_credentials_and_unsupported_duration_fail_before_call() -> None
         assert not error.retryable
     else:  # pragma: no cover
         raise AssertionError("Unsupported duration should fail first.")
+
+
+def test_catalog_supports_alibaba_alternative_credentials() -> None:
+    selection = default_selection(config(), ProviderCapability.STORYBOARD)
+    validate_selection(
+        config(dashscope_api_key=None, alibaba_api_key=SecretStr("alternate")),
+        selection,
+    )
+    entry = provider_entry(ProviderCapability.STORYBOARD, "alibaba")
+    assert entry.required_configuration == (
+        "DASHSCOPE_API_KEY or ALIBABA_API_KEY",
+    )
+
+
+def test_media_provider_construction_uses_capability_registry(monkeypatch) -> None:
+    sentinel = object()
+    selection = default_selection(config(), ProviderCapability.IMAGE)
+    calls: list[ProviderSelection] = []
+
+    def construct(_config: AppConfig, selected: ProviderSelection):
+        calls.append(selected)
+        return sentinel
+
+    monkeypatch.setitem(
+        media_registry._MEDIA_PROVIDER_CONSTRUCTORS,  # noqa: SLF001
+        (ProviderCapability.IMAGE, "gmicloud"),
+        construct,
+    )
+    assert media_registry.create_media_provider(config(), selection) is sentinel
+    assert calls == [selection]
+
+
+def test_audio_artifacts_keep_selected_provider_and_model() -> None:
+    class Storage:
+        def sink(self, _prefix: str) -> object:
+            return object()
+
+        def key_from_url(self, _url: str, *, expected_prefix: str) -> str:
+            return f"{expected_prefix}/audio.mp3"
+
+    class CompletedPipeline:
+        def run(self, *, sink: object, timeout: int):
+            assert sink is not None
+            assert timeout == 600
+            asset = SimpleNamespace(
+                url="s3://bucket/audio.mp3",
+                sha256="a" * 64,
+                media_type="audio/mpeg",
+                size_bytes=128,
+            )
+            return SimpleNamespace(
+                run=SimpleNamespace(
+                    steps=[SimpleNamespace(assets=[asset])]
+                ),
+                manifest=SimpleNamespace(
+                    manifest_uri="s3://bucket/manifest.json"
+                ),
+            )
+
+    gateway = GenblazeRenderMediaGateway(
+        config(), storage=Storage()  # type: ignore[arg-type]
+    )
+    for capability, provider, model in (
+        (ProviderCapability.TTS, "future-voice", "voice-v2"),
+        (ProviderCapability.MUSIC, "future-music", "music-v3"),
+    ):
+        selection = ProviderSelection(
+            capability=capability,
+            provider=provider,
+            model=model,
+        )
+        artifact = gateway._run_audio(  # noqa: SLF001
+            CompletedPipeline(),  # type: ignore[arg-type]
+            prefix="talemotion/projects/project/audio",
+            selection=selection,
+        )
+        assert (artifact.provider, artifact.model) == (provider, model)
 
 
 def test_job_snapshot_is_safe_immutable_and_legacy_compatible() -> None:

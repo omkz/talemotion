@@ -17,7 +17,7 @@ from pydantic_ai.providers import Provider, infer_provider_class
 from app.core.config import AppConfig
 from app.media import SceneMediaError, StoryboardGenerator
 from app.providers import ProviderCapability, ProviderSelection
-from app.providers.catalog import validate_selection
+from app.providers.catalog import provider_entry, validate_selection
 from app.providers.errors import ProviderError
 from app.schemas.storyboard import HistoricalStoryboardDraft
 
@@ -70,26 +70,13 @@ Historical and visual requirements:
 """.strip()
 
 
-def _provider_key(config: AppConfig, provider: str) -> str:
-    if provider == "alibaba":
-        secret = config.alibaba_api_key or config.dashscope_api_key
-    else:
-        secret = config.openai_api_key
-    if secret is None:
-        raise SceneMediaError(
-            code="missing_configuration",
-            message="Storyboard generation credentials are not configured.",
-            retryable=False,
-        )
-    return secret.get_secret_value()
-
-
 def _configured_model(
     config: AppConfig, selection: ProviderSelection
 ) -> Model:
     identifier = f"{selection.provider}:{selection.model}"
-    provider_name = selection.provider
-    api_key = _provider_key(config, provider_name)
+    api_key = provider_entry(
+        selection.capability, selection.provider
+    ).credential(config)
 
     def provider_factory(name: str) -> Provider[Any]:
         provider_class = infer_provider_class(name)

@@ -11,11 +11,14 @@ from app.core.config import settings
 from app.core.database import session_scope
 from app.core.ids import new_resource_id, utc_now
 from app.media import SceneMediaError, SceneMediaGenerator
-from app.media.genblaze_scene import GenblazeSceneGenerator
 from app.models.asset import Asset, AssetType
 from app.models.credits import CreditTransactionType, UsageOperation
 from app.models.job import GenerationJob, JobStatus
 from app.models.scene import Scene, SceneStatus
+from app.providers import ProviderCapability
+from app.providers.errors import ProviderError
+from app.providers.factory import create_provider_factory
+from app.providers.selection import payload_with_selections, selections_from_payload
 from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import (
     AssetRepository,
@@ -129,7 +132,6 @@ def execute_scene_media_job(
     *,
     generator: SceneMediaGenerator | None = None,
 ) -> dict[str, object]:
-    media_generator = generator or GenblazeSceneGenerator(settings)
     with session_scope() as session:
         jobs = JobRepository(session)
         projects = ProjectRepository(session)
@@ -161,6 +163,32 @@ def execute_scene_media_job(
             session.commit()
             _settle_terminal_job(session, jobs, job)
             return {"job_id": job_id, "status": "failed"}
+        try:
+            selections, legacy = selections_from_payload(
+                job.input_payload,
+                (ProviderCapability.IMAGE, ProviderCapability.VIDEO),
+                settings,
+            )
+        except ProviderError as error:
+            _fail_job(
+                job,
+                scene=scene,
+                code=error.code,
+                message=error.message,
+            )
+            session.commit()
+            _settle_terminal_job(session, jobs, job)
+            return {"job_id": job_id, "status": "failed"}
+        if legacy:
+            job.input_payload = payload_with_selections(
+                job.input_payload, selections
+            )
+            session.commit()
+        media_generator = generator or create_provider_factory(
+            settings
+        ).scene_media(selections)
+        image_selection = selections[ProviderCapability.IMAGE]
+        video_selection = selections[ProviderCapability.VIDEO]
 
         _set_job_state(
             job,
@@ -235,8 +263,8 @@ def execute_scene_media_job(
                     CreditService(BillingRepository(session)).record_usage(
                         job=job,
                         operation=UsageOperation.IMAGE_GENERATION,
-                        provider=event.asset.provider,
-                        model_name=event.asset.model,
+                        provider=image_selection.provider,
+                        model_name=image_selection.model,
                         credits=pricing.rate(UsageOperation.IMAGE_GENERATION),
                         idempotency_key=f"usage:{job.id}:image",
                         input_units=Decimal(len(effective_prompt)),
@@ -272,8 +300,8 @@ def execute_scene_media_job(
                     CreditService(BillingRepository(session)).record_usage(
                         job=job,
                         operation=UsageOperation.VIDEO_GENERATION,
-                        provider=event.asset.provider,
-                        model_name=event.asset.model,
+                        provider=video_selection.provider,
+                        model_name=video_selection.model,
                         credits=pricing.rate(UsageOperation.VIDEO_GENERATION),
                         idempotency_key=f"usage:{job.id}:video",
                         input_units=Decimal(request.duration_seconds),

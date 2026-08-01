@@ -1,12 +1,15 @@
 from dataclasses import dataclass
 
 from app.billing.pricing import pricing
+from app.core.config import settings
 from app.core.errors import ApiError
 from app.core.ids import utc_now
 from app.models.credits import UsageOperation
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import Project, ProjectStatus, VideoMode
 from app.models.scene import SceneStatus
+from app.providers import ProviderCapability
+from app.providers.selection import configured_selections, payload_with_selections
 from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import JobRepository, ProjectRepository
 from app.schemas.storyboard import (
@@ -47,9 +50,12 @@ class ProjectGenerationService:
         idempotency_key: str | None = None,
     ) -> QueuedStoryboard:
         project = self._historical_project(project_id)
-        payload: dict[str, object] = {
-            "replace_existing": request.replace_existing
-        }
+        payload = payload_with_selections(
+            {"replace_existing": request.replace_existing},
+            configured_selections(
+                settings, (ProviderCapability.STORYBOARD,)
+            ),
+        )
         existing, scoped_key = existing_idempotent_job(
             self.jobs,
             operation=f"project:{project.id}:storyboard",
@@ -105,9 +111,16 @@ class ProjectGenerationService:
     ) -> ProjectGenerationJobs:
         project = self._historical_project(project_id)
         scenes = project.chapters[0].scenes
-        payload: dict[str, object] = {
-            "generate_video": request.generate_video
-        }
+        media_capabilities = [
+            ProviderCapability.IMAGE,
+            ProviderCapability.VIDEO,
+        ]
+        media_selections = configured_selections(
+            settings, media_capabilities
+        )
+        payload = payload_with_selections(
+            {"generate_video": request.generate_video}, media_selections
+        )
         existing, scoped_key = existing_idempotent_job(
             self.jobs,
             operation=f"project:{project.id}:generation",
@@ -161,10 +174,13 @@ class ProjectGenerationService:
                 parent_job_id=parent.id,
                 job_type=JobType.SCENE_GENERATION,
                 current_stage="queued",
-                input_payload={
-                    "duration_seconds": 5,
-                    "generate_video": request.generate_video,
-                },
+                input_payload=payload_with_selections(
+                    {
+                        "duration_seconds": 5,
+                        "generate_video": request.generate_video,
+                    },
+                    media_selections,
+                ),
             )
             for scene in scenes
         ]

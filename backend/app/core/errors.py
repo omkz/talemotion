@@ -9,6 +9,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
 from app.core.ids import new_resource_id
+from app.providers.errors import ProviderError
 
 
 @dataclass(slots=True)
@@ -84,6 +85,20 @@ async def validation_error_handler(
     )
 
 
+async def provider_error_handler(
+    request: Request, error: ProviderError
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=422,
+        content=_error_content(
+            request,
+            code=error.code,
+            message=error.message,
+            details={},
+        ),
+    )
+
+
 async def http_error_handler(
     request: Request,
     error: StarletteHTTPException,
@@ -125,5 +140,6 @@ async def unexpected_error_handler(
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(ApiError, api_error_handler)
     app.add_exception_handler(RequestValidationError, validation_error_handler)
+    app.add_exception_handler(ProviderError, provider_error_handler)
     app.add_exception_handler(StarletteHTTPException, http_error_handler)
     app.add_exception_handler(Exception, unexpected_error_handler)

@@ -1,8 +1,12 @@
 from decimal import Decimal
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+if TYPE_CHECKING:
+    from app.providers import ProviderCapability, ProviderSelection
 
 
 class AppConfig(BaseSettings):
@@ -26,10 +30,12 @@ class AppConfig(BaseSettings):
     talemotion_storyboard_provider: str = "alibaba"
     talemotion_storyboard_model: str | None = "qwen-plus"
     talemotion_storyboard_max_attempts: int = 3
-    talemotion_tts_provider: str | None = None
+    talemotion_image_provider: str = "gmicloud"
+    talemotion_video_provider: str = "gmicloud"
+    talemotion_tts_provider: str = "gmicloud"
     talemotion_tts_model: str | None = None
     talemotion_tts_voice: str | None = None
-    talemotion_music_provider: str | None = None
+    talemotion_music_provider: str = "gmicloud"
     talemotion_music_model: str | None = None
     talemotion_image_model: str = "seedream-5.0-lite"
     talemotion_video_model: str = "wan2.6-i2v"
@@ -83,29 +89,28 @@ class AppConfig(BaseSettings):
         return frozenset(value for value in values if 1 <= value <= 60)
 
     def missing_media_configuration(self) -> list[str]:
-        configured = {
-            "B2_REGION": self.b2_region,
-            "B2_BUCKET_NAME": self.b2_bucket_name,
-            "B2_KEY_ID": self.b2_key_id,
-            "B2_APPLICATION_KEY": self.b2_application_key,
-            "GMI_API_KEY": self.gmi_api_key,
-        }
-        return [name for name, value in configured.items() if not value]
+        missing = self.missing_storage_configuration()
+        missing.extend(self._missing_capability_configuration("image"))
+        missing.extend(self._missing_capability_configuration("video"))
+        return list(dict.fromkeys(missing))
 
     def missing_storyboard_configuration(self) -> list[str]:
-        missing: list[str] = []
-        provider = self.talemotion_storyboard_provider.strip().lower()
-        if provider not in {"alibaba", "openai"}:
-            missing.append("TALEMOTION_STORYBOARD_PROVIDER (alibaba or openai)")
-        if not self.talemotion_storyboard_model:
-            missing.append("TALEMOTION_STORYBOARD_MODEL")
-        if provider == "alibaba" and not (
-            self.alibaba_api_key or self.dashscope_api_key
-        ):
-            missing.append("DASHSCOPE_API_KEY or ALIBABA_API_KEY")
-        if provider == "openai" and not self.openai_api_key:
-            missing.append("OPENAI_API_KEY")
-        return missing
+        from app.providers import ProviderCapability
+        from app.providers.catalog import (
+            default_selection,
+            missing_provider_configuration,
+        )
+
+        try:
+            selection = default_selection(
+                self, ProviderCapability.STORYBOARD
+            )
+        except Exception:
+            return [
+                "TALEMOTION_STORYBOARD_PROVIDER (alibaba or openai)",
+                "TALEMOTION_STORYBOARD_MODEL",
+            ]
+        return missing_provider_configuration(self, selection)
 
     def missing_storage_configuration(self) -> list[str]:
         configured = {
@@ -118,22 +123,36 @@ class AppConfig(BaseSettings):
 
     def missing_tts_configuration(self) -> list[str]:
         missing = self.missing_storage_configuration()
-        if self.talemotion_tts_provider != "gmicloud":
-            missing.append("TALEMOTION_TTS_PROVIDER=gmicloud")
-        if not self.talemotion_tts_model:
-            missing.append("TALEMOTION_TTS_MODEL")
-        if not self.gmi_api_key:
-            missing.append("GMI_API_KEY")
+        missing.extend(self._missing_capability_configuration("tts"))
         return missing
 
     def missing_music_configuration(self) -> list[str]:
         missing = self.missing_storage_configuration()
-        if self.talemotion_music_provider != "gmicloud":
-            missing.append("TALEMOTION_MUSIC_PROVIDER=gmicloud")
-        if not self.talemotion_music_model:
-            missing.append("TALEMOTION_MUSIC_MODEL")
-        if not self.gmi_api_key:
-            missing.append("GMI_API_KEY")
+        missing.extend(self._missing_capability_configuration("music"))
         return missing
+
+    def default_provider_selection(
+        self, capability: "ProviderCapability"
+    ) -> "ProviderSelection":
+        from app.providers.catalog import default_selection
+
+        return default_selection(self, capability)
+
+    def _missing_capability_configuration(self, capability_name: str) -> list[str]:
+        from app.providers import ProviderCapability
+        from app.providers.catalog import (
+            default_selection,
+            missing_provider_configuration,
+        )
+
+        capability = ProviderCapability(capability_name)
+        try:
+            selection = default_selection(self, capability)
+        except Exception:
+            return [
+                f"TALEMOTION_{capability.value.upper()}_PROVIDER",
+                f"TALEMOTION_{capability.value.upper()}_MODEL",
+            ]
+        return missing_provider_configuration(self, selection)
 
 settings = AppConfig()

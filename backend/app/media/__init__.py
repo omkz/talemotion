@@ -2,15 +2,11 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.providers.errors import ProviderError
 from app.schemas.scene_run import SceneRunEvent, SceneRunRequest
 from app.schemas.storyboard import HistoricalStoryboardDraft
 
-
-@dataclass(slots=True)
-class SceneMediaError(Exception):
-    code: str
-    message: str
-    retryable: bool
+SceneMediaError = ProviderError
 
 
 class SceneMediaGenerator(Protocol):

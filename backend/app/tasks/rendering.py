@@ -14,12 +14,15 @@ from app.core.config import settings
 from app.core.database import session_scope
 from app.core.ids import utc_now
 from app.media import RenderMediaGateway, SceneMediaError, StoredMediaArtifact
-from app.media.genblaze_scene import GenblazeRenderMediaGateway
 from app.models.asset import Asset, AssetType
 from app.models.credits import UsageOperation
 from app.models.job import GenerationJob, JobStatus
 from app.models.project import Project, ProjectStatus
 from app.models.render import Render, RenderStatus
+from app.providers import ProviderCapability
+from app.providers.errors import ProviderError
+from app.providers.factory import create_provider_factory
+from app.providers.selection import payload_with_selections, selections_from_payload
 from app.rendering import FFmpegComposer, RenderComposition, SceneMediaInput
 from app.rendering.captions import CaptionScene, build_srt
 from app.rendering.ffmpeg import RenderCompositionError
@@ -103,7 +106,6 @@ def execute_render_job(
     gateway: RenderMediaGateway | None = None,
     composer: FFmpegComposer | None = None,
 ) -> dict[str, object]:
-    media = gateway or GenblazeRenderMediaGateway(settings)
     video_composer = composer or FFmpegComposer(
         binary=settings.ffmpeg_binary,
         timeout_seconds=settings.ffmpeg_timeout_seconds,
@@ -143,6 +145,31 @@ def execute_render_job(
             CreditService(BillingRepository(session)).settle(job.id)
             session.commit()
             return {"job_id": job.id, "status": "failed"}
+
+        required_capabilities: list[ProviderCapability] = []
+        if render.narration_enabled:
+            required_capabilities.append(ProviderCapability.TTS)
+        if render.music_enabled:
+            required_capabilities.append(ProviderCapability.MUSIC)
+        try:
+            selections, legacy = selections_from_payload(
+                job.input_payload,
+                required_capabilities,
+                settings,
+            )
+        except ProviderError as error:
+            _fail(job, render, project, error.code, error.message)
+            CreditService(BillingRepository(session)).settle(job.id)
+            session.commit()
+            return {"job_id": job.id, "status": "failed"}
+        if legacy:
+            job.input_payload = payload_with_selections(
+                job.input_payload, selections
+            )
+            session.commit()
+        media = gateway or create_provider_factory(settings).render_media(
+            selections
+        )
 
         job.status = JobStatus.RUNNING
         job.started_at = utc_now()
@@ -198,11 +225,12 @@ def execute_render_job(
                             project_id=project.id,
                             scene_id=scene.id,
                             prompt=scene.narration,
-                            provider="GMICloud",
-                            model_name=settings.talemotion_tts_model or "",
+                            provider=selections[ProviderCapability.TTS].provider,
+                            model_name=selections[ProviderCapability.TTS].model,
                             purpose="narration",
                             configuration=(
-                                f"gmicloud:{settings.talemotion_tts_model}:"
+                                f"{selections[ProviderCapability.TTS].provider}:"
+                                f"{selections[ProviderCapability.TTS].model}:"
                                 f"{settings.talemotion_tts_voice or 'default'}"
                             ),
                         )
@@ -224,7 +252,8 @@ def execute_render_job(
                                 prompt=scene.narration,
                                 purpose="narration",
                                 configuration=(
-                                    f"gmicloud:{settings.talemotion_tts_model}:"
+                                    f"{selections[ProviderCapability.TTS].provider}:"
+                                    f"{selections[ProviderCapability.TTS].model}:"
                                     f"{settings.talemotion_tts_voice or 'default'}"
                                 ),
                             )
@@ -233,8 +262,8 @@ def execute_render_job(
                             ).record_usage(
                                 job=job,
                                 operation=UsageOperation.TTS_GENERATION,
-                                provider=artifact.provider,
-                                model_name=artifact.model,
+                                provider=selections[ProviderCapability.TTS].provider,
+                                model_name=selections[ProviderCapability.TTS].model,
                                 credits=pricing.rate(
                                     UsageOperation.TTS_GENERATION
                                 ),
@@ -281,11 +310,12 @@ def execute_render_job(
                         project_id=project.id,
                         scene_id=None,
                         prompt=music_prompt,
-                        provider="GMICloud",
-                        model_name=settings.talemotion_music_model or "",
+                        provider=selections[ProviderCapability.MUSIC].provider,
+                        model_name=selections[ProviderCapability.MUSIC].model,
                         purpose="background_music",
                         configuration=(
-                            f"gmicloud:{settings.talemotion_music_model}"
+                            f"{selections[ProviderCapability.MUSIC].provider}:"
+                            f"{selections[ProviderCapability.MUSIC].model}"
                         ),
                     )
                     if music_asset is None:
@@ -306,7 +336,8 @@ def execute_render_job(
                             prompt=music_prompt,
                             purpose="background_music",
                             configuration=(
-                                f"gmicloud:{settings.talemotion_music_model}"
+                                f"{selections[ProviderCapability.MUSIC].provider}:"
+                                f"{selections[ProviderCapability.MUSIC].model}"
                             ),
                         )
                         CreditService(
@@ -314,8 +345,8 @@ def execute_render_job(
                         ).record_usage(
                             job=job,
                             operation=UsageOperation.MUSIC_GENERATION,
-                            provider=artifact.provider,
-                            model_name=artifact.model,
+                            provider=selections[ProviderCapability.MUSIC].provider,
+                            model_name=selections[ProviderCapability.MUSIC].model,
                             credits=pricing.rate(
                                 UsageOperation.MUSIC_GENERATION
                             ),

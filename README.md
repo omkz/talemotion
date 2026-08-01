@@ -13,6 +13,9 @@ parent/child generation jobs, generated assets, and versioned final renders.
 Celery workers use PydanticAI for provider-flexible storyboard planning,
 Genblaze for GMICloud media generation, Backblaze B2 for durable media, and
 FFmpeg for H.264/AAC final assembly.
+Provider choices are resolved per capability and snapshotted into PostgreSQL
+job JSON before dispatch, so retries retain their provider/model after defaults
+change. Secrets remain backend configuration and are never stored in jobs.
 Generation requests support persisted idempotency keys, and the frontend
 restores current job and render state from PostgreSQL after reload. Run Celery
 beat with the workers so abandoned queued or heartbeat-stale jobs are finalized

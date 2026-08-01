@@ -60,9 +60,20 @@ def test_scene_generation_creates_persisted_queued_job(
 
     persisted = client.get(f"/api/v1/jobs/{body['id']}")
     assert persisted.status_code == 200
-    assert persisted.json()["input_payload"] == {
-        "duration_seconds": 5,
-        "generate_video": True,
+    payload = persisted.json()["input_payload"]
+    assert payload["duration_seconds"] == 5
+    assert payload["generate_video"] is True
+    assert payload["provider_selections"] == {
+        "image": {
+            "capability": "image",
+            "provider": "gmicloud",
+            "model": "seedream-5.0-lite",
+        },
+        "video": {
+            "capability": "video",
+            "provider": "gmicloud",
+            "model": "wan2.6-i2v",
+        },
     }
 
 

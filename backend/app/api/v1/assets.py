@@ -5,7 +5,9 @@ from fastapi import APIRouter
 from app.api.dependencies import CurrentAuth, DatabaseSession, MutationAuth
 from app.core.config import settings
 from app.core.errors import ApiError
-from app.media.genblaze_scene import GenblazeSceneGenerator
+from app.providers import ProviderCapability
+from app.providers.factory import create_provider_factory
+from app.providers.selection import configured_selections
 from app.repositories.sqlalchemy import AssetRepository
 from app.schemas.asset import AssetResponse, asset_to_response
 from app.schemas.common import ErrorResponse
@@ -51,7 +53,12 @@ def create_preview_url(
 ) -> SignedPreviewUrlResponse:
     asset = _assets(session, auth.user.id).previewable(asset_id)
     try:
-        url = GenblazeSceneGenerator(settings).presign_preview(
+        url = create_provider_factory(settings).scene_media(
+            configured_selections(
+                settings,
+                (ProviderCapability.IMAGE, ProviderCapability.VIDEO),
+            )
+        ).presign_preview(
             asset.storage_object_key or ""
         )
     except Exception as error:

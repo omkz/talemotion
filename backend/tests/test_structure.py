@@ -2,7 +2,7 @@ import ast
 from pathlib import Path
 
 APP_ROOT = Path(__file__).parents[1] / "app"
-GENBLAZE_BOUNDARY = APP_ROOT / "media" / "genblaze_scene.py"
+GENBLAZE_BOUNDARY = APP_ROOT / "providers" / "media" / "genblaze.py"
 
 
 def _imports(path: Path) -> set[str]:

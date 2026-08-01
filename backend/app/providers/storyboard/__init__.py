@@ -1,5 +1,3 @@
-"""Compatibility exports for the provider-neutral storyboard adapter."""
-
 from app.providers.storyboard.pydantic_ai import (
     PydanticAIStoryboardGenerator,
     build_storyboard_prompt,

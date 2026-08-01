@@ -417,10 +417,14 @@ def test_render_preview_returns_signed_url(
         gateway=gateway,
         composer=FakeComposer(),
     )
+    class PreviewFactory:
+        def render_media(self, _selections):
+            return gateway
+
     monkeypatch.setattr(
         render_routes,
-        "GenblazeRenderMediaGateway",
-        lambda _settings: gateway,
+        "create_provider_factory",
+        lambda _settings: PreviewFactory(),
     )
 
     response = client.post(

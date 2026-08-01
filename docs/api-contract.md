@@ -170,6 +170,22 @@ configuration; Celery task and storyboard persistence behavior stay the same.
 Genblaze remains responsible for image, video, narration, music, manifests,
 and B2 media workflows.
 
+### Provider selections and job immutability
+
+The backend catalog exposes `storyboard`, `image`, `video`, `tts`, and `music`.
+Storyboard adapters use PydanticAI; current media adapters use Genblaze. Public
+requests do not accept provider names. Queue services resolve backend defaults
+and store credential-free `provider_selections` in the job JSON payload.
+Generate All children inherit their parent's media snapshot, and retries copy
+the failed attempt's snapshot. Usage is attributed from the snapshot rather
+than mutable process settings.
+
+Changing environment defaults affects new jobs only. A legacy queued job with
+no snapshot resolves and persists current defaults at worker start. A present
+but unsupported or incomplete snapshot fails with `unsupported_parameters`;
+there is no cross-provider fallback. API keys are never accepted in provider
+selection payloads or stored with jobs.
+
 Generate All creates a `project_generation` parent plus four
 `scene_generation` children. Children run concurrently through Celery's media
 queue and reuse the same B2-backed task as an individual Generate action.

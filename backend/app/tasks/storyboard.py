@@ -2,7 +2,6 @@ from decimal import Decimal
 
 from pydantic import ValidationError
 
-from app.ai import create_storyboard_generator
 from app.billing.pricing import pricing
 from app.core.celery_app import celery_app
 from app.core.config import settings
@@ -14,6 +13,10 @@ from app.models.credits import UsageOperation
 from app.models.job import GenerationJob, JobStatus
 from app.models.project import ProjectStatus
 from app.models.scene import Scene, SceneStatus
+from app.providers import ProviderCapability
+from app.providers.errors import ProviderError
+from app.providers.factory import create_provider_factory
+from app.providers.selection import payload_with_selections, selections_from_payload
 from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import JobRepository, ProjectRepository
 from app.schemas.storyboard import HistoricalStoryboardDraft
@@ -37,7 +40,6 @@ def execute_storyboard_job(
     *,
     generator: StoryboardGenerator | None = None,
 ) -> dict[str, object]:
-    storyboard_generator = generator or create_storyboard_generator(settings)
     with session_scope() as session:
         jobs = JobRepository(session)
         projects = ProjectRepository(session)
@@ -57,7 +59,27 @@ def execute_storyboard_job(
             _settle(session, job)
             session.commit()
             return {"job_id": job.id, "status": "failed"}
-
+        try:
+            selections, legacy = selections_from_payload(
+                job.input_payload,
+                (ProviderCapability.STORYBOARD,),
+                settings,
+            )
+        except ProviderError as error:
+            _fail(job, error.code, error.message)
+            project.status = ProjectStatus.FAILED
+            _settle(session, job)
+            session.commit()
+            return {"job_id": job.id, "status": "failed"}
+        if legacy:
+            job.input_payload = payload_with_selections(
+                job.input_payload, selections
+            )
+            session.commit()
+        storyboard_selection = selections[ProviderCapability.STORYBOARD]
+        storyboard_generator = generator or create_provider_factory(
+            settings
+        ).storyboard(storyboard_selection)
         job.status = JobStatus.RUNNING
         job.current_stage = "planning_historical_storyboard"
         job.progress = 10
@@ -87,10 +109,8 @@ def execute_storyboard_job(
                 CreditService(BillingRepository(session)).record_usage(
                     job=job,
                     operation=UsageOperation.STORYBOARD_GENERATION,
-                    provider=(
-                        settings.talemotion_storyboard_provider.strip().lower()
-                    ),
-                    model_name=(settings.talemotion_storyboard_model or "").strip(),
+                    provider=storyboard_selection.provider,
+                    model_name=storyboard_selection.model,
                     credits=pricing.rate(
                         UsageOperation.STORYBOARD_GENERATION
                     ),

@@ -1,12 +1,15 @@
 from dataclasses import dataclass
 
 from app.billing.pricing import pricing
+from app.core.config import settings
 from app.core.errors import ApiError
 from app.core.ids import utc_now
 from app.models.asset import AssetStatus, AssetType
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import ProjectStatus
 from app.models.render import Render, RenderStatus
+from app.providers import ProviderCapability
+from app.providers.selection import configured_selections, payload_with_selections
 from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import (
     JobRepository,
@@ -99,6 +102,15 @@ class RenderService:
             "captions_enabled": captions_enabled,
             "music_enabled": music_enabled,
         }
+        audio_capabilities: list[ProviderCapability] = []
+        if narration_enabled:
+            audio_capabilities.append(ProviderCapability.TTS)
+        if music_enabled:
+            audio_capabilities.append(ProviderCapability.MUSIC)
+        payload = payload_with_selections(
+            payload,
+            configured_selections(settings, audio_capabilities),
+        )
         existing, scoped_key = existing_idempotent_job(
             self.jobs,
             operation=f"project:{project_id}:render",

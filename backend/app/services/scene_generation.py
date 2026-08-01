@@ -1,11 +1,14 @@
 from dataclasses import dataclass
 
 from app.billing.pricing import pricing
+from app.core.config import settings
 from app.core.errors import ApiError
 from app.core.ids import utc_now
 from app.models.job import GenerationJob, JobStatus, JobType
 from app.models.project import VideoMode
 from app.models.scene import SceneStatus
+from app.providers import ProviderCapability
+from app.providers.selection import configured_selections, payload_with_selections
 from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import JobRepository, ProjectRepository
 from app.schemas.scene_generation import CreateSceneGenerationRequest
@@ -68,10 +71,17 @@ class SceneGenerationService:
             if additional_instruction is not None
             else JobType.SCENE_GENERATION
         )
-        payload: dict[str, object] = {
-            "duration_seconds": request.duration_seconds,
-            "generate_video": request.generate_video,
-        }
+        capabilities = [
+            ProviderCapability.IMAGE,
+            ProviderCapability.VIDEO,
+        ]
+        payload = payload_with_selections(
+            {
+                "duration_seconds": request.duration_seconds,
+                "generate_video": request.generate_video,
+            },
+            configured_selections(settings, capabilities),
+        )
         if additional_instruction is not None:
             payload["additional_instruction"] = additional_instruction
             payload["parent_asset_id"] = scene.active_asset_id or ""

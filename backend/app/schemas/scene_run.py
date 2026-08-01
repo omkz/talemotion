@@ -115,6 +115,8 @@ class SceneRunFailedEvent(StrictSchema):
         "provider_authentication_failed",
         "provider_rate_limited",
         "provider_generation_failed",
+        "provider_timeout",
+        "unsupported_parameters",
         "storage_failed",
         "invalid_request",
         "unknown_error",

@@ -36,14 +36,16 @@ CREATE DATABASE talemotion_test OWNER talemotion;
 
 Do not run these statements over existing resources.
 
-For Qwen storyboard planning, configure `DASHSCOPE_API_KEY` (or
+TaleMotion resolves one immutable provider selection per capability when a
+job is queued. For Qwen storyboard planning, configure `DASHSCOPE_API_KEY` (or
 `ALIBABA_API_KEY`), `TALEMOTION_STORYBOARD_PROVIDER=alibaba`, and
 `TALEMOTION_STORYBOARD_MODEL=qwen-plus`. Scene media still requires
 `GMI_API_KEY`, `B2_REGION`, `B2_BUCKET_NAME`, `B2_KEY_ID`, and
 `B2_APPLICATION_KEY`. Media model slugs and
-supported clip durations are configurable through `TALEMOTION_IMAGE_MODEL`,
+supported clip durations are configurable through `TALEMOTION_IMAGE_PROVIDER`,
+`TALEMOTION_IMAGE_MODEL`, `TALEMOTION_VIDEO_PROVIDER`,
 `TALEMOTION_VIDEO_MODEL`, and `TALEMOTION_VIDEO_DURATIONS`. The health endpoint
-starts without these keys; a generation request reports
+starts without these keys; a generation worker reports
 `missing_configuration` instead of inventing a successful result.
 
 Final rendering additionally uses `TALEMOTION_TTS_PROVIDER`,
@@ -122,6 +124,51 @@ OPENAI_API_KEY=...
 
 This does not change Genblaze GMICloud image, video, narration, or music
 generation.
+
+## Unified provider layer
+
+`app/providers/` is the capability boundary for `storyboard`, `image`,
+`video`, `tts`, and `music`. The catalog validates supported combinations and
+model constraints. PydanticAI implements storyboard; Genblaze implements the
+four media capabilities. Celery tasks use the provider factory rather than
+Alibaba, OpenAI, or GMICloud classes.
+
+At queue time, each job stores credential-free selections in its existing JSON
+payload:
+
+```json
+{
+  "provider_selections": {
+    "image": {
+      "capability": "image",
+      "provider": "gmicloud",
+      "model": "seedream-5.0-lite"
+    },
+    "video": {
+      "capability": "video",
+      "provider": "gmicloud",
+      "model": "wan2.6-i2v"
+    }
+  }
+}
+```
+
+Retries copy the original snapshot, and Generate All children inherit their
+parent's selections. Changing `.env` affects only new jobs. A legacy queued
+job with no snapshot resolves current defaults once and persists them before
+execution. A present but invalid snapshot fails instead of being replaced or
+falling back. Usage records use the snapshot provider/model; credentials
+always come from backend settings. Provider selection is not exposed in the
+frontend.
+
+To add another media provider:
+
+1. Install only its relevant Genblaze provider package.
+2. Add one catalog and adapter registration.
+3. Define capability metadata and constraints.
+4. Add configuration validation without storing credentials in jobs.
+5. Add contract tests using fake provider results.
+6. Leave Celery business logic unchanged.
 
 `POST /api/v1/projects/{project_id}/generations` creates one persisted parent
 job and four child scene jobs, then dispatches the existing media task once

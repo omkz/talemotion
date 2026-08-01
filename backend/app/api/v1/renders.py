@@ -6,7 +6,7 @@ from fastapi import APIRouter, Header, status
 from app.api.dependencies import CurrentAuth, DatabaseSession, MutationAuth
 from app.core.config import settings
 from app.core.errors import ApiError
-from app.media.genblaze_scene import GenblazeRenderMediaGateway
+from app.providers.factory import create_provider_factory
 from app.repositories.sqlalchemy import (
     JobRepository,
     ProjectRepository,
@@ -132,7 +132,7 @@ def create_render_preview(
 ) -> SignedPreviewUrlResponse:
     render = _renders(session, auth.user.id).previewable(render_id)
     try:
-        url = GenblazeRenderMediaGateway(settings).presign_preview(
+        url = create_provider_factory(settings).render_media({}).presign_preview(
             render.asset.storage_object_key if render.asset else ""
         )
     except Exception as error:

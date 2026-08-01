@@ -89,6 +89,7 @@ class JobService:
         if job.error_code in {
             "missing_configuration",
             "provider_authentication_failed",
+            "unsupported_parameters",
             "invalid_request",
             "render_input_invalid",
         }:

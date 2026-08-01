@@ -1,5 +1,3 @@
-"""Compatibility exports for TaleMotion's Genblaze provider adapter."""
-
 from app.providers.media.genblaze import (
     GenblazeRenderMediaGateway,
     GenblazeSceneGenerator,

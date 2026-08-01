@@ -33,7 +33,7 @@ def test_unsupported_model_duration_is_rejected_before_generation() -> None:
     events = list(generator.run(request(duration_seconds=9), "run_123"))
     failure = events[-1]
     assert failure.type == "scene_run.failed"
-    assert failure.code == "invalid_request"
+    assert failure.code == "unsupported_parameters"
 
 
 def test_unexpected_provider_error_is_sanitized() -> None:
@@ -41,5 +41,5 @@ def test_unexpected_provider_error_is_sanitized() -> None:
     mapped = generator._map_error(  # noqa: SLF001
         RuntimeError("secret-token should never reach the client")
     )
-    assert mapped.code == "unknown_error"
+    assert mapped.code == "provider_generation_failed"
     assert "secret-token" not in mapped.message

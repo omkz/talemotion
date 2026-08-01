@@ -260,6 +260,13 @@ def test_generate_all_creates_parent_and_four_child_jobs(
     assert all(
         child["scene_id"] is not None for child in persisted["children"]
     )
+    parent_selections = parent["input_payload"]["provider_selections"]
+    with session_factory() as session:
+        jobs = JobRepository(session)
+        assert all(
+            child.input_payload["provider_selections"] == parent_selections
+            for child in jobs.children(parent["id"])
+        )
 
 
 def test_parent_progress_uses_latest_persisted_child_jobs(
@@ -365,6 +372,11 @@ def test_failed_child_can_retry_without_recreating_successful_children(
         jobs = JobRepository(session)
         retry = jobs.get_for_update(retry_id)
         assert retry is not None
+        original = jobs.get(failed_id)
+        assert original is not None
+        assert retry.input_payload["provider_selections"] == (
+            original.input_payload["provider_selections"]
+        )
         retry.status = JobStatus.COMPLETED
         retry.progress = 100
         session.commit()

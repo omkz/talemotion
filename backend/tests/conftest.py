@@ -51,6 +51,15 @@ else:
     os.environ.setdefault("REDIS_URL", "redis://localhost:6379/15")
     os.environ.setdefault("CELERY_BROKER_URL", "redis://localhost:6379/15")
 
+# Provider choices are deterministic in the default suite and never trigger a
+# paid call. This also isolates tests from a developer's legacy local .env.
+os.environ["TALEMOTION_STORYBOARD_PROVIDER"] = "alibaba"
+os.environ["TALEMOTION_STORYBOARD_MODEL"] = "qwen-plus"
+os.environ["TALEMOTION_IMAGE_PROVIDER"] = "gmicloud"
+os.environ["TALEMOTION_VIDEO_PROVIDER"] = "gmicloud"
+os.environ["TALEMOTION_IMAGE_MODEL"] = "seedream-5.0-lite"
+os.environ["TALEMOTION_VIDEO_MODEL"] = "wan2.6-i2v"
+
 from app.core.database import get_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import Base  # noqa: E402

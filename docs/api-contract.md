@@ -155,11 +155,20 @@ execute Genblaze or paid provider work in the FastAPI process.
 ## Historical storyboard and Generate All
 
 Only `historical_documentary`, `9:16`, 30/45-second projects are supported.
-Storyboard jobs use `TALEMOTION_STORYBOARD_MODEL` through the Genblaze
-GMICloud chat connector. The structured response must contain exactly four
+Storyboard jobs resolve
+`TALEMOTION_STORYBOARD_PROVIDER:TALEMOTION_STORYBOARD_MODEL` through
+PydanticAI. The default is `alibaba:qwen-plus` using `DASHSCOPE_API_KEY` (or
+`ALIBABA_API_KEY`). The structured response must contain exactly four
 ordered scenes whose durations total the requested duration within two
 seconds. Invalid output is retried at most the configured limit; no hardcoded
 storyboard fallback is used.
+
+Creating a project performs no LLM request. Clicking Generate Storyboard
+persists and queues the paid planning job. Switching to
+`openai:gpt-5-mini` requires only the provider, model, and `OPENAI_API_KEY`
+configuration; Celery task and storyboard persistence behavior stay the same.
+Genblaze remains responsible for image, video, narration, music, manifests,
+and B2 media workflows.
 
 Generate All creates a `project_generation` parent plus four
 `scene_generation` children. Children run concurrently through Celery's media

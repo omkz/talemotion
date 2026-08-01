@@ -2,13 +2,13 @@ from decimal import Decimal
 
 from pydantic import ValidationError
 
+from app.ai import create_storyboard_generator
 from app.billing.pricing import pricing
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.database import session_scope
 from app.core.ids import utc_now
 from app.media import SceneMediaError, StoryboardGenerator
-from app.media.genblaze_scene import GenblazeStoryboardGenerator
 from app.models.chapter import ChapterStatus
 from app.models.credits import UsageOperation
 from app.models.job import GenerationJob, JobStatus
@@ -37,7 +37,7 @@ def execute_storyboard_job(
     *,
     generator: StoryboardGenerator | None = None,
 ) -> dict[str, object]:
-    storyboard_generator = generator or GenblazeStoryboardGenerator(settings)
+    storyboard_generator = generator or create_storyboard_generator(settings)
     with session_scope() as session:
         jobs = JobRepository(session)
         projects = ProjectRepository(session)
@@ -87,8 +87,10 @@ def execute_storyboard_job(
                 CreditService(BillingRepository(session)).record_usage(
                     job=job,
                     operation=UsageOperation.STORYBOARD_GENERATION,
-                    provider=settings.talemotion_storyboard_provider,
-                    model_name=settings.talemotion_storyboard_model or "",
+                    provider=(
+                        settings.talemotion_storyboard_provider.strip().lower()
+                    ),
+                    model_name=(settings.talemotion_storyboard_model or "").strip(),
                     credits=pricing.rate(
                         UsageOperation.STORYBOARD_GENERATION
                     ),

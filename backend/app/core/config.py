@@ -20,9 +20,11 @@ class AppConfig(BaseSettings):
     b2_key_id: SecretStr | None = None
     b2_application_key: SecretStr | None = None
     gmi_api_key: SecretStr | None = None
+    dashscope_api_key: SecretStr | None = None
+    alibaba_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
-    talemotion_storyboard_provider: str = "gmicloud"
-    talemotion_storyboard_model: str | None = None
+    talemotion_storyboard_provider: str = "alibaba"
+    talemotion_storyboard_model: str | None = "qwen-plus"
     talemotion_storyboard_max_attempts: int = 3
     talemotion_tts_provider: str | None = None
     talemotion_tts_model: str | None = None
@@ -92,12 +94,17 @@ class AppConfig(BaseSettings):
 
     def missing_storyboard_configuration(self) -> list[str]:
         missing: list[str] = []
-        if self.talemotion_storyboard_provider != "gmicloud":
-            missing.append("TALEMOTION_STORYBOARD_PROVIDER=gmicloud")
+        provider = self.talemotion_storyboard_provider.strip().lower()
+        if provider not in {"alibaba", "openai"}:
+            missing.append("TALEMOTION_STORYBOARD_PROVIDER (alibaba or openai)")
         if not self.talemotion_storyboard_model:
             missing.append("TALEMOTION_STORYBOARD_MODEL")
-        if not self.gmi_api_key:
-            missing.append("GMI_API_KEY")
+        if provider == "alibaba" and not (
+            self.alibaba_api_key or self.dashscope_api_key
+        ):
+            missing.append("DASHSCOPE_API_KEY or ALIBABA_API_KEY")
+        if provider == "openai" and not self.openai_api_key:
+            missing.append("OPENAI_API_KEY")
         return missing
 
     def missing_storage_configuration(self) -> list[str]:

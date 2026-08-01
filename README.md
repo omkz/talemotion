@@ -10,8 +10,9 @@ docs/       API contract and OpenAPI specification
 
 The backend persists projects, validated four-scene historical storyboards,
 parent/child generation jobs, generated assets, and versioned final renders.
-Celery workers use Genblaze for GMICloud generation, Backblaze B2 for durable
-media, and FFmpeg for H.264/AAC final assembly.
+Celery workers use PydanticAI for provider-flexible storyboard planning,
+Genblaze for GMICloud media generation, Backblaze B2 for durable media, and
+FFmpeg for H.264/AAC final assembly.
 Generation requests support persisted idempotency keys, and the frontend
 restores current job and render state from PostgreSQL after reload. Run Celery
 beat with the workers so abandoned queued or heartbeat-stale jobs are finalized

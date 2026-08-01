@@ -22,7 +22,6 @@ from genblaze_gmicloud import (
     GMICloudAudioProvider,
     GMICloudImageProvider,
     GMICloudVideoProvider,
-    chat,
 )
 from genblaze_s3 import S3StorageBackend
 
@@ -42,7 +41,6 @@ from app.schemas.scene_run import (
     SceneVideoProgressEvent,
     SceneVideoStartedEvent,
 )
-from app.schemas.storyboard import HistoricalStoryboardDraft
 
 _SAFE_SEGMENT = re.compile(r"[^a-zA-Z0-9_-]+")
 
@@ -514,101 +512,6 @@ class GenblazeSceneGenerator:
                 False,
             )
         return value.get_secret_value()
-
-
-class GenblazeStoryboardGenerator:
-    """Generate TaleMotion storyboard JSON through a Genblaze chat connector."""
-
-    def __init__(self, config: AppConfig) -> None:
-        self.config = config
-
-    def generate(
-        self,
-        *,
-        topic: str,
-        additional_direction: str,
-        historical_accuracy_note: str | None,
-        visual_style: str,
-        duration_seconds: int,
-    ) -> HistoricalStoryboardDraft:
-        missing = self.config.missing_storyboard_configuration()
-        if missing:
-            raise SceneMediaError(
-                "missing_configuration",
-                "Storyboard generation is not configured. "
-                f"Missing: {', '.join(missing)}.",
-                False,
-            )
-        prompt = self._prompt(
-            topic=topic,
-            additional_direction=additional_direction,
-            historical_accuracy_note=historical_accuracy_note,
-            visual_style=visual_style,
-            duration_seconds=duration_seconds,
-        )
-        try:
-            response = chat(
-                self.config.talemotion_storyboard_model or "",
-                prompt=prompt,
-                system=(
-                    "You are TaleMotion's historical storyboard planner. "
-                    "Return only the requested structured storyboard."
-                ),
-                response_format=HistoricalStoryboardDraft,
-                temperature=0.4,
-                max_tokens=3000,
-                api_key=self._gmi_key(),
-                timeout=120,
-            )
-            return HistoricalStoryboardDraft.model_validate_json(response.text)
-        except SceneMediaError:
-            raise
-        except Exception as error:
-            mapped = GenblazeSceneGenerator(self.config)._map_error(error)
-            raise mapped from error
-
-    def _gmi_key(self) -> str:
-        if self.config.gmi_api_key is None:
-            raise SceneMediaError(
-                "missing_configuration",
-                "Storyboard generation is not configured.",
-                False,
-            )
-        return self.config.gmi_api_key.get_secret_value()
-
-    @staticmethod
-    def _prompt(
-        *,
-        topic: str,
-        additional_direction: str,
-        historical_accuracy_note: str | None,
-        visual_style: str,
-        duration_seconds: int,
-    ) -> str:
-        return f"""
-Create exactly four scenes for a {duration_seconds}-second vertical historical
-documentary about: {topic}
-
-Additional direction: {additional_direction or "None"}
-Historical accuracy note: {historical_accuracy_note or "None"}
-Visual style: {visual_style}
-
-Each scene needs a concise title, narration, a production-ready visual prompt,
-duration_seconds, and position. Positions must be exactly 1, 2, 3, 4, and the
-durations should total {duration_seconds} seconds (within two seconds).
-
-Historical and visual requirements:
-- historically plausible Southeast Asian architecture, landscapes, clothing,
-  weapons, trade goods, and social context;
-- Majapahit-era maritime culture and Southeast Asian jong ships when relevant;
-- no European ships, clothing, or architecture unless the topic and period
-  historically justify their presence;
-- one consistent cinematic style across all four scenes;
-- strong vertical 9:16 composition with clear foreground, middle ground, and
-  background;
-- narration must make a coherent factual progression without claiming
-  certainty where evidence is disputed.
-""".strip()
 
 
 class GenblazeRenderMediaGateway:

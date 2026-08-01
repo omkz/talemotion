@@ -36,9 +36,11 @@ CREATE DATABASE talemotion_test OWNER talemotion;
 
 Do not run these statements over existing resources.
 
-For real storyboard planning and scene media, also configure `GMI_API_KEY`,
-`TALEMOTION_STORYBOARD_MODEL`, `B2_REGION`,
-`B2_BUCKET_NAME`, `B2_KEY_ID`, and `B2_APPLICATION_KEY`. Model slugs and
+For Qwen storyboard planning, configure `DASHSCOPE_API_KEY` (or
+`ALIBABA_API_KEY`), `TALEMOTION_STORYBOARD_PROVIDER=alibaba`, and
+`TALEMOTION_STORYBOARD_MODEL=qwen-plus`. Scene media still requires
+`GMI_API_KEY`, `B2_REGION`, `B2_BUCKET_NAME`, `B2_KEY_ID`, and
+`B2_APPLICATION_KEY`. Media model slugs and
 supported clip durations are configurable through `TALEMOTION_IMAGE_MODEL`,
 `TALEMOTION_VIDEO_MODEL`, and `TALEMOTION_VIDEO_DURATIONS`. The health endpoint
 starts without these keys; a generation request reports
@@ -97,9 +99,29 @@ running to exercise the Redis → worker → PostgreSQL diagnostic path.
 
 `POST /api/v1/projects/{project_id}/storyboard` commits a storyboard job to
 PostgreSQL and dispatches `app.tasks.storyboard.generate_project_storyboard`
-to the `storyboard` queue. The configured Genblaze GMICloud chat connector
-returns a validated four-scene structure; only valid output is persisted.
+to the `storyboard` queue. PydanticAI resolves the configured provider-prefixed
+model and returns a typed, validated four-scene structure; only valid output is
+persisted. Project creation itself performs no LLM request.
 Existing scenes require `replace_existing=true`.
+
+Alibaba Qwen is selected with:
+
+```env
+TALEMOTION_STORYBOARD_PROVIDER=alibaba
+TALEMOTION_STORYBOARD_MODEL=qwen-plus
+DASHSCOPE_API_KEY=...
+```
+
+To switch only storyboard planning to OpenAI:
+
+```env
+TALEMOTION_STORYBOARD_PROVIDER=openai
+TALEMOTION_STORYBOARD_MODEL=gpt-5-mini
+OPENAI_API_KEY=...
+```
+
+This does not change Genblaze GMICloud image, video, narration, or music
+generation.
 
 `POST /api/v1/projects/{project_id}/generations` creates one persisted parent
 job and four child scene jobs, then dispatches the existing media task once

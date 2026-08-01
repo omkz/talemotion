@@ -39,3 +39,11 @@ def test_application_does_not_import_boto_clients_directly() -> None:
         )
     ]
     assert offenders == []
+
+
+def test_genblaze_boundary_contains_media_but_not_storyboard_llm() -> None:
+    source = GENBLAZE_BOUNDARY.read_text(encoding="utf-8")
+    assert "class GenblazeSceneGenerator" in source
+    assert "class GenblazeRenderMediaGateway" in source
+    assert "GenblazeStoryboardGenerator" not in source
+    assert "pydantic_ai" not in source

@@ -14,14 +14,14 @@ from genblaze_core import (
 from genblaze_core.exceptions import ProviderError
 from genblaze_core.models.enums import ProviderErrorCode
 from genblaze_core.pipeline.result import PipelineResult
-from genblaze_core.providers import BaseProvider
 
 from app.core.config import AppConfig
 from app.media import SceneMediaError, StoredMediaArtifact
 from app.providers import ProviderCapability, ProviderSelection
 from app.providers.catalog import validate_selection
 from app.providers.errors import ProviderError as TaleMotionProviderError
-from app.providers.media.registry import create_media_provider
+from app.providers.media.adapter import MediaProviderAdapter
+from app.providers.media.registry import create_media_adapter
 from app.schemas.scene_run import (
     SceneImageCompletedEvent,
     SceneImageProgressEvent,
@@ -55,13 +55,13 @@ class GenblazeSceneGenerator:
         config: AppConfig,
         selections: dict[ProviderCapability, ProviderSelection] | None = None,
         storage: B2MediaStorageGateway | None = None,
-        provider_constructor: Callable[
-            [AppConfig, ProviderSelection], BaseProvider
-        ] = create_media_provider,
+        adapter_constructor: Callable[
+            [AppConfig, ProviderSelection], MediaProviderAdapter
+        ] = create_media_adapter,
     ) -> None:
         self.config = config
         self.storage = storage or B2MediaStorageGateway(config)
-        self.provider_constructor = provider_constructor
+        self.adapter_constructor = adapter_constructor
         resolved = selections or {
             capability: config.default_provider_selection(capability)
             for capability in (
@@ -220,9 +220,7 @@ class GenblazeSceneGenerator:
             )
 
     def _image_pipeline(self, request: SceneRunRequest) -> Pipeline:
-        provider = self.provider_constructor(
-            self.config, self.image_selection
-        )
+        adapter = self.adapter_constructor(self.config, self.image_selection)
         return (
             Pipeline(
                 "talemotion-scene-keyframe",
@@ -236,7 +234,7 @@ class GenblazeSceneGenerator:
             )
             .cache(StepCache(self.config.genblaze_cache_dir))
             .step(
-                provider,
+                adapter.provider,
                 model=self.image_selection.model,
                 prompt=request.visual_prompt,
                 modality=Modality.IMAGE,
@@ -250,30 +248,29 @@ class GenblazeSceneGenerator:
         image_result: PipelineResult,
         image_reference: str,
     ) -> Pipeline:
-        provider = self.provider_constructor(
-            self.config, self.video_selection
+        adapter = self.adapter_constructor(self.config, self.video_selection)
+        pipeline = Pipeline(
+            "talemotion-scene-animation",
+            tenant_id=_safe_segment(request.project_id),
+            project_id=request.project_id,
+            max_concurrency=1,
         )
-        return (
-            Pipeline(
-                "talemotion-scene-animation",
-                tenant_id=_safe_segment(request.project_id),
-                project_id=request.project_id,
-                max_concurrency=1,
-            )
-            .from_result(image_result)
-            .metadata(
-                talemotion_scene_id=request.scene_id,
-                aspect_ratio=request.aspect_ratio,
-            )
-            .step(
-                provider,
-                model=self.video_selection.model,
-                prompt=request.visual_prompt,
-                modality=Modality.VIDEO,
-                duration=request.duration_seconds,
-                aspect_ratio=request.aspect_ratio,
-                image=image_reference,
-            )
+        if adapter.inherit_parent_result:
+            pipeline = pipeline.from_result(image_result)
+        return pipeline.metadata(
+            talemotion_scene_id=request.scene_id,
+            aspect_ratio=request.aspect_ratio,
+        ).step(
+            adapter.provider,
+            model=self.video_selection.model,
+            prompt=request.visual_prompt,
+            modality=Modality.VIDEO,
+            duration=request.duration_seconds,
+            aspect_ratio=request.aspect_ratio,
+            **adapter.video_inputs(
+                image_result=image_result,
+                signed_image_url=image_reference,
+            ),
         )
 
     def _stream_pipeline(
@@ -483,14 +480,14 @@ class GenblazeRenderMediaGateway:
         config: AppConfig,
         selections: dict[ProviderCapability, ProviderSelection] | None = None,
         storage: B2MediaStorageGateway | None = None,
-        provider_constructor: Callable[
-            [AppConfig, ProviderSelection], BaseProvider
-        ] = create_media_provider,
+        adapter_constructor: Callable[
+            [AppConfig, ProviderSelection], MediaProviderAdapter
+        ] = create_media_adapter,
     ) -> None:
         self.config = config
         self.selections = selections or {}
         self.storage = storage or B2MediaStorageGateway(config)
-        self.provider_constructor = provider_constructor
+        self.adapter_constructor = adapter_constructor
 
     def download(self, key: str) -> bytes:
         return self.storage.download(key)
@@ -527,7 +524,7 @@ class GenblazeRenderMediaGateway:
             self.config.default_provider_selection(ProviderCapability.TTS)
         )
         self._validate_audio_selection(selection)
-        provider = self.provider_constructor(self.config, selection)
+        adapter = self.adapter_constructor(self.config, selection)
         prefix = (
             f"talemotion/projects/{_safe_segment(project_id)}/audio/scenes/"
             f"{_safe_segment(scene_id)}"
@@ -542,7 +539,7 @@ class GenblazeRenderMediaGateway:
             .metadata(talemotion_scene_id=scene_id, purpose="narration")
             .cache(StepCache(self.config.genblaze_cache_dir))
             .step(
-                provider,
+                adapter.provider,
                 model=selection.model,
                 prompt=text,
                 modality=Modality.AUDIO,
@@ -570,7 +567,7 @@ class GenblazeRenderMediaGateway:
             self.config.default_provider_selection(ProviderCapability.MUSIC)
         )
         self._validate_audio_selection(selection)
-        provider = self.provider_constructor(self.config, selection)
+        adapter = self.adapter_constructor(self.config, selection)
         prefix = f"talemotion/projects/{_safe_segment(project_id)}/music"
         pipeline = (
             Pipeline(
@@ -582,7 +579,7 @@ class GenblazeRenderMediaGateway:
             .metadata(purpose="background_music")
             .cache(StepCache(self.config.genblaze_cache_dir))
             .step(
-                provider,
+                adapter.provider,
                 model=selection.model,
                 prompt=prompt,
                 modality=Modality.AUDIO,

@@ -68,3 +68,36 @@ def test_tasks_do_not_import_concrete_media_providers() -> None:
         )
     ]
     assert offenders == []
+
+
+def test_scene_pipeline_is_provider_neutral_about_video_handoff() -> None:
+    tree = ast.parse(GENBLAZE_BOUNDARY.read_text(encoding="utf-8"))
+    scene_class = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef)
+        and node.name == "GenblazeSceneGenerator"
+    )
+    video_pipeline = next(
+        node
+        for node in scene_class.body
+        if isinstance(node, ast.FunctionDef) and node.name == "_video_pipeline"
+    )
+    comparisons = [
+        node for node in ast.walk(video_pipeline) if isinstance(node, ast.Compare)
+    ]
+    step_keywords = [
+        keyword.arg
+        for node in ast.walk(video_pipeline)
+        if isinstance(node, ast.Call)
+        for keyword in node.keywords
+    ]
+
+    assert not any("gmicloud" in ast.unparse(node) for node in comparisons)
+    assert "image" not in step_keywords
+
+
+def test_gmicloud_module_owns_signed_url_video_handoff() -> None:
+    source = GMICLOUD_BOUNDARY.read_text(encoding="utf-8")
+    assert "_signed_url_video_inputs" in source
+    assert 'return {"image": signed_image_url}' in source

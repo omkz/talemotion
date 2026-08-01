@@ -34,9 +34,13 @@ class CredentialRequirement:
         for option in self.alternatives:
             value = getattr(config, option.setting_name, None)
             if isinstance(value, SecretStr):
-                return value.get_secret_value()
-            if isinstance(value, str) and value:
-                return value
+                resolved = value.get_secret_value().strip()
+            elif isinstance(value, str):
+                resolved = value.strip()
+            else:
+                continue
+            if resolved:
+                return resolved
         return None
 
 

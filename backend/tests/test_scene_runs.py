@@ -18,14 +18,14 @@ def request(*, duration_seconds: int = 5) -> SceneRunRequest:
 def test_missing_configuration_becomes_a_sanitized_failure_event() -> None:
     constructed = 0
 
-    def provider_constructor(_config, _selection):
+    def adapter_constructor(_config, _selection):
         nonlocal constructed
         constructed += 1
         return object()
 
     generator = GenblazeSceneGenerator(
         AppConfig(_env_file=None),
-        provider_constructor=provider_constructor,
+        adapter_constructor=adapter_constructor,
     )
     events = list(generator.run(request(), "run_123"))
     assert [event.type for event in events] == [
@@ -42,14 +42,14 @@ def test_missing_configuration_becomes_a_sanitized_failure_event() -> None:
 def test_unsupported_model_duration_is_rejected_before_generation() -> None:
     constructed = 0
 
-    def provider_constructor(_config, _selection):
+    def adapter_constructor(_config, _selection):
         nonlocal constructed
         constructed += 1
         return object()
 
     generator = GenblazeSceneGenerator(
         AppConfig(_env_file=None),
-        provider_constructor=provider_constructor,
+        adapter_constructor=adapter_constructor,
     )
     events = list(generator.run(request(duration_seconds=9), "run_123"))
     failure = events[-1]

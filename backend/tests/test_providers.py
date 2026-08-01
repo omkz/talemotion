@@ -11,6 +11,7 @@ from app.providers.catalog import (
 )
 from app.providers.media import registry as media_registry
 from app.providers.media.genblaze import GenblazeRenderMediaGateway
+from app.providers.media.gmicloud import create_gmicloud_video_adapter
 from app.providers.selection import (
     configured_selections,
     payload_with_selections,
@@ -117,6 +118,46 @@ def test_catalog_supports_alibaba_alternative_credentials() -> None:
     )
 
 
+def test_blank_gmicloud_credentials_are_missing() -> None:
+    selection = default_selection(config(), ProviderCapability.IMAGE)
+    for blank in (SecretStr(""), SecretStr("   ")):
+        try:
+            validate_selection(config(gmi_api_key=blank), selection)
+        except ProviderError as error:
+            assert error.code == "missing_configuration"
+            assert "GMI_API_KEY" in error.message
+        else:  # pragma: no cover
+            raise AssertionError("Blank GMI credentials should fail.")
+
+
+def test_blank_alibaba_primary_uses_non_blank_alternative() -> None:
+    selection = default_selection(config(), ProviderCapability.STORYBOARD)
+    validate_selection(
+        config(
+            dashscope_api_key=SecretStr(""),
+            alibaba_api_key=SecretStr("valid-key"),
+        ),
+        selection,
+    )
+
+
+def test_blank_alibaba_alternatives_report_combined_requirement() -> None:
+    selection = default_selection(config(), ProviderCapability.STORYBOARD)
+    try:
+        validate_selection(
+            config(
+                dashscope_api_key=SecretStr(" "),
+                alibaba_api_key=SecretStr("   "),
+            ),
+            selection,
+        )
+    except ProviderError as error:
+        assert error.code == "missing_configuration"
+        assert "DASHSCOPE_API_KEY or ALIBABA_API_KEY" in error.message
+    else:  # pragma: no cover
+        raise AssertionError("Blank Alibaba credentials should fail.")
+
+
 def test_media_provider_construction_uses_capability_registry(monkeypatch) -> None:
     sentinel = object()
     selection = default_selection(config(), ProviderCapability.IMAGE)
@@ -124,15 +165,30 @@ def test_media_provider_construction_uses_capability_registry(monkeypatch) -> No
 
     def construct(_config: AppConfig, selected: ProviderSelection):
         calls.append(selected)
-        return sentinel
+        return media_registry.MediaProviderAdapter(  # type: ignore[arg-type]
+            provider=sentinel
+        )
 
     monkeypatch.setitem(
-        media_registry._MEDIA_PROVIDER_CONSTRUCTORS,  # noqa: SLF001
+        media_registry._MEDIA_ADAPTER_CONSTRUCTORS,  # noqa: SLF001
         (ProviderCapability.IMAGE, "gmicloud"),
         construct,
     )
     assert media_registry.create_media_provider(config(), selection) is sentinel
     assert calls == [selection]
+
+
+def test_gmicloud_video_adapter_owns_signed_url_handoff_and_lineage() -> None:
+    selection = default_selection(config(), ProviderCapability.VIDEO)
+    adapter = create_gmicloud_video_adapter(config(), selection)
+    image_result = SimpleNamespace()
+    signed_url = "https://signed.example.invalid/keyframe"
+
+    assert adapter.video_inputs(
+        image_result=image_result,  # type: ignore[arg-type]
+        signed_image_url=signed_url,
+    ) == {"image": signed_url}
+    assert adapter.inherit_parent_result is True
 
 
 def test_audio_artifacts_keep_selected_provider_and_model() -> None:

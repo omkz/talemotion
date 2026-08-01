@@ -24,6 +24,7 @@ class AppConfig(BaseSettings):
     b2_key_id: SecretStr | None = None
     b2_application_key: SecretStr | None = None
     gmi_api_key: SecretStr | None = None
+    replicate_api_token: SecretStr | None = None
     dashscope_api_key: SecretStr | None = None
     alibaba_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
@@ -37,7 +38,7 @@ class AppConfig(BaseSettings):
     talemotion_tts_voice: str | None = None
     talemotion_music_provider: str = "gmicloud"
     talemotion_music_model: str | None = None
-    talemotion_image_model: str = "seedream-5.0-lite"
+    talemotion_image_model: str | None = None
     talemotion_video_model: str = "wan2.6-i2v"
     talemotion_video_durations: str = "5"
     genblaze_cache_dir: Path = Path(".cache/genblaze")

@@ -12,6 +12,7 @@ from app.schemas.storyboard import (
     HistoricalStoryboardDraft,
     StoryboardSceneDraft,
 )
+from app.services import project_generation as project_generation_service
 from app.services.jobs import aggregate_parent_job
 from app.tasks import storyboard as storyboard_tasks
 
@@ -55,6 +56,19 @@ class InvalidStoryboardGenerator:
         duration_seconds: int,
     ) -> HistoricalStoryboardDraft:
         raise ValueError("Provider returned malformed structured output.")
+
+
+def _use_mixed_media_settings(monkeypatch) -> None:
+    monkeypatch.setattr(
+        project_generation_service.settings,
+        "talemotion_image_provider",
+        "replicate",
+    )
+    monkeypatch.setattr(
+        project_generation_service.settings,
+        "talemotion_image_model",
+        "black-forest-labs/flux-schnell",
+    )
 
 
 def _create_project(
@@ -232,6 +246,7 @@ def test_generate_all_creates_parent_and_four_child_jobs(
     session_factory: sessionmaker[Session],
     monkeypatch,
 ) -> None:
+    _use_mixed_media_settings(monkeypatch)
     project_id, _ = _run_storyboard(
         client,
         project_payload,
@@ -261,6 +276,16 @@ def test_generate_all_creates_parent_and_four_child_jobs(
         child["scene_id"] is not None for child in persisted["children"]
     )
     parent_selections = parent["input_payload"]["provider_selections"]
+    assert parent_selections["image"] == {
+        "capability": "image",
+        "provider": "replicate",
+        "model": "black-forest-labs/flux-schnell",
+    }
+    assert parent_selections["video"] == {
+        "capability": "video",
+        "provider": "gmicloud",
+        "model": "wan2.6-i2v",
+    }
     with session_factory() as session:
         jobs = JobRepository(session)
         assert all(
@@ -325,6 +350,7 @@ def test_failed_child_can_retry_without_recreating_successful_children(
     session_factory: sessionmaker[Session],
     monkeypatch,
 ) -> None:
+    _use_mixed_media_settings(monkeypatch)
     project_id, _ = _run_storyboard(
         client,
         project_payload,
@@ -377,6 +403,11 @@ def test_failed_child_can_retry_without_recreating_successful_children(
         assert retry.input_payload["provider_selections"] == (
             original.input_payload["provider_selections"]
         )
+        assert retry.input_payload["provider_selections"]["image"] == {
+            "capability": "image",
+            "provider": "replicate",
+            "model": "black-forest-labs/flux-schnell",
+        }
         retry.status = JobStatus.COMPLETED
         retry.progress = 100
         session.commit()

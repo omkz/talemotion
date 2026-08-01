@@ -117,6 +117,18 @@ _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
             supports_text_to_image=True,
         ),
     ),
+    (ProviderCapability.IMAGE, "replicate"): ProviderEntry(
+        ProviderCapability.IMAGE,
+        "replicate",
+        "black-forest-labs/flux-schnell",
+        "talemotion_image_model",
+        (_credential(("REPLICATE_API_TOKEN", "replicate_api_token")),),
+        "genblaze",
+        ModelCapabilities(
+            supported_aspect_ratios=frozenset({"9:16", "16:9"}),
+            supports_text_to_image=True,
+        ),
+    ),
     (ProviderCapability.VIDEO, "gmicloud"): ProviderEntry(
         ProviderCapability.VIDEO,
         "gmicloud",

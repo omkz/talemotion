@@ -39,9 +39,9 @@ Do not run these statements over existing resources.
 TaleMotion resolves one immutable provider selection per capability when a
 job is queued. For Qwen storyboard planning, configure `DASHSCOPE_API_KEY` (or
 `ALIBABA_API_KEY`), `TALEMOTION_STORYBOARD_PROVIDER=alibaba`, and
-`TALEMOTION_STORYBOARD_MODEL=qwen-plus`. Scene media still requires
-`GMI_API_KEY`, `B2_REGION`, `B2_BUCKET_NAME`, `B2_KEY_ID`, and
-`B2_APPLICATION_KEY`. Media model slugs and
+`TALEMOTION_STORYBOARD_MODEL=qwen-plus`. Scene media requires the credential
+for each selected AI provider (`GMI_API_KEY` and/or `REPLICATE_API_TOKEN`) plus
+`B2_REGION`, `B2_BUCKET_NAME`, `B2_KEY_ID`, and `B2_APPLICATION_KEY`. Media model slugs and
 supported clip durations are configurable through `TALEMOTION_IMAGE_PROVIDER`,
 `TALEMOTION_IMAGE_MODEL`, `TALEMOTION_VIDEO_PROVIDER`,
 `TALEMOTION_VIDEO_MODEL`, and `TALEMOTION_VIDEO_DURATIONS`. The health endpoint
@@ -125,14 +125,29 @@ OPENAI_API_KEY=...
 This does not change Genblaze GMICloud image, video, narration, or music
 generation.
 
+### Optional paid Replicate image smoke test
+
+Replicate can replace only the image stage while GMICloud continues the video
+stage. This configuration makes paid external calls when scene generation is
+triggered; it is never used by the automated test suite.
+
+```env
+REPLICATE_API_TOKEN=...
+TALEMOTION_IMAGE_PROVIDER=replicate
+TALEMOTION_IMAGE_MODEL=black-forest-labs/flux-schnell
+TALEMOTION_VIDEO_PROVIDER=gmicloud
+TALEMOTION_VIDEO_MODEL=wan2.6-i2v
+```
+
 ## Unified provider layer
 
 `app/providers/` is the capability boundary for `storyboard`, `image`,
 `video`, `tts`, and `music`. The catalog is the source of supported
 capability/provider combinations, credential requirements, defaults, and model
 constraints. PydanticAI implements storyboard; Genblaze implements the four
-media capabilities. Celery tasks use the provider factory rather than Alibaba,
-OpenAI, or GMICloud classes.
+media capabilities. GMICloud remains the default for all media, while
+Replicate is registered only for image generation. Celery tasks use the
+provider factory rather than Alibaba, OpenAI, GMICloud, or Replicate classes.
 
 Catalog entries also own credential requirements, including alternative-key
 groups such as `DASHSCOPE_API_KEY or ALIBABA_API_KEY`. The media registry maps

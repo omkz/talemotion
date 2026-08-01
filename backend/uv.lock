@@ -440,6 +440,20 @@ wheels = [
 ]
 
 [[package]]
+name = "genblaze-replicate"
+version = "0.3.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "genblaze-core" },
+    { name = "httpx" },
+    { name = "replicate" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e0/93/538bf5836bc07ce915729be41e2d075bbe49ad6c4c10674aa7005a3562c2/genblaze_replicate-0.3.4.tar.gz", hash = "sha256:9ec8b42b818a633193d87e6be6ec56c41ab78a8432ebd022448a058ccd7f8f91", size = 17084, upload-time = "2026-07-22T15:23:29.387Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/a5/73b08fed1def99b15fc8f50a7eee83b47abd6c2b55ac009ef521aec285df/genblaze_replicate-0.3.4-py3-none-any.whl", hash = "sha256:96c59e966ca3d255865cc1622aa91dd18ff7f8fba529e0ec9f9363b5e958e1c6", size = 12182, upload-time = "2026-07-22T15:23:28.223Z" },
+]
+
+[[package]]
 name = "genblaze-s3"
 version = "0.3.6"
 source = { registry = "https://pypi.org/simple" }
@@ -1069,6 +1083,21 @@ wheels = [
 ]
 
 [[package]]
+name = "replicate"
+version = "1.0.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "packaging" },
+    { name = "pydantic" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/fd/caf6c59a6b8007366bd52ab5a320bf8d828f3860a60039309cfc0e375ec9/replicate-1.0.7.tar.gz", hash = "sha256:d88cb2c37ba39fb370c87fc3291601c67aae64bb918a20a85b5ce399c23ee84c", size = 62226, upload-time = "2025-05-27T11:29:08.111Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c2/5a/b3aa02a11a33de08e7771579154af3193decfb9d923b30b14c17b4e8bbce/replicate-1.0.7-py3-none-any.whl", hash = "sha256:667c50a9eb83be17de6278ff89483102b3b50f49a2c7fbcaa2e2b14df13816f9", size = 48626, upload-time = "2025-05-27T11:29:06.801Z" },
+]
+
+[[package]]
 name = "requests"
 version = "2.34.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1254,6 +1283,7 @@ dependencies = [
     { name = "fastapi", extra = ["standard"] },
     { name = "genblaze-core" },
     { name = "genblaze-gmicloud" },
+    { name = "genblaze-replicate" },
     { name = "genblaze-s3" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pwdlib", extra = ["argon2"] },
@@ -1278,6 +1308,7 @@ requires-dist = [
     { name = "fastapi", extras = ["standard"], specifier = ">=0.115,<1.0" },
     { name = "genblaze-core", specifier = ">=0.3.8" },
     { name = "genblaze-gmicloud", specifier = ">=0.3.5" },
+    { name = "genblaze-replicate", specifier = ">=0.3.4" },
     { name = "genblaze-s3", specifier = ">=0.3.6" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "pwdlib", extras = ["argon2"], specifier = ">=0.3.0" },

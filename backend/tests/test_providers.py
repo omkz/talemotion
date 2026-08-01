@@ -16,6 +16,7 @@ from app.providers.catalog import (
     validate_selection,
 )
 from app.providers.media import registry as media_registry
+from app.providers.media import replicate as replicate_adapter
 from app.providers.media.genblaze import GenblazeRenderMediaGateway
 from app.providers.media.gmicloud import (
     create_gmicloud_audio_adapter,
@@ -45,6 +46,7 @@ def config(**updates: object) -> AppConfig:
         "talemotion_music_model": "music-model",
         "dashscope_api_key": SecretStr("dashscope-secret"),
         "gmi_api_key": SecretStr("gmi-secret"),
+        "replicate_api_token": SecretStr("replicate-secret"),
         "_env_file": None,
     }
     values.update(updates)
@@ -84,6 +86,127 @@ def test_openai_storyboard_selection_is_independent_from_media() -> None:
     image = default_selection(current, ProviderCapability.IMAGE)
     assert (storyboard.provider, storyboard.model) == ("openai", "gpt-5-mini")
     assert (image.provider, image.model) == ("gmicloud", "seedream-5.0-lite")
+
+
+def test_replicate_image_catalog_resolves_with_its_default_model() -> None:
+    gmicloud = default_selection(
+        config(talemotion_image_model=None),
+        ProviderCapability.IMAGE,
+    )
+    current = config(
+        talemotion_image_provider="replicate",
+        talemotion_image_model=None,
+    )
+    selection = default_selection(current, ProviderCapability.IMAGE)
+    entry = provider_entry(ProviderCapability.IMAGE, "replicate")
+
+    assert gmicloud.model == "seedream-5.0-lite"
+    assert selection == ProviderSelection(
+        capability="image",
+        provider="replicate",
+        model="black-forest-labs/flux-schnell",
+    )
+    assert entry.capabilities.supports_text_to_image
+    validate_selection(current, selection, aspect_ratio="9:16")
+
+
+def test_replicate_credentials_reject_missing_and_blank_tokens() -> None:
+    selection = default_selection(
+        config(
+            talemotion_image_provider="replicate",
+            talemotion_image_model=None,
+        ),
+        ProviderCapability.IMAGE,
+    )
+    for token in (None, SecretStr(""), SecretStr("   ")):
+        try:
+            validate_selection(
+                config(replicate_api_token=token),
+                selection,
+            )
+        except ProviderError as error:
+            assert error.code == "missing_configuration"
+            assert "REPLICATE_API_TOKEN" in error.message
+            assert not error.retryable
+        else:  # pragma: no cover
+            raise AssertionError("Missing Replicate credentials should fail.")
+
+
+def test_replicate_adapter_constructs_through_registry(monkeypatch) -> None:
+    sentinel = object()
+    tokens: list[str] = []
+
+    def construct(*, api_token: str):
+        tokens.append(api_token)
+        return sentinel
+
+    monkeypatch.setattr(replicate_adapter, "ReplicateProvider", construct)
+    current = config(
+        talemotion_image_provider="replicate",
+        talemotion_image_model=None,
+    )
+    selection = default_selection(current, ProviderCapability.IMAGE)
+    adapter = media_registry.create_media_adapter(current, selection)
+
+    assert adapter.provider is sentinel
+    assert tokens == ["replicate-secret"]
+
+
+def test_missing_replicate_token_fails_before_provider_construction(
+    monkeypatch,
+) -> None:
+    constructed = 0
+
+    def construct(*, api_token: str):
+        nonlocal constructed
+        constructed += 1
+        return object()
+
+    monkeypatch.setattr(replicate_adapter, "ReplicateProvider", construct)
+    current = config(
+        talemotion_image_provider="replicate",
+        talemotion_image_model=None,
+        replicate_api_token=SecretStr(" "),
+    )
+    selection = default_selection(current, ProviderCapability.IMAGE)
+    try:
+        media_registry.create_media_adapter(current, selection)
+    except ProviderError as error:
+        assert error.code == "missing_configuration"
+        assert "REPLICATE_API_TOKEN" in error.message
+    else:  # pragma: no cover
+        raise AssertionError("Missing token should fail before construction.")
+    assert constructed == 0
+
+
+def test_replicate_adapter_rejects_non_image_capabilities() -> None:
+    for capability in (
+        ProviderCapability.VIDEO,
+        ProviderCapability.TTS,
+        ProviderCapability.MUSIC,
+        ProviderCapability.STORYBOARD,
+    ):
+        selection = ProviderSelection(
+            capability=capability,
+            provider="replicate",
+            model="unsupported-model",
+        )
+        try:
+            media_registry.create_media_adapter(config(), selection)
+        except ProviderError as error:
+            assert error.code == "unsupported_parameters"
+            assert not error.retryable
+        else:  # pragma: no cover
+            raise AssertionError("Registry must reject Replicate capability.")
+        try:
+            replicate_adapter.create_replicate_image_adapter(
+                config(), selection
+            )
+        except ProviderError as error:
+            assert error.code == "unsupported_parameters"
+            assert not error.retryable
+        else:  # pragma: no cover
+            raise AssertionError("Replicate must remain image-only.")
 
 
 def test_unknown_provider_capability_fails_clearly() -> None:

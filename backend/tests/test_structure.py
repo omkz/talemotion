@@ -4,6 +4,7 @@ from pathlib import Path
 APP_ROOT = Path(__file__).parents[1] / "app"
 GENBLAZE_BOUNDARY = APP_ROOT / "providers" / "media" / "genblaze.py"
 GMICLOUD_BOUNDARY = APP_ROOT / "providers" / "media" / "gmicloud.py"
+REPLICATE_BOUNDARY = APP_ROOT / "providers" / "media" / "replicate.py"
 
 
 def _imports(path: Path) -> set[str]:
@@ -23,6 +24,16 @@ def test_gmicloud_imports_are_confined_to_registration_boundary() -> None:
         for path in APP_ROOT.rglob("*.py")
         if path != GMICLOUD_BOUNDARY
         and any(name.startswith("genblaze_gmicloud") for name in _imports(path))
+    ]
+    assert offenders == []
+
+
+def test_replicate_imports_are_confined_to_registration_boundary() -> None:
+    offenders = [
+        str(path.relative_to(APP_ROOT))
+        for path in APP_ROOT.rglob("*.py")
+        if path != REPLICATE_BOUNDARY
+        and any(name.startswith("genblaze_replicate") for name in _imports(path))
     ]
     assert offenders == []
 
@@ -64,9 +75,28 @@ def test_tasks_do_not_import_concrete_media_providers() -> None:
                 "GMICloudImageProvider",
                 "GMICloudVideoProvider",
                 "GMICloudAudioProvider",
+                "ReplicateProvider",
             )
         )
     ]
+    assert offenders == []
+
+
+def test_generic_orchestration_has_no_replicate_specific_behavior() -> None:
+    paths = [
+        GENBLAZE_BOUNDARY,
+        *(APP_ROOT / "tasks").glob("*.py"),
+    ]
+    offenders = []
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        if any(
+            isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and "replicate" in node.value.lower()
+            for node in ast.walk(tree)
+        ):
+            offenders.append(str(path.relative_to(APP_ROOT)))
     assert offenders == []
 
 

@@ -10,6 +10,7 @@ dependencies = [
     "fastapi[standard]>=0.115,<1.0",
     "genblaze-core>=0.3.8",
     "genblaze-gmicloud>=0.3.5",
+    "genblaze-replicate>=0.3.4",
     "genblaze-s3>=0.3.6",
     "psycopg[binary]>=3.2,<4",
     "pwdlib[argon2]>=0.3.0",

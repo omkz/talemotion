@@ -197,6 +197,13 @@ gateway, so invalid AI configuration cannot block access to a previously
 persisted asset. Immutable job snapshots—not mutable process settings—own the
 provider and model choice for an execution attempt.
 
+GMICloud is registered for image, video, TTS, and music; Replicate is
+registered for image only. A mixed scene job may snapshot Replicate for its
+keyframe and GMICloud for image-to-video. The durable B2 keyframe and the
+GMICloud adapter's signed-URL handoff preserve storage and parent lineage.
+Replicate credentials remain execution-time configuration and never enter the
+snapshot.
+
 Generate All creates a `project_generation` parent plus four
 `scene_generation` children. Children run concurrently through Celery's media
 queue and reuse the same B2-backed task as an individual Generate action.

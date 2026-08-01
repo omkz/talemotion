@@ -186,13 +186,16 @@ but unsupported or incomplete snapshot fails with `unsupported_parameters`;
 there is no cross-provider fallback. API keys are never accepted in provider
 selection payloads or stored with jobs.
 
-Provider catalog entries declare credential alternatives and model capability
-constraints. A media registration maps the validated entry to its concrete
-Genblaze constructor; scene, narration, and music orchestration remain
-provider-neutral. Backblaze B2 signing, upload, download, sink creation, and
-object-key validation are a separate storage gateway. Signed-preview endpoints
-use only that gateway, so invalid AI configuration cannot block access to a
-previously persisted asset.
+Provider catalog entries are the source of supported combinations, credential
+alternatives, defaults, and model capability constraints. A media registration
+maps the validated entry to its concrete Genblaze adapter; the adapter owns
+provider-specific runtime behavior such as signed-URL video handoff and parent
+lineage. Scene, narration, and music orchestration remain provider-neutral.
+Backblaze B2 signing, upload, download, sink creation, and object-key validation
+are owned by a separate storage gateway. Signed-preview endpoints use only that
+gateway, so invalid AI configuration cannot block access to a previously
+persisted asset. Immutable job snapshots—not mutable process settings—own the
+provider and model choice for an execution attempt.
 
 Generate All creates a `project_generation` parent plus four
 `scene_generation` children. Children run concurrently through Celery's media

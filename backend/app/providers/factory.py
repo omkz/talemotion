@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 from app.media import RenderMediaGateway, SceneMediaGenerator, StoryboardGenerator
-from app.providers import ProviderCapability, ProviderSelection
+from app.providers import ProviderCapability, ProviderError, ProviderSelection
 from app.providers.catalog import provider_entry
 
 if TYPE_CHECKING:
@@ -15,12 +15,11 @@ class ProviderFactory:
     def storyboard(
         self, selection: ProviderSelection
     ) -> StoryboardGenerator:
-        entry = provider_entry(selection.capability, selection.provider)
-        if (
-            selection.capability is not ProviderCapability.STORYBOARD
-            or entry.adapter_kind != "pydantic_ai"
-        ):
-            raise ValueError("A PydanticAI storyboard selection is required.")
+        _validate_factory_selection(
+            selection,
+            capability=ProviderCapability.STORYBOARD,
+            adapter_kind="pydantic_ai",
+        )
         from app.providers.storyboard import PydanticAIStoryboardGenerator
 
         return PydanticAIStoryboardGenerator(
@@ -32,10 +31,11 @@ class ProviderFactory:
         selections: dict[ProviderCapability, ProviderSelection],
     ) -> SceneMediaGenerator:
         for capability in (ProviderCapability.IMAGE, ProviderCapability.VIDEO):
-            selection = selections[capability]
-            entry = provider_entry(capability, selection.provider)
-            if entry.adapter_kind != "genblaze":
-                raise ValueError("A Genblaze media selection is required.")
+            _validate_factory_selection(
+                selections[capability],
+                capability=capability,
+                adapter_kind="genblaze",
+            )
         from app.providers.media import GenblazeSceneGenerator
 
         return GenblazeSceneGenerator(self.config, selections)
@@ -44,12 +44,14 @@ class ProviderFactory:
         self,
         selections: dict[ProviderCapability, ProviderSelection],
     ) -> RenderMediaGateway:
-        for selection in selections.values():
-            entry = provider_entry(
-                selection.capability, selection.provider
+        for capability in (ProviderCapability.TTS, ProviderCapability.MUSIC):
+            if capability not in selections:
+                continue
+            _validate_factory_selection(
+                selections[capability],
+                capability=capability,
+                adapter_kind="genblaze",
             )
-            if entry.adapter_kind != "genblaze":
-                raise ValueError("A Genblaze audio selection is required.")
         from app.providers.media import GenblazeRenderMediaGateway
 
         return GenblazeRenderMediaGateway(self.config, selections)
@@ -57,3 +59,24 @@ class ProviderFactory:
 
 def create_provider_factory(config: "AppConfig") -> ProviderFactory:
     return ProviderFactory(config)
+
+
+def _validate_factory_selection(
+    selection: ProviderSelection,
+    *,
+    capability: ProviderCapability,
+    adapter_kind: str,
+) -> None:
+    if selection.capability is not capability:
+        raise ProviderError(
+            "unsupported_parameters",
+            "The provider selection capability does not match the operation.",
+            False,
+        )
+    entry = provider_entry(capability, selection.provider)
+    if entry.adapter_kind != adapter_kind:
+        raise ProviderError(
+            "unsupported_parameters",
+            "The selected provider adapter does not support this operation.",
+            False,
+        )

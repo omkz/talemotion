@@ -1,5 +1,4 @@
 from enum import StrEnum
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationInfo, field_validator
 
@@ -36,6 +35,3 @@ class ModelCapabilities(BaseModel):
     supports_image_to_video: bool = False
     supports_tts: bool = False
     supports_music: bool = False
-    image_handoff: Literal[
-        "external_input", "image_kwarg", "signed_url"
-    ] | None = None

@@ -509,7 +509,7 @@ class GenblazeRenderMediaGateway:
             media_type=stored.media_type,
             file_size_bytes=stored.file_size_bytes,
             sha256=stored.sha256,
-            provider="TaleMotion",
+            provider="talemotion",
             model="ffmpeg" if media_type == "video/mp4" else "generated",
         )
 

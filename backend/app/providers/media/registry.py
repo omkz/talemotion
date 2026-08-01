@@ -1,7 +1,5 @@
 from collections.abc import Callable
 
-from genblaze_core.providers import BaseProvider
-
 from app.core.config import AppConfig
 from app.providers import ProviderCapability, ProviderSelection
 from app.providers.catalog import provider_entry
@@ -47,10 +45,3 @@ def create_media_adapter(
             False,
         )
     return constructor(config, selection)
-
-
-def create_media_provider(
-    config: AppConfig, selection: ProviderSelection
-) -> BaseProvider:
-    """Compatibility helper for callers that only need the provider."""
-    return create_media_adapter(config, selection).provider

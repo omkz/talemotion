@@ -128,7 +128,6 @@ _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
             supported_aspect_ratios=frozenset({"9:16", "16:9"}),
             supported_durations=frozenset({5}),
             supports_image_to_video=True,
-            image_handoff="signed_url",
         ),
     ),
     (ProviderCapability.TTS, "gmicloud"): ProviderEntry(

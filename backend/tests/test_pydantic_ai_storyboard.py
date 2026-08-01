@@ -2,14 +2,14 @@ from pydantic import SecretStr
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.models.test import TestModel
 
-from app.ai.storyboard import (
+from app.core.config import AppConfig
+from app.media import SceneMediaError
+from app.providers.storyboard.pydantic_ai import (
     PydanticAIStoryboardGenerator,
     build_storyboard_prompt,
     map_storyboard_error,
     resolved_storyboard_model,
 )
-from app.core.config import AppConfig
-from app.media import SceneMediaError
 from app.schemas.storyboard import HistoricalStoryboardDraft
 from app.tasks.storyboard import _valid_duration
 

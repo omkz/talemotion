@@ -128,17 +128,20 @@ generation.
 ## Unified provider layer
 
 `app/providers/` is the capability boundary for `storyboard`, `image`,
-`video`, `tts`, and `music`. The catalog validates supported combinations and
-model constraints. PydanticAI implements storyboard; Genblaze implements the
-four media capabilities. Celery tasks use the provider factory rather than
-Alibaba, OpenAI, or GMICloud classes.
+`video`, `tts`, and `music`. The catalog is the source of supported
+capability/provider combinations, credential requirements, defaults, and model
+constraints. PydanticAI implements storyboard; Genblaze implements the four
+media capabilities. Celery tasks use the provider factory rather than Alibaba,
+OpenAI, or GMICloud classes.
 
 Catalog entries also own credential requirements, including alternative-key
 groups such as `DASHSCOPE_API_KEY or ALIBABA_API_KEY`. The media registry maps
 each catalog capability/provider pair to a concrete Genblaze constructor.
 GMICloud model-registry quirks remain isolated in
 `app/providers/media/gmicloud.py`; the reusable scene and audio pipelines
-receive already-constructed providers and contain no GMICloud branches.
+receive already-constructed adapters and contain no GMICloud branches. The
+video adapter alone defines signed-URL image handoff and parent-result lineage;
+handoff behavior is not catalog metadata.
 
 Backblaze operations are composed separately through
 `app/storage/b2.py`. Signing, download, upload, Genblaze sinks, and safe

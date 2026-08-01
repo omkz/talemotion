@@ -3,7 +3,13 @@ from types import SimpleNamespace
 from pydantic import SecretStr
 
 from app.core.config import AppConfig
-from app.providers import ProviderCapability, ProviderError, ProviderSelection
+from app.providers import (
+    ModelCapabilities,
+    ProviderCapability,
+    ProviderError,
+    ProviderSelection,
+)
+from app.providers import catalog as provider_catalog
 from app.providers.catalog import (
     default_selection,
     provider_entry,
@@ -11,7 +17,10 @@ from app.providers.catalog import (
 )
 from app.providers.media import registry as media_registry
 from app.providers.media.genblaze import GenblazeRenderMediaGateway
-from app.providers.media.gmicloud import create_gmicloud_video_adapter
+from app.providers.media.gmicloud import (
+    create_gmicloud_audio_adapter,
+    create_gmicloud_video_adapter,
+)
 from app.providers.selection import (
     configured_selections,
     payload_with_selections,
@@ -59,6 +68,10 @@ def test_capability_defaults_resolve_independently() -> None:
     assert default_selection(current, ProviderCapability.MUSIC).model == (
         "music-model"
     )
+
+
+def test_model_capabilities_do_not_describe_runtime_image_handoff() -> None:
+    assert "image_handoff" not in ModelCapabilities.model_fields
 
 
 def test_openai_storyboard_selection_is_independent_from_media() -> None:
@@ -174,8 +187,50 @@ def test_media_provider_construction_uses_capability_registry(monkeypatch) -> No
         (ProviderCapability.IMAGE, "gmicloud"),
         construct,
     )
-    assert media_registry.create_media_provider(config(), selection) is sentinel
+    assert media_registry.create_media_adapter(config(), selection).provider is sentinel
     assert calls == [selection]
+
+
+def test_media_catalog_and_adapter_registry_match() -> None:
+    catalog_entries = {
+        key
+        for key, entry in provider_catalog._CATALOG.items()  # noqa: SLF001
+        if entry.adapter_kind == "genblaze"
+    }
+    adapter_entries = set(
+        media_registry._MEDIA_ADAPTER_CONSTRUCTORS  # noqa: SLF001
+    )
+    assert catalog_entries == adapter_entries
+
+
+def test_media_registry_rejects_non_media_and_unknown_combinations() -> None:
+    selections = (
+        ProviderSelection(
+            capability="storyboard", provider="alibaba", model="qwen-plus"
+        ),
+        ProviderSelection(
+            capability="video", provider="unregistered", model="video-v1"
+        ),
+    )
+    for selection in selections:
+        try:
+            media_registry.create_media_adapter(config(), selection)
+        except ProviderError as error:
+            assert error.code == "unsupported_parameters"
+            assert not error.retryable
+        else:  # pragma: no cover
+            raise AssertionError("Unsupported media selection should fail.")
+
+
+def test_capability_specific_adapter_rejects_wrong_selection() -> None:
+    image_selection = default_selection(config(), ProviderCapability.IMAGE)
+    try:
+        create_gmicloud_audio_adapter(config(), image_selection)
+    except ProviderError as error:
+        assert error.code == "unsupported_parameters"
+        assert not error.retryable
+    else:  # pragma: no cover
+        raise AssertionError("Audio adapter must reject image capability.")
 
 
 def test_gmicloud_video_adapter_owns_signed_url_handoff_and_lineage() -> None:

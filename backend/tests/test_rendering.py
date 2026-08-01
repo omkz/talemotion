@@ -38,7 +38,7 @@ class FakeRenderGateway:
         media_type: str,
     ) -> StoredMediaArtifact:
         self.objects[key] = data
-        return self._artifact(key, media_type, len(data), "TaleMotion", "generated")
+        return self._artifact(key, media_type, len(data), "talemotion", "generated")
 
     def generate_narration(
         self,
@@ -50,7 +50,7 @@ class FakeRenderGateway:
         self.narration_calls.append(scene_id)
         key = f"talemotion/projects/{project_id}/audio/{scene_id}.mp3"
         self.objects[key] = b"narration"
-        return self._artifact(key, "audio/mpeg", 9, "GMICloud", "tts-model")
+        return self._artifact(key, "audio/mpeg", 9, "gmicloud", "tts-model")
 
     def generate_music(
         self,
@@ -62,7 +62,7 @@ class FakeRenderGateway:
         self.music_calls += 1
         key = f"talemotion/projects/{project_id}/music/score.mp3"
         self.objects[key] = b"music"
-        return self._artifact(key, "audio/mpeg", 5, "GMICloud", "music-model")
+        return self._artifact(key, "audio/mpeg", 5, "gmicloud", "music-model")
 
     def presign_preview(self, key: str) -> str:
         return f"https://signed.example.invalid/{key}"
@@ -83,7 +83,7 @@ class FakeRenderGateway:
             provider=provider,
             model=model,
             manifest_object_key=f"{key}.manifest.json"
-            if provider == "GMICloud"
+            if provider == "gmicloud"
             else None,
         )
 
@@ -135,7 +135,7 @@ def _project_with_assets(
                 scene_id=scene_id,
                 asset_type=AssetType.IMAGE,
                 version=1,
-                provider="GMICloud",
+                provider="gmicloud",
                 model_name="image-model",
                 prompt=scene.visual_prompt,
                 generation_parameters={},
@@ -302,6 +302,7 @@ def test_worker_renders_all_optional_stages_and_persists_final_asset(
     assert render["status"] == "completed"
     final_asset = client.get(f"/api/v1/assets/{result['asset_id']}").json()
     assert final_asset["type"] == "final_video"
+    assert final_asset["provider"] == "talemotion"
     assert final_asset["storage_object_key"].endswith("/final.mp4")
 
 

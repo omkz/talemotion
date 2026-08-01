@@ -1,5 +1,5 @@
 from app.core.config import AppConfig
-from app.media.genblaze_scene import GenblazeSceneGenerator
+from app.providers.media.genblaze import GenblazeSceneGenerator
 from app.schemas.scene_run import SceneRunAsset, SceneRunRequest
 
 

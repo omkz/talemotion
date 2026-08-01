@@ -15,7 +15,7 @@ from app.providers.media.adapter import MediaProviderAdapter
 def create_gmicloud_image_adapter(
     config: AppConfig, selection: ProviderSelection
 ) -> MediaProviderAdapter:
-    _require_capability(selection, ProviderCapability.IMAGE)
+    _require_selection(selection, {ProviderCapability.IMAGE})
     return MediaProviderAdapter(
         provider=GMICloudImageProvider(api_key=_credential(config, selection))
     )
@@ -24,7 +24,7 @@ def create_gmicloud_image_adapter(
 def create_gmicloud_video_adapter(
     config: AppConfig, selection: ProviderSelection
 ) -> MediaProviderAdapter:
-    _require_capability(selection, ProviderCapability.VIDEO)
+    _require_selection(selection, {ProviderCapability.VIDEO})
     registry = GMICloudVideoProvider.models_default().fork()
     if selection.model.startswith("wan") and selection.model.endswith("-i2v"):
         base = registry.get(selection.model)
@@ -48,11 +48,10 @@ def create_gmicloud_video_adapter(
 def create_gmicloud_audio_adapter(
     config: AppConfig, selection: ProviderSelection
 ) -> MediaProviderAdapter:
-    if selection.capability not in {
-        ProviderCapability.TTS,
-        ProviderCapability.MUSIC,
-    }:
-        raise _unsupported_capability(selection)
+    _require_selection(
+        selection,
+        {ProviderCapability.TTS, ProviderCapability.MUSIC},
+    )
     return MediaProviderAdapter(
         provider=GMICloudAudioProvider(api_key=_credential(config, selection))
     )
@@ -70,19 +69,23 @@ def _credential(config: AppConfig, selection: ProviderSelection) -> str:
     ).credential(config)
 
 
-def _require_capability(
-    selection: ProviderSelection, expected: ProviderCapability
+def _require_selection(
+    selection: ProviderSelection,
+    allowed_capabilities: set[ProviderCapability],
 ) -> None:
-    if selection.capability is not expected:
-        raise _unsupported_capability(selection)
+    if (
+        selection.provider != "gmicloud"
+        or selection.capability not in allowed_capabilities
+    ):
+        raise _unsupported_selection(selection)
 
 
-def _unsupported_capability(selection: ProviderSelection) -> ProviderError:
+def _unsupported_selection(selection: ProviderSelection) -> ProviderError:
     return ProviderError(
         code="unsupported_parameters",
         message=(
-            "The selected GMICloud adapter does not support the "
-            f"'{selection.capability.value}' capability."
+            "The GMICloud adapter does not support the selected provider "
+            f"and '{selection.capability.value}' capability combination."
         ),
         retryable=False,
     )

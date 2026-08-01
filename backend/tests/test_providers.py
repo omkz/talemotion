@@ -15,6 +15,7 @@ from app.providers.catalog import (
     provider_entry,
     validate_selection,
 )
+from app.providers.media import gmicloud as gmicloud_adapter
 from app.providers.media import registry as media_registry
 from app.providers.media import replicate as replicate_adapter
 from app.providers.media.genblaze import GenblazeRenderMediaGateway
@@ -207,6 +208,179 @@ def test_replicate_adapter_rejects_non_image_capabilities() -> None:
             assert not error.retryable
         else:  # pragma: no cover
             raise AssertionError("Replicate must remain image-only.")
+
+
+def test_replicate_adapter_rejects_wrong_provider_before_side_effects(
+    monkeypatch,
+) -> None:
+    credential_lookups = 0
+    constructions = 0
+
+    def lookup(*_args, **_kwargs):
+        nonlocal credential_lookups
+        credential_lookups += 1
+        raise AssertionError("Credential lookup must not run.")
+
+    def construct(*_args, **_kwargs):
+        nonlocal constructions
+        constructions += 1
+        raise AssertionError("Provider construction must not run.")
+
+    monkeypatch.setattr(replicate_adapter, "provider_entry", lookup)
+    monkeypatch.setattr(replicate_adapter, "ReplicateProvider", construct)
+    selections = (
+        ProviderSelection(
+            capability="image",
+            provider="gmicloud",
+            model="seedream-5.0-lite",
+        ),
+        *(
+            ProviderSelection(
+                capability=capability,
+                provider="replicate",
+                model="unsupported-model",
+            )
+            for capability in (
+                ProviderCapability.VIDEO,
+                ProviderCapability.TTS,
+                ProviderCapability.MUSIC,
+                ProviderCapability.STORYBOARD,
+            )
+        ),
+    )
+    for selection in selections:
+        try:
+            replicate_adapter.create_replicate_image_adapter(config(), selection)
+        except ProviderError as error:
+            assert error.code == "unsupported_parameters"
+            assert not error.retryable
+        else:  # pragma: no cover
+            raise AssertionError("Replicate adapter accepted a wrong selection.")
+    assert credential_lookups == 0
+    assert constructions == 0
+
+
+def test_gmicloud_adapters_reject_wrong_providers_before_side_effects(
+    monkeypatch,
+) -> None:
+    credential_lookups = 0
+    constructions = 0
+
+    def credential(*_args, **_kwargs):
+        nonlocal credential_lookups
+        credential_lookups += 1
+        raise AssertionError("Credential lookup must not run.")
+
+    def construct(*_args, **_kwargs):
+        nonlocal constructions
+        constructions += 1
+        raise AssertionError("Provider construction must not run.")
+
+    monkeypatch.setattr(gmicloud_adapter, "_credential", credential)
+    monkeypatch.setattr(gmicloud_adapter, "GMICloudImageProvider", construct)
+    monkeypatch.setattr(gmicloud_adapter, "GMICloudVideoProvider", construct)
+    monkeypatch.setattr(gmicloud_adapter, "GMICloudAudioProvider", construct)
+    cases = (
+        (
+            gmicloud_adapter.create_gmicloud_image_adapter,
+            ProviderSelection(
+                capability="image",
+                provider="replicate",
+                model="image-model",
+            ),
+        ),
+        (
+            gmicloud_adapter.create_gmicloud_video_adapter,
+            ProviderSelection(
+                capability="video",
+                provider="replicate",
+                model="video-model",
+            ),
+        ),
+        (
+            gmicloud_adapter.create_gmicloud_audio_adapter,
+            ProviderSelection(
+                capability="tts",
+                provider="another-provider",
+                model="voice-model",
+            ),
+        ),
+        (
+            gmicloud_adapter.create_gmicloud_audio_adapter,
+            ProviderSelection(
+                capability="storyboard",
+                provider="gmicloud",
+                model="storyboard-model",
+            ),
+        ),
+    )
+    for constructor, selection in cases:
+        try:
+            constructor(config(), selection)
+        except ProviderError as error:
+            assert error.code == "unsupported_parameters"
+            assert not error.retryable
+        else:  # pragma: no cover
+            raise AssertionError("GMICloud adapter accepted a wrong selection.")
+    assert credential_lookups == 0
+    assert constructions == 0
+
+
+def test_correct_gmicloud_adapters_construct_through_registry(monkeypatch) -> None:
+    constructed: list[tuple[str, str]] = []
+
+    class FakeRegistry:
+        def fork(self):
+            return self
+
+    class FakeVideoProvider:
+        @staticmethod
+        def models_default() -> FakeRegistry:
+            return FakeRegistry()
+
+        def __init__(self, *, api_key: str, models: FakeRegistry) -> None:
+            assert models is not None
+            constructed.append(("video", api_key))
+
+    def image_provider(*, api_key: str):
+        constructed.append(("image", api_key))
+        return object()
+
+    def audio_provider(*, api_key: str):
+        constructed.append(("audio", api_key))
+        return object()
+
+    monkeypatch.setattr(
+        gmicloud_adapter, "GMICloudImageProvider", image_provider
+    )
+    monkeypatch.setattr(
+        gmicloud_adapter, "GMICloudVideoProvider", FakeVideoProvider
+    )
+    monkeypatch.setattr(
+        gmicloud_adapter, "GMICloudAudioProvider", audio_provider
+    )
+    selections = (
+        ProviderSelection(
+            capability="image", provider="gmicloud", model="image-model"
+        ),
+        ProviderSelection(
+            capability="video", provider="gmicloud", model="video-model"
+        ),
+        ProviderSelection(
+            capability="tts", provider="gmicloud", model="voice-model"
+        ),
+    )
+    adapters = [
+        media_registry.create_media_adapter(config(), selection)
+        for selection in selections
+    ]
+
+    assert all(adapter.provider is not None for adapter in adapters)
+    assert constructed == [
+        ("image", "gmi-secret"),
+        ("video", "gmi-secret"),
+        ("audio", "gmi-secret"),
+    ]
 
 
 def test_unknown_provider_capability_fails_clearly() -> None:

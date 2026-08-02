@@ -81,8 +81,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     defaultLanguage: "English",
     defaultAspectRatio: "9:16",
     defaultDuration: 45,
-    captionsEnabled: true,
-    backgroundMusicEnabled: true,
+    captionsEnabled: false,
+    backgroundMusicEnabled: false,
   },
   generation: {
     defaultVisualStyle: "Cinematic Realistic",

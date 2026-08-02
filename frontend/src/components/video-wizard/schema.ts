@@ -120,6 +120,6 @@ export const WIZARD_DEFAULT_VALUES: WizardFormValues = {
   visualStyle: "Cinematic Realistic",
   narrationStyle: "Documentary",
   sceneCount: "5",
-  captionsEnabled: true,
-  musicEnabled: true,
+  captionsEnabled: false,
+  musicEnabled: false,
 };

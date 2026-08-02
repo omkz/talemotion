@@ -331,8 +331,8 @@ export class HttpVideoProjectApi implements VideoProjectApi {
     context?: RequestContext
   ) {
     const request: CreateRenderRequest = {
-      captions_enabled: options.captionsEnabled ?? true,
-      background_music_enabled: options.backgroundMusicEnabled ?? true,
+      captions_enabled: options.captionsEnabled ?? false,
+      background_music_enabled: options.backgroundMusicEnabled ?? false,
       resolution: options.resolution ?? "1080x1920",
     };
     const response = await this.client.post<GenerationJobResponse>(

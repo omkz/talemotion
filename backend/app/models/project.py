@@ -115,7 +115,7 @@ class Project(Base, TimestampMixin):
         String(100),
         default="Documentary",
     )
-    captions_enabled: Mapped[bool] = mapped_column(default=True)
+    captions_enabled: Mapped[bool] = mapped_column(default=False)
     narration_enabled: Mapped[bool] = mapped_column(default=True)
     music_enabled: Mapped[bool] = mapped_column(default=False)
     generation_progress: Mapped[int] = mapped_column(Integer, default=0)

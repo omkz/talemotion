@@ -277,7 +277,7 @@ class JobService:
                     retry.input_payload.get("narration_enabled", True)
                 ),
                 music_enabled=bool(
-                    retry.input_payload.get("music_enabled", True)
+                    retry.input_payload.get("music_enabled", False)
                 ),
             ),
             "Final render retry reservation",

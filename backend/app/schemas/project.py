@@ -17,9 +17,9 @@ class CreateProjectRequest(StrictSchema):
     aspect_ratio: AspectRatio = AspectRatio.VERTICAL
     visual_style: NonEmptyText = "cinematic historical realism"
     narration_style: NonEmptyText = "dramatic documentary"
-    captions_enabled: bool = True
+    captions_enabled: bool = False
     narration_enabled: bool = True
-    music_enabled: bool = True
+    music_enabled: bool = False
     historical_accuracy_note: str | None = None
 
 

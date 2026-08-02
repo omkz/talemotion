@@ -14,6 +14,7 @@ from genblaze_core import (
 from genblaze_core.exceptions import ProviderError
 from genblaze_core.models.enums import ProviderErrorCode
 from genblaze_core.pipeline.result import PipelineResult
+from genblaze_core.providers import BaseProvider
 
 from app.core.config import AppConfig
 from app.media import SceneMediaError, StoredMediaArtifact
@@ -45,6 +46,13 @@ def _safe_segment(value: str) -> str:
     label = _SAFE_SEGMENT.sub("-", value).strip("-_")[:48] or "resource"
     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
     return f"{label}-{digest}"
+
+
+def _close_provider(provider: BaseProvider) -> None:
+    """Close provider-owned resources when the provider exposes a lifecycle hook."""
+    close = getattr(provider, "close", None)
+    if callable(close):
+        close()
 
 
 class GenblazeSceneGenerator:
@@ -127,13 +135,15 @@ class GenblazeSceneGenerator:
                 scene_id=request.scene_id,
                 model=self.image_selection.model,
             )
-            image_pipeline = self._image_pipeline(request)
+            image_sink = self.storage.sink(prefix)
+            image_pipeline, image_provider = self._image_pipeline(request)
             image_result = yield from self._stream_pipeline(
                 request=request,
                 run_id=run_id,
                 kind="image",
                 pipeline=image_pipeline,
-                sink=self.storage.sink(prefix),
+                provider=image_provider,
+                sink=image_sink,
             )
             image = self._asset_reference(
                 image_result,
@@ -175,7 +185,8 @@ class GenblazeSceneGenerator:
                 image.asset_url, expected_prefix=prefix
             )
             image_reference = self.storage.presign_preview(image_key)
-            video_pipeline = self._video_pipeline(
+            video_sink = self.storage.sink(prefix)
+            video_pipeline, video_provider = self._video_pipeline(
                 request, image_result, image_reference
             )
             video_result = yield from self._stream_pipeline(
@@ -183,7 +194,8 @@ class GenblazeSceneGenerator:
                 run_id=run_id,
                 kind="video",
                 pipeline=video_pipeline,
-                sink=self.storage.sink(prefix),
+                provider=video_provider,
+                sink=video_sink,
             )
             video = self._asset_reference(
                 video_result,
@@ -219,59 +231,71 @@ class GenblazeSceneGenerator:
                 image=image,
             )
 
-    def _image_pipeline(self, request: SceneRunRequest) -> Pipeline:
+    def _image_pipeline(
+        self, request: SceneRunRequest
+    ) -> tuple[Pipeline, BaseProvider]:
         adapter = self.adapter_constructor(self.config, self.image_selection)
-        return (
-            Pipeline(
-                "talemotion-scene-keyframe",
-                tenant_id=_safe_segment(request.project_id),
-                project_id=request.project_id,
-                max_concurrency=1,
+        try:
+            pipeline = (
+                Pipeline(
+                    "talemotion-scene-keyframe",
+                    tenant_id=_safe_segment(request.project_id),
+                    project_id=request.project_id,
+                    max_concurrency=1,
+                )
+                .metadata(
+                    talemotion_scene_id=request.scene_id,
+                    aspect_ratio=request.aspect_ratio,
+                )
+                .cache(StepCache(self.config.genblaze_cache_dir))
+                .step(
+                    adapter.provider,
+                    model=self.image_selection.model,
+                    prompt=request.visual_prompt,
+                    modality=Modality.IMAGE,
+                    aspect_ratio=request.aspect_ratio,
+                )
             )
-            .metadata(
-                talemotion_scene_id=request.scene_id,
-                aspect_ratio=request.aspect_ratio,
-            )
-            .cache(StepCache(self.config.genblaze_cache_dir))
-            .step(
-                adapter.provider,
-                model=self.image_selection.model,
-                prompt=request.visual_prompt,
-                modality=Modality.IMAGE,
-                aspect_ratio=request.aspect_ratio,
-            )
-        )
+        except Exception:
+            _close_provider(adapter.provider)
+            raise
+        return pipeline, adapter.provider
 
     def _video_pipeline(
         self,
         request: SceneRunRequest,
         image_result: PipelineResult,
         image_reference: str,
-    ) -> Pipeline:
+    ) -> tuple[Pipeline, BaseProvider]:
         adapter = self.adapter_constructor(self.config, self.video_selection)
-        pipeline = Pipeline(
-            "talemotion-scene-animation",
-            tenant_id=_safe_segment(request.project_id),
-            project_id=request.project_id,
-            max_concurrency=1,
-        )
-        if adapter.inherit_parent_result:
-            pipeline = pipeline.from_result(image_result)
-        return pipeline.metadata(
-            talemotion_scene_id=request.scene_id,
-            aspect_ratio=request.aspect_ratio,
-        ).step(
-            adapter.provider,
-            model=self.video_selection.model,
-            prompt=request.visual_prompt,
-            modality=Modality.VIDEO,
-            duration=request.duration_seconds,
-            aspect_ratio=request.aspect_ratio,
-            **adapter.video_inputs(
-                image_result=image_result,
-                signed_image_url=image_reference,
-            ),
-        )
+        try:
+            pipeline = Pipeline(
+                "talemotion-scene-animation",
+                tenant_id=_safe_segment(request.project_id),
+                project_id=request.project_id,
+                max_concurrency=1,
+            )
+            if adapter.inherit_parent_result:
+                pipeline = pipeline.from_result(image_result)
+            pipeline = pipeline.metadata(
+                talemotion_scene_id=request.scene_id,
+                aspect_ratio=request.aspect_ratio,
+            ).step(
+                adapter.provider,
+                model=self.video_selection.model,
+                prompt=request.visual_prompt,
+                modality=Modality.VIDEO,
+                duration=request.duration_seconds,
+                aspect_ratio=request.aspect_ratio,
+                **adapter.video_inputs(
+                    image_result=image_result,
+                    signed_image_url=image_reference,
+                ),
+            )
+        except Exception:
+            _close_provider(adapter.provider)
+            raise
+        return pipeline, adapter.provider
 
     def _stream_pipeline(
         self,
@@ -280,37 +304,48 @@ class GenblazeSceneGenerator:
         run_id: str,
         kind: Literal["image", "video"],
         pipeline: Pipeline,
+        provider: BaseProvider,
         sink: ObjectStorageSink,
     ) -> Iterator[SceneRunEvent]:
         result: PipelineResult | None = None
-        for event in pipeline.stream(sink=sink, timeout=600):
-            if event.type == "step.progress":
-                progress = (
-                    event.progress_pct * 100
-                    if event.progress_pct is not None
-                    else None
-                )
-                event_type = (
-                    SceneImageProgressEvent
-                    if kind == "image"
-                    else SceneVideoProgressEvent
-                )
-                yield event_type(
-                    run_id=run_id,
-                    project_id=request.project_id,
-                    scene_id=request.scene_id,
-                    progress=progress,
-                    elapsed_seconds=event.elapsed_sec,
-                    message=(
-                        "The media provider is generating the scene keyframe."
+        event_stream: Iterator[object] | None = None
+        try:
+            event_stream = pipeline.stream(sink=sink, timeout=600)
+            for event in event_stream:
+                if event.type == "step.progress":
+                    progress = (
+                        event.progress_pct * 100
+                        if event.progress_pct is not None
+                        else None
+                    )
+                    event_type = (
+                        SceneImageProgressEvent
                         if kind == "image"
-                        else "The media provider is animating the scene keyframe."
-                    ),
-                )
-            elif event.type in {"pipeline.completed", "pipeline.failed"}:
-                result = event.result
-                if event.type == "pipeline.failed":
-                    raise self._pipeline_failure(result)
+                        else SceneVideoProgressEvent
+                    )
+                    yield event_type(
+                        run_id=run_id,
+                        project_id=request.project_id,
+                        scene_id=request.scene_id,
+                        progress=progress,
+                        elapsed_seconds=event.elapsed_sec,
+                        message=(
+                            "The media provider is generating the scene keyframe."
+                            if kind == "image"
+                            else "The media provider is animating the scene keyframe."
+                        ),
+                    )
+                elif event.type in {"pipeline.completed", "pipeline.failed"}:
+                    result = event.result
+                    if event.type == "pipeline.failed":
+                        raise self._pipeline_failure(result)
+        finally:
+            try:
+                close_stream = getattr(event_stream, "close", None)
+                if callable(close_stream):
+                    close_stream()
+            finally:
+                _close_provider(provider)
         if result is None:
             raise SceneMediaError(
                 code="provider_generation_failed",

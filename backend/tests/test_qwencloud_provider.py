@@ -14,8 +14,10 @@ from app.core.config import AppConfig
 from app.providers import ProviderCapability, ProviderError, ProviderSelection
 from app.providers.catalog import default_selection, validate_selection
 from app.providers.media import qwencloud
+from app.providers.media.genblaze import GenblazeSceneGenerator
 from app.providers.media.qwencloud import QwenCloudProvider
 from app.providers.media.registry import create_media_adapter
+from app.schemas.scene_run import SceneRunRequest
 
 
 def config(**updates: object) -> AppConfig:
@@ -76,6 +78,177 @@ def video_step(*, duration: int = 5) -> Step:
 
 def async_response(task_id: str = "task-1") -> dict[str, object]:
     return {"output": {"task_id": task_id}, "request_id": "request-1"}
+
+
+def scene_request() -> SceneRunRequest:
+    return SceneRunRequest(
+        project_id="project_majapahit",
+        scene_id="scene_majapahit_01",
+        title="An Empire Emerges",
+        visual_prompt="A cinematic historical harbor",
+        aspect_ratio="9:16",
+        duration_seconds=5,
+        generate_video=True,
+    )
+
+
+def test_owned_http_client_is_closed_idempotently() -> None:
+    current = QwenCloudProvider(
+        api_key="test-key",
+        base_url="https://dashscope.example.test/api/v1",
+    )
+    client = current._client  # noqa: SLF001
+
+    current.close()
+    current.close()
+
+    assert client.is_closed
+
+
+def test_injected_http_client_remains_caller_owned() -> None:
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json=async_response())
+        )
+    )
+    current = QwenCloudProvider(
+        api_key="test-key",
+        base_url="https://dashscope.example.test/api/v1",
+        http_client=client,
+    )
+
+    current.close()
+
+    assert not client.is_closed
+    client.close()
+
+
+@pytest.mark.parametrize(
+    "operation",
+    (
+        lambda current: current.submit(image_step()),
+        lambda current: current.poll("task-1"),
+        lambda current: current.fetch_output("task-1", image_step()),
+    ),
+)
+def test_closed_provider_rejects_network_lifecycle_operations(operation) -> None:
+    current = provider(
+        lambda _request: pytest.fail("closed provider made an HTTP request")
+    )
+    current.close()
+
+    with pytest.raises(GenblazeProviderError) as raised:
+        operation(current)
+
+    assert raised.value.error_code is ProviderErrorCode.INVALID_INPUT
+    assert str(raised.value) == "QwenCloud provider is closed."
+
+
+def test_qwencloud_adapters_use_modality_specific_poll_intervals() -> None:
+    current = config()
+    image_adapter = create_media_adapter(
+        current,
+        default_selection(current, ProviderCapability.IMAGE),
+    )
+    video_adapter = create_media_adapter(
+        current,
+        default_selection(current, ProviderCapability.VIDEO),
+    )
+
+    assert image_adapter.provider.poll_interval == 5.0
+    assert video_adapter.provider.poll_interval == 15.0
+    image_adapter.provider.close()  # type: ignore[attr-defined]
+    video_adapter.provider.close()  # type: ignore[attr-defined]
+
+
+@pytest.mark.parametrize("kind", ["image", "video"])
+def test_scene_pipeline_closes_provider_after_success(kind: str) -> None:
+    closed = 0
+
+    class TrackingProvider:
+        def close(self) -> None:
+            nonlocal closed
+            closed += 1
+
+    result = SimpleNamespace()
+    event = SimpleNamespace(type="pipeline.completed", result=result)
+    pipeline = SimpleNamespace(stream=lambda **_kwargs: iter([event]))
+    generator = GenblazeSceneGenerator(config())
+
+    events = list(
+        generator._stream_pipeline(  # noqa: SLF001
+            request=scene_request(),
+            run_id="run_1",
+            kind=kind,
+            pipeline=pipeline,  # type: ignore[arg-type]
+            provider=TrackingProvider(),  # type: ignore[arg-type]
+            sink=object(),  # type: ignore[arg-type]
+        )
+    )
+
+    assert events == []
+    assert closed == 1
+
+
+@pytest.mark.parametrize("kind", ["image", "video"])
+def test_scene_pipeline_closes_provider_after_failure(kind: str) -> None:
+    closed = 0
+
+    class TrackingProvider:
+        def close(self) -> None:
+            nonlocal closed
+            closed += 1
+
+    def failed_stream(**_kwargs):
+        raise RuntimeError("pipeline failed")
+        yield  # pragma: no cover
+
+    pipeline = SimpleNamespace(stream=failed_stream)
+    generator = GenblazeSceneGenerator(config())
+
+    with pytest.raises(RuntimeError, match="pipeline failed"):
+        list(
+            generator._stream_pipeline(  # noqa: SLF001
+                request=scene_request(),
+                run_id="run_1",
+                kind=kind,
+                pipeline=pipeline,  # type: ignore[arg-type]
+                provider=TrackingProvider(),  # type: ignore[arg-type]
+                sink=object(),  # type: ignore[arg-type]
+            )
+        )
+
+    assert closed == 1
+
+
+def test_scene_pipeline_closes_provider_when_generator_closes_early() -> None:
+    closed = 0
+
+    class TrackingProvider:
+        def close(self) -> None:
+            nonlocal closed
+            closed += 1
+
+    progress = SimpleNamespace(
+        type="step.progress",
+        progress_pct=0.25,
+        elapsed_sec=1.0,
+    )
+    pipeline = SimpleNamespace(stream=lambda **_kwargs: iter([progress]))
+    generator = GenblazeSceneGenerator(config())
+    stream = generator._stream_pipeline(  # noqa: SLF001
+        request=scene_request(),
+        run_id="run_1",
+        kind="image",
+        pipeline=pipeline,  # type: ignore[arg-type]
+        provider=TrackingProvider(),  # type: ignore[arg-type]
+        sink=object(),  # type: ignore[arg-type]
+    )
+
+    next(stream)
+    stream.close()
+
+    assert closed == 1
 
 
 def test_qwencloud_default_selections_and_duration_subset() -> None:

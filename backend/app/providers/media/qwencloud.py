@@ -48,11 +48,25 @@ class QwenCloudProvider(BaseProvider):
         api_key: str,
         base_url: str,
         http_client: httpx.Client | None = None,
+        poll_interval: float | None = None,
     ) -> None:
         super().__init__()
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
+        self._owns_http_client = http_client is None
         self._client = http_client or httpx.Client(timeout=30.0)
+        self._closed = False
+        if poll_interval is not None:
+            self.poll_interval = poll_interval
+
+    def close(self) -> None:
+        """Release an internally owned HTTP client exactly once."""
+        if self._closed:
+            return
+        self._closed = True
+        # Injected clients are caller-owned and may be shared across providers.
+        if self._owns_http_client:
+            self._client.close()
 
     @classmethod
     def create_registry(cls) -> ModelRegistry:
@@ -100,6 +114,7 @@ class QwenCloudProvider(BaseProvider):
         config: RunnableConfig | None = None,
     ) -> str:
         del config
+        self._ensure_open()
         try:
             if step.modality is Modality.IMAGE and step.model == IMAGE_MODEL:
                 response = self._submit_image(step)
@@ -136,6 +151,7 @@ class QwenCloudProvider(BaseProvider):
         config: RunnableConfig | None = None,
     ) -> bool:
         del config
+        self._ensure_open()
         payload = self._task(str(prediction_id))
         status = _task_status(payload)
         if status in _ACTIVE_STATUSES:
@@ -149,6 +165,7 @@ class QwenCloudProvider(BaseProvider):
         )
 
     def fetch_output(self, prediction_id: Any, step: Step) -> Step:
+        self._ensure_open()
         payload = self._get_cached_poll_result(prediction_id)
         if payload is None:
             payload = self._task(str(prediction_id))
@@ -175,6 +192,13 @@ class QwenCloudProvider(BaseProvider):
             )
         self._apply_registry_pricing(step)
         return step
+
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise ProviderError(
+                "QwenCloud provider is closed.",
+                error_code=ProviderErrorCode.INVALID_INPUT,
+            )
 
     def _submit_image(self, step: Step) -> dict[str, Any]:
         params = self.prepare_payload(step)
@@ -287,7 +311,9 @@ def create_qwencloud_image_adapter(
     selection: ProviderSelection,
 ) -> MediaProviderAdapter:
     _require_selection(selection, ProviderCapability.IMAGE)
-    return MediaProviderAdapter(provider=_provider(config, selection))
+    return MediaProviderAdapter(
+        provider=_provider(config, selection, poll_interval=5.0)
+    )
 
 
 def create_qwencloud_video_adapter(
@@ -296,19 +322,25 @@ def create_qwencloud_video_adapter(
 ) -> MediaProviderAdapter:
     _require_selection(selection, ProviderCapability.VIDEO)
     return MediaProviderAdapter(
-        provider=_provider(config, selection),
+        provider=_provider(config, selection, poll_interval=15.0),
         inherit_parent_result=True,
         video_input_factory=_qwencloud_video_inputs,
     )
 
 
-def _provider(config: AppConfig, selection: ProviderSelection) -> QwenCloudProvider:
+def _provider(
+    config: AppConfig,
+    selection: ProviderSelection,
+    *,
+    poll_interval: float,
+) -> QwenCloudProvider:
     api_key = provider_entry(
         selection.capability, selection.provider
     ).credential(config)
     return QwenCloudProvider(
         api_key=api_key,
         base_url=config.dashscope_media_base_url,
+        poll_interval=poll_interval,
     )
 
 

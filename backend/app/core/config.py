@@ -43,7 +43,7 @@ class AppConfig(BaseSettings):
     talemotion_music_provider: str = "gmicloud"
     talemotion_music_model: str | None = None
     talemotion_image_model: str | None = None
-    talemotion_video_model: str = "wan2.6-i2v"
+    talemotion_video_model: str | None = None
     talemotion_video_durations: str = "5"
     genblaze_cache_dir: Path = Path(".cache/genblaze")
     media_preview_ttl_seconds: int = 900

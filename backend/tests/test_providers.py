@@ -111,6 +111,44 @@ def test_replicate_image_catalog_resolves_with_its_default_model() -> None:
     validate_selection(current, selection, aspect_ratio="9:16")
 
 
+def test_replicate_video_catalog_resolves_with_its_default_model() -> None:
+    current = config(
+        talemotion_video_provider="replicate",
+        talemotion_video_model=None,
+    )
+    selection = default_selection(current, ProviderCapability.VIDEO)
+    entry = provider_entry(ProviderCapability.VIDEO, "replicate")
+
+    assert selection == ProviderSelection(
+        capability="video",
+        provider="replicate",
+        model="minimax/video-01",
+    )
+    assert entry.capabilities.supports_image_to_video
+    assert entry.capabilities.supported_durations is None
+    validate_selection(current, selection, aspect_ratio="9:16")
+
+
+def test_replicate_video_requires_token() -> None:
+    selection = ProviderSelection(
+        capability="video",
+        provider="replicate",
+        model="minimax/video-01",
+    )
+
+    try:
+        validate_selection(
+            config(replicate_api_token=None),
+            selection,
+        )
+    except ProviderError as error:
+        assert error.code == "missing_configuration"
+        assert "REPLICATE_API_TOKEN" in error.message
+        assert not error.retryable
+    else:  # pragma: no cover
+        raise AssertionError("Replicate video must require its token.")
+
+
 def test_replicate_credentials_reject_missing_and_blank_tokens() -> None:
     selection = default_selection(
         config(
@@ -153,6 +191,38 @@ def test_replicate_adapter_constructs_through_registry(monkeypatch) -> None:
     assert tokens == ["replicate-secret"]
 
 
+def test_replicate_video_adapter_constructs_and_hands_off_image(
+    monkeypatch,
+) -> None:
+    sentinel = object()
+    tokens: list[str] = []
+
+    def construct(*, api_token: str):
+        tokens.append(api_token)
+        return sentinel
+
+    monkeypatch.setattr(replicate_adapter, "ReplicateProvider", construct)
+    current = config(
+        talemotion_video_provider="replicate",
+        talemotion_video_model=None,
+    )
+    selection = default_selection(current, ProviderCapability.VIDEO)
+    adapter = media_registry.create_media_adapter(current, selection)
+    inputs = adapter.video_inputs(
+        image_result=SimpleNamespace(),  # type: ignore[arg-type]
+        signed_image_url="https://media.example.test/keyframe.png",
+    )
+
+    assert adapter.provider is sentinel
+    assert adapter.inherit_parent_result
+    assert tokens == ["replicate-secret"]
+    assets = inputs["external_inputs"]
+    assert isinstance(assets, list)
+    assert len(assets) == 1
+    assert assets[0].url == "https://media.example.test/keyframe.png"
+    assert assets[0].media_type == "image/png"
+
+
 def test_missing_replicate_token_fails_before_provider_construction(
     monkeypatch,
 ) -> None:
@@ -180,9 +250,8 @@ def test_missing_replicate_token_fails_before_provider_construction(
     assert constructed == 0
 
 
-def test_replicate_adapter_rejects_non_image_capabilities() -> None:
+def test_replicate_adapter_rejects_unsupported_capabilities() -> None:
     for capability in (
-        ProviderCapability.VIDEO,
         ProviderCapability.TTS,
         ProviderCapability.MUSIC,
         ProviderCapability.STORYBOARD,
@@ -199,15 +268,17 @@ def test_replicate_adapter_rejects_non_image_capabilities() -> None:
             assert not error.retryable
         else:  # pragma: no cover
             raise AssertionError("Registry must reject Replicate capability.")
-        try:
-            replicate_adapter.create_replicate_image_adapter(
-                config(), selection
-            )
-        except ProviderError as error:
-            assert error.code == "unsupported_parameters"
-            assert not error.retryable
-        else:  # pragma: no cover
-            raise AssertionError("Replicate must remain image-only.")
+        for constructor in (
+            replicate_adapter.create_replicate_image_adapter,
+            replicate_adapter.create_replicate_video_adapter,
+        ):
+            try:
+                constructor(config(), selection)
+            except ProviderError as error:
+                assert error.code == "unsupported_parameters"
+                assert not error.retryable
+            else:  # pragma: no cover
+                raise AssertionError("Replicate accepted an unsupported capability.")
 
 
 def test_replicate_adapter_rejects_wrong_provider_before_side_effects(

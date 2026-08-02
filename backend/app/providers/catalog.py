@@ -142,6 +142,18 @@ _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
             supports_image_to_video=True,
         ),
     ),
+    (ProviderCapability.VIDEO, "replicate"): ProviderEntry(
+        ProviderCapability.VIDEO,
+        "replicate",
+        "minimax/video-01",
+        "talemotion_video_model",
+        (_credential(("REPLICATE_API_TOKEN", "replicate_api_token")),),
+        "genblaze",
+        ModelCapabilities(
+            supported_aspect_ratios=frozenset({"9:16", "16:9"}),
+            supports_image_to_video=True,
+        ),
+    ),
     (ProviderCapability.TTS, "gmicloud"): ProviderEntry(
         ProviderCapability.TTS,
         "gmicloud",
@@ -199,7 +211,10 @@ def model_capabilities(
     config: "AppConfig", selection: ProviderSelection
 ) -> ModelCapabilities:
     entry = provider_entry(selection.capability, selection.provider)
-    if selection.capability is ProviderCapability.VIDEO:
+    if (
+        selection.capability is ProviderCapability.VIDEO
+        and entry.capabilities.supported_durations is not None
+    ):
         return entry.capabilities.model_copy(
             update={"supported_durations": config.supported_video_durations}
         )

@@ -1,10 +1,10 @@
 # TaleMotion Backend
 
-This backend now includes one real, provider-backed vertical slice: an
-persisted TaleMotion scene can generate a GMICloud keyframe and animate it.
+This backend now includes one real, provider-backed vertical slice: a
+persisted TaleMotion scene can generate a keyframe and animate it.
 FastAPI creates a PostgreSQL `GenerationJob`, Celery performs the Genblaze
-work, and media plus provenance manifests are stored in Backblaze B2. Asset
-metadata and the scene's active asset remain in PostgreSQL.
+work, and the configured storage backend retains media plus provenance
+manifests. Asset metadata and the scene's active asset remain in PostgreSQL.
 
 ## Configure native services
 
@@ -36,6 +36,17 @@ CREATE DATABASE talemotion_test OWNER talemotion;
 
 Do not run these statements over existing resources.
 
+Media storage is selected explicitly with `TALEMOTION_STORAGE_PROVIDER`.
+`local` stores neutral `talemotion/...` keys below `.data/media` and serves
+development previews from `/media`; it does not require B2 credentials. Use
+`b2` for Backblaze B2 without changing persisted object-key formats. Storage
+selection is independent from `APP_ENV`.
+
+Local storage is intended for single-host development. FastAPI and Celery must
+share the same filesystem, and containerized development must mount the same
+media volume into both processes. Multi-host production should use B2, with
+secrets supplied by the deployment platform.
+
 TaleMotion resolves one immutable provider selection per capability when a
 job is queued. For Qwen storyboard planning, configure `DASHSCOPE_API_KEY` (or
 `ALIBABA_API_KEY`), `TALEMOTION_STORYBOARD_PROVIDER=alibaba`, and
@@ -43,8 +54,9 @@ job is queued. For Qwen storyboard planning, configure `DASHSCOPE_API_KEY` (or
 to the compatible-mode endpoint associated with the API key's region,
 workspace, or billing plan. Leave it blank to use PydanticAI's Alibaba
 provider default. Scene media requires the credential
-for each selected AI provider (`GMI_API_KEY` and/or `REPLICATE_API_TOKEN`) plus
-`B2_REGION`, `B2_BUCKET_NAME`, `B2_KEY_ID`, and `B2_APPLICATION_KEY`. Media model slugs and
+for each selected AI provider (`GMI_API_KEY` and/or `REPLICATE_API_TOKEN`). B2
+storage additionally requires `B2_REGION`, `B2_BUCKET_NAME`, `B2_KEY_ID`, and
+`B2_APPLICATION_KEY`. Media model slugs and
 supported clip durations are configurable through `TALEMOTION_IMAGE_PROVIDER`,
 `TALEMOTION_IMAGE_MODEL`, `TALEMOTION_VIDEO_PROVIDER`,
 `TALEMOTION_VIDEO_MODEL`, and `TALEMOTION_VIDEO_DURATIONS`. The health endpoint
@@ -82,6 +94,7 @@ implemented.
 ## Run and migrate
 
 ```bash
+cp .env.example .env
 uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload

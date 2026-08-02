@@ -36,7 +36,7 @@ from app.schemas.scene_run import (
     SceneVideoProgressEvent,
     SceneVideoStartedEvent,
 )
-from app.storage import B2MediaStorageGateway
+from app.storage import MediaStorageGateway, create_media_storage
 
 _SAFE_SEGMENT = re.compile(r"[^a-zA-Z0-9_-]+")
 
@@ -54,13 +54,13 @@ class GenblazeSceneGenerator:
         self,
         config: AppConfig,
         selections: dict[ProviderCapability, ProviderSelection] | None = None,
-        storage: B2MediaStorageGateway | None = None,
+        storage: MediaStorageGateway | None = None,
         adapter_constructor: Callable[
             [AppConfig, ProviderSelection], MediaProviderAdapter
         ] = create_media_adapter,
     ) -> None:
         self.config = config
-        self.storage = storage or B2MediaStorageGateway(config)
+        self.storage = storage or create_media_storage(config)
         self.adapter_constructor = adapter_constructor
         resolved = selections or {
             capability: config.default_provider_selection(capability)
@@ -479,14 +479,14 @@ class GenblazeRenderMediaGateway:
         self,
         config: AppConfig,
         selections: dict[ProviderCapability, ProviderSelection] | None = None,
-        storage: B2MediaStorageGateway | None = None,
+        storage: MediaStorageGateway | None = None,
         adapter_constructor: Callable[
             [AppConfig, ProviderSelection], MediaProviderAdapter
         ] = create_media_adapter,
     ) -> None:
         self.config = config
         self.selections = selections or {}
-        self.storage = storage or B2MediaStorageGateway(config)
+        self.storage = storage or create_media_storage(config)
         self.adapter_constructor = adapter_constructor
 
     def download(self, key: str) -> bytes:

@@ -10,7 +10,7 @@ from app.schemas.asset import AssetResponse, asset_to_response
 from app.schemas.common import ErrorResponse
 from app.schemas.scene_generation import SignedPreviewUrlResponse
 from app.services.assets import AssetService
-from app.storage import B2MediaStorageGateway
+from app.storage import create_media_storage
 
 router = APIRouter(prefix="/assets", tags=["Assets"])
 ERROR_RESPONSES = {
@@ -51,7 +51,7 @@ def create_preview_url(
 ) -> SignedPreviewUrlResponse:
     asset = _assets(session, auth.user.id).previewable(asset_id)
     try:
-        url = B2MediaStorageGateway(settings).presign_preview(
+        url = create_media_storage(settings).presign_preview(
             asset.storage_object_key or ""
         )
     except Exception as error:

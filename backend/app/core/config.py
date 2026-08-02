@@ -1,6 +1,6 @@
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,6 +29,9 @@ class AppConfig(BaseSettings):
     dashscope_base_url: str | None = None
     alibaba_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
+    talemotion_storage_provider: Literal["local", "b2"] = "local"
+    talemotion_local_storage_path: Path = Path(".data/media")
+    talemotion_local_storage_base_url: str = "http://localhost:8000/media"
     talemotion_storyboard_provider: str = "alibaba"
     talemotion_storyboard_model: str | None = "qwen-plus"
     talemotion_storyboard_max_attempts: int = 3
@@ -72,6 +75,18 @@ class AppConfig(BaseSettings):
         if isinstance(value, str):
             return value.strip() or None
         return value
+
+    @field_validator("talemotion_storage_provider", mode="before")
+    @classmethod
+    def normalize_storage_provider(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip().lower()
+        return value
+
+    @field_validator("talemotion_local_storage_base_url")
+    @classmethod
+    def normalize_local_storage_base_url(cls, value: str) -> str:
+        return value.strip().rstrip("/")
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -122,13 +137,32 @@ class AppConfig(BaseSettings):
         return missing_provider_configuration(self, selection)
 
     def missing_storage_configuration(self) -> list[str]:
+        if self.talemotion_storage_provider == "local":
+            return []
+        return self.missing_b2_storage_configuration()
+
+    def missing_b2_storage_configuration(self) -> list[str]:
         configured = {
             "B2_REGION": self.b2_region,
             "B2_BUCKET_NAME": self.b2_bucket_name,
             "B2_KEY_ID": self.b2_key_id,
             "B2_APPLICATION_KEY": self.b2_application_key,
         }
-        return [name for name, value in configured.items() if not value]
+        return [
+            name
+            for name, value in configured.items()
+            if not self._configured_text(value)
+        ]
+
+    @staticmethod
+    def _configured_text(value: str | SecretStr | None) -> str | None:
+        if isinstance(value, SecretStr):
+            resolved = value.get_secret_value().strip()
+        elif isinstance(value, str):
+            resolved = value.strip()
+        else:
+            return None
+        return resolved or None
 
     def missing_tts_configuration(self) -> list[str]:
         missing = self.missing_storage_configuration()

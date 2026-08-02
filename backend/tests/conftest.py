@@ -59,6 +59,9 @@ os.environ["TALEMOTION_IMAGE_PROVIDER"] = "gmicloud"
 os.environ["TALEMOTION_VIDEO_PROVIDER"] = "gmicloud"
 os.environ["TALEMOTION_IMAGE_MODEL"] = "seedream-5.0-lite"
 os.environ["TALEMOTION_VIDEO_MODEL"] = "wan2.6-i2v"
+os.environ["TALEMOTION_STORAGE_PROVIDER"] = "local"
+os.environ["TALEMOTION_LOCAL_STORAGE_PATH"] = "/tmp/talemotion-test-media"
+os.environ["TALEMOTION_LOCAL_STORAGE_BASE_URL"] = "http://testserver/media"
 
 from app.core.database import get_db  # noqa: E402
 from app.main import app  # noqa: E402

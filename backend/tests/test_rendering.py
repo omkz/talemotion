@@ -435,9 +435,9 @@ def test_render_preview_returns_signed_url(
         SecretStr("test-application-key"),
     )
     monkeypatch.setattr(
-        render_routes.B2MediaStorageGateway,
-        "presign_preview",
-        lambda _storage, key: gateway.presign_preview(key),
+        render_routes,
+        "create_media_storage",
+        lambda _settings: gateway,
     )
 
     response = client.post(

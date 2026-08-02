@@ -380,10 +380,14 @@ def test_worker_persists_assets_and_completes_job(
         "b2_application_key",
         SecretStr("test-application-key"),
     )
+    class PreviewStorage:
+        def presign_preview(self, key: str) -> str:
+            return f"https://signed.example.invalid/{key}"
+
     monkeypatch.setattr(
-        asset_routes.B2MediaStorageGateway,
-        "presign_preview",
-        lambda _storage, key: f"https://signed.example.invalid/{key}",
+        asset_routes,
+        "create_media_storage",
+        lambda _settings: PreviewStorage(),
     )
     preview = client.post(
         f"/api/v1/assets/{job['result_payload']['image_asset_id']}/preview-url"

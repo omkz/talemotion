@@ -21,7 +21,7 @@ from app.schemas.render import (
 )
 from app.schemas.scene_generation import SignedPreviewUrlResponse
 from app.services.renders import RenderService
-from app.storage import B2MediaStorageGateway
+from app.storage import create_media_storage
 from app.tasks.rendering import render_project_video
 
 router = APIRouter(tags=["Renders"])
@@ -132,7 +132,7 @@ def create_render_preview(
 ) -> SignedPreviewUrlResponse:
     render = _renders(session, auth.user.id).previewable(render_id)
     try:
-        url = B2MediaStorageGateway(settings).presign_preview(
+        url = create_media_storage(settings).presign_preview(
             render.asset.storage_object_key if render.asset else ""
         )
     except Exception as error:

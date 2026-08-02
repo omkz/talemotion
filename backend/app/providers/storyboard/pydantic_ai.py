@@ -79,10 +79,24 @@ def _configured_model(
     ).credential(config)
 
     def provider_factory(name: str) -> Provider[Any]:
-        provider_class = infer_provider_class(name)
-        return provider_class(api_key=api_key)  # type: ignore[call-arg]
+        return _configured_provider(config, selection, api_key, name)
 
     return infer_model(identifier, provider_factory=provider_factory)
+
+
+def _configured_provider(
+    config: AppConfig,
+    selection: ProviderSelection,
+    api_key: str,
+    provider_name: str,
+) -> Provider[Any]:
+    provider_class = infer_provider_class(provider_name)
+    if selection.provider == "alibaba" and config.dashscope_base_url:
+        return provider_class(  # type: ignore[call-arg]
+            api_key=api_key,
+            base_url=config.dashscope_base_url,
+        )
+    return provider_class(api_key=api_key)  # type: ignore[call-arg]
 
 
 def _caused_by_timeout(error: BaseException) -> bool:

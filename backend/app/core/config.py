@@ -2,7 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 if TYPE_CHECKING:
@@ -26,6 +26,7 @@ class AppConfig(BaseSettings):
     gmi_api_key: SecretStr | None = None
     replicate_api_token: SecretStr | None = None
     dashscope_api_key: SecretStr | None = None
+    dashscope_base_url: str | None = None
     alibaba_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
     talemotion_storyboard_provider: str = "alibaba"
@@ -64,6 +65,13 @@ class AppConfig(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @field_validator("dashscope_base_url", mode="before")
+    @classmethod
+    def normalize_optional_url(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
 
     @property
     def cors_origin_list(self) -> list[str]:

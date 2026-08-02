@@ -1,9 +1,12 @@
 from pydantic import SecretStr
-from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models.test import TestModel
 
 from app.core.config import AppConfig
 from app.media import SceneMediaError
+from app.providers import ProviderCapability
+from app.providers.catalog import provider_entry
+from app.providers.storyboard import pydantic_ai as storyboard_provider
 from app.providers.storyboard.pydantic_ai import (
     PydanticAIStoryboardGenerator,
     build_storyboard_prompt,
@@ -56,6 +59,145 @@ def test_storyboard_model_resolution_supports_alibaba_and_openai() -> None:
         )
         == "openai:gpt-5-mini"
     )
+
+
+def test_alibaba_provider_receives_trimmed_dashscope_base_url(
+    monkeypatch,
+) -> None:
+    constructed: list[dict[str, object]] = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs: object) -> None:
+            constructed.append(kwargs)
+
+    monkeypatch.setattr(
+        storyboard_provider,
+        "infer_provider_class",
+        lambda _name: FakeProvider,
+    )
+    config = _config(
+        dashscope_base_url=(
+            "  https://example.alibaba.test/compatible-mode/v1  "
+        )
+    )
+    selection = config.default_provider_selection(
+        ProviderCapability.STORYBOARD
+    )
+
+    storyboard_provider._configured_provider(  # noqa: SLF001
+        config,
+        selection,
+        "dashscope-key",
+        "alibaba",
+    )
+
+    assert config.dashscope_base_url == (
+        "https://example.alibaba.test/compatible-mode/v1"
+    )
+    assert constructed == [
+        {
+            "api_key": "dashscope-key",
+            "base_url": "https://example.alibaba.test/compatible-mode/v1",
+        }
+    ]
+
+
+def test_configured_model_passes_catalog_api_key_to_alibaba(monkeypatch) -> None:
+    constructed: list[dict[str, object]] = []
+    identifiers: list[str] = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs: object) -> None:
+            constructed.append(kwargs)
+
+    def infer_model(identifier: str, *, provider_factory):
+        identifiers.append(identifier)
+        return provider_factory("alibaba")
+
+    monkeypatch.setattr(
+        storyboard_provider,
+        "infer_provider_class",
+        lambda _name: FakeProvider,
+    )
+    monkeypatch.setattr(storyboard_provider, "infer_model", infer_model)
+    config = _config(dashscope_api_key=SecretStr("configured-dashscope-key"))
+    selection = config.default_provider_selection(
+        ProviderCapability.STORYBOARD
+    )
+
+    storyboard_provider._configured_model(config, selection)  # noqa: SLF001
+
+    assert identifiers == ["alibaba:qwen-plus"]
+    assert constructed == [{"api_key": "configured-dashscope-key"}]
+
+
+def test_alibaba_provider_omits_base_url_when_unset(monkeypatch) -> None:
+    constructed: list[dict[str, object]] = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs: object) -> None:
+            constructed.append(kwargs)
+
+    monkeypatch.setattr(
+        storyboard_provider,
+        "infer_provider_class",
+        lambda _name: FakeProvider,
+    )
+    for value in (None, "", "   "):
+        config = _config(dashscope_base_url=value)
+        selection = config.default_provider_selection(
+            ProviderCapability.STORYBOARD
+        )
+        storyboard_provider._configured_provider(  # noqa: SLF001
+            config,
+            selection,
+            "dashscope-key",
+            "alibaba",
+        )
+        assert config.dashscope_base_url is None
+
+    assert constructed == [{"api_key": "dashscope-key"}] * 3
+
+
+def test_openai_provider_never_receives_dashscope_base_url(monkeypatch) -> None:
+    constructed: list[dict[str, object]] = []
+
+    class FakeProvider:
+        def __init__(self, **kwargs: object) -> None:
+            constructed.append(kwargs)
+
+    monkeypatch.setattr(
+        storyboard_provider,
+        "infer_provider_class",
+        lambda _name: FakeProvider,
+    )
+    config = _config(
+        talemotion_storyboard_provider="openai",
+        talemotion_storyboard_model="gpt-5-mini",
+        openai_api_key=SecretStr("openai-key"),
+        dashscope_base_url="https://dashscope.example.invalid/v1",
+    )
+    selection = config.default_provider_selection(
+        ProviderCapability.STORYBOARD
+    )
+
+    storyboard_provider._configured_provider(  # noqa: SLF001
+        config,
+        selection,
+        "openai-key",
+        "openai",
+    )
+
+    assert constructed == [{"api_key": "openai-key"}]
+
+
+def test_dashscope_credential_precedence_remains_unchanged() -> None:
+    entry = provider_entry(ProviderCapability.STORYBOARD, "alibaba")
+    config = _config(
+        dashscope_api_key=SecretStr("dashscope-first"),
+        alibaba_api_key=SecretStr("alibaba-second"),
+    )
+    assert entry.credential(config) == "dashscope-first"
 
 
 def test_generator_uses_pydantic_ai_typed_output() -> None:
@@ -146,6 +288,11 @@ def test_provider_errors_map_to_stable_talemotion_codes() -> None:
         ModelHTTPError(429, "qwen-plus", {"provider": "busy"})
     )
     timeout = map_storyboard_error(TimeoutError("provider detail"))
+    invalid = map_storyboard_error(UnexpectedModelBehavior("invalid output"))
+    server = map_storyboard_error(
+        ModelHTTPError(500, "qwen-plus", {"provider": "unavailable"})
+    )
+    generic = map_storyboard_error(RuntimeError("private provider response"))
 
     assert (authentication.code, authentication.retryable) == (
         "provider_authentication_failed",
@@ -157,3 +304,16 @@ def test_provider_errors_map_to_stable_talemotion_codes() -> None:
         True,
     )
     assert (timeout.code, timeout.retryable) == ("provider_timeout", True)
+    assert (invalid.code, invalid.retryable) == (
+        "invalid_storyboard_output",
+        True,
+    )
+    assert (server.code, server.retryable) == (
+        "provider_generation_failed",
+        True,
+    )
+    assert (generic.code, generic.retryable) == (
+        "provider_generation_failed",
+        True,
+    )
+    assert "private provider response" not in generic.message

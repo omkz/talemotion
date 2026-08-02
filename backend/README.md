@@ -39,7 +39,10 @@ Do not run these statements over existing resources.
 TaleMotion resolves one immutable provider selection per capability when a
 job is queued. For Qwen storyboard planning, configure `DASHSCOPE_API_KEY` (or
 `ALIBABA_API_KEY`), `TALEMOTION_STORYBOARD_PROVIDER=alibaba`, and
-`TALEMOTION_STORYBOARD_MODEL=qwen-plus`. Scene media requires the credential
+`TALEMOTION_STORYBOARD_MODEL=qwen-plus`. Optionally set `DASHSCOPE_BASE_URL`
+to the compatible-mode endpoint associated with the API key's region,
+workspace, or billing plan. Leave it blank to use PydanticAI's Alibaba
+provider default. Scene media requires the credential
 for each selected AI provider (`GMI_API_KEY` and/or `REPLICATE_API_TOKEN`) plus
 `B2_REGION`, `B2_BUCKET_NAME`, `B2_KEY_ID`, and `B2_APPLICATION_KEY`. Media model slugs and
 supported clip durations are configurable through `TALEMOTION_IMAGE_PROVIDER`,
@@ -53,6 +56,18 @@ Final rendering additionally uses `TALEMOTION_TTS_PROVIDER`,
 `TALEMOTION_MUSIC_MODEL` when their corresponding project options are enabled.
 `FFMPEG_BINARY` defaults to `ffmpeg`; the executable must be installed on the
 worker host.
+
+Example Alibaba storyboard configuration using the international endpoint:
+
+```env
+TALEMOTION_STORYBOARD_PROVIDER=alibaba
+TALEMOTION_STORYBOARD_MODEL=qwen-plus
+DASHSCOPE_API_KEY=...
+DASHSCOPE_BASE_URL=https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+```
+
+The endpoint must match the configured key's Alibaba account context; no
+single DashScope endpoint is assumed to work for every account.
 
 Production mode always marks the session cookie Secure. The browser receives
 an HTTP-only SameSite session cookie plus a readable, independently random

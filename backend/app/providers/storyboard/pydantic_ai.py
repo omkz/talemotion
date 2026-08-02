@@ -166,6 +166,19 @@ def map_storyboard_error(error: Exception) -> SceneMediaError:
     )
 
 
+def _storyboard_model_settings(
+    selection: ProviderSelection,
+) -> ModelSettings:
+    settings = ModelSettings(
+        temperature=0.4,
+        max_tokens=3000,
+        timeout=120,
+    )
+    if selection.provider == "alibaba":
+        settings["extra_body"] = {"enable_thinking": False}
+    return settings
+
+
 class PydanticAIStoryboardGenerator:
     def __init__(
         self,
@@ -205,11 +218,7 @@ class PydanticAIStoryboardGenerator:
                 self.model or _configured_model(self.config, self.selection),
                 output_type=HistoricalStoryboardDraft,
                 system_prompt=SYSTEM_PROMPT,
-                model_settings=ModelSettings(
-                    temperature=0.4,
-                    max_tokens=3000,
-                    timeout=120,
-                ),
+                model_settings=_storyboard_model_settings(self.selection),
                 retries=0,
             )
             result = agent.run_sync(

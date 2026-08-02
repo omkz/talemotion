@@ -61,6 +61,38 @@ def test_storyboard_model_resolution_supports_alibaba_and_openai() -> None:
     )
 
 
+def test_alibaba_storyboard_disables_thinking_for_structured_output() -> None:
+    selection = _config(
+        talemotion_storyboard_model="qwen3.7-plus"
+    ).default_provider_selection(ProviderCapability.STORYBOARD)
+
+    settings = storyboard_provider._storyboard_model_settings(  # noqa: SLF001
+        selection
+    )
+
+    assert settings["temperature"] == 0.4
+    assert settings["max_tokens"] == 3000
+    assert settings["timeout"] == 120
+    assert settings["extra_body"] == {"enable_thinking": False}
+
+
+def test_openai_storyboard_does_not_receive_alibaba_thinking_settings() -> None:
+    selection = _config(
+        talemotion_storyboard_provider="openai",
+        talemotion_storyboard_model="gpt-5-mini",
+        openai_api_key=SecretStr("test-openai-key"),
+    ).default_provider_selection(ProviderCapability.STORYBOARD)
+
+    settings = storyboard_provider._storyboard_model_settings(  # noqa: SLF001
+        selection
+    )
+
+    assert settings["temperature"] == 0.4
+    assert settings["max_tokens"] == 3000
+    assert settings["timeout"] == 120
+    assert "extra_body" not in settings
+
+
 def test_alibaba_provider_receives_trimmed_dashscope_base_url(
     monkeypatch,
 ) -> None:

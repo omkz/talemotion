@@ -129,6 +129,18 @@ _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
             supports_text_to_image=True,
         ),
     ),
+    (ProviderCapability.IMAGE, "qwencloud"): ProviderEntry(
+        ProviderCapability.IMAGE,
+        "qwencloud",
+        "wan2.6-t2i",
+        "talemotion_image_model",
+        (_credential(("DASHSCOPE_API_KEY", "dashscope_api_key")),),
+        "genblaze",
+        ModelCapabilities(
+            supported_aspect_ratios=frozenset({"9:16", "16:9"}),
+            supports_text_to_image=True,
+        ),
+    ),
     (ProviderCapability.VIDEO, "gmicloud"): ProviderEntry(
         ProviderCapability.VIDEO,
         "gmicloud",
@@ -151,6 +163,19 @@ _CATALOG: dict[tuple[ProviderCapability, str], ProviderEntry] = {
         "genblaze",
         ModelCapabilities(
             supported_aspect_ratios=frozenset({"9:16", "16:9"}),
+            supports_image_to_video=True,
+        ),
+    ),
+    (ProviderCapability.VIDEO, "qwencloud"): ProviderEntry(
+        ProviderCapability.VIDEO,
+        "qwencloud",
+        "wan2.6-i2v-flash",
+        "talemotion_video_model",
+        (_credential(("DASHSCOPE_API_KEY", "dashscope_api_key")),),
+        "genblaze",
+        ModelCapabilities(
+            supported_aspect_ratios=frozenset({"9:16", "16:9"}),
+            supported_durations=frozenset(range(2, 16)),
             supports_image_to_video=True,
         ),
     ),

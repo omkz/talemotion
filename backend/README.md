@@ -153,10 +153,10 @@ OPENAI_API_KEY=...
 This does not change Genblaze GMICloud image, video, narration, or music
 generation.
 
-### Optional paid Replicate image smoke test
+### Optional paid Replicate media smoke test
 
-Replicate can replace only the image stage while GMICloud continues the video
-stage. This configuration makes paid external calls when scene generation is
+Replicate can replace the image stage while GMICloud continues the video stage.
+This configuration makes paid external calls when scene generation is
 triggered; it is never used by the automated test suite.
 
 ```env
@@ -167,15 +167,41 @@ TALEMOTION_VIDEO_PROVIDER=gmicloud
 TALEMOTION_VIDEO_MODEL=wan2.6-i2v
 ```
 
+### Optional paid QwenCloud scene smoke test
+
+QwenCloud image and image-to-video generation use Alibaba's native async media
+API through a Genblaze `BaseProvider`. Use one scene for the initial smoke test:
+
+```env
+DASHSCOPE_API_KEY=sk-...
+DASHSCOPE_MEDIA_BASE_URL=https://dashscope-intl.aliyuncs.com/api/v1
+
+TALEMOTION_STORAGE_PROVIDER=b2
+
+TALEMOTION_IMAGE_PROVIDER=qwencloud
+TALEMOTION_IMAGE_MODEL=wan2.6-t2i
+
+TALEMOTION_VIDEO_PROVIDER=qwencloud
+TALEMOTION_VIDEO_MODEL=wan2.6-i2v-flash
+TALEMOTION_VIDEO_DURATIONS=5
+```
+
+These are paid external calls. Restart both FastAPI and Celery after changing
+`.env`, then create a new generation job because queued jobs retain immutable
+provider selections. The video request explicitly disables generated audio.
+QwenCloud result URLs are temporary; the existing Genblaze sink immediately
+persists the media and manifests to Backblaze B2.
+
 ## Unified provider layer
 
 `app/providers/` is the capability boundary for `storyboard`, `image`,
 `video`, `tts`, and `music`. The catalog is the source of supported
 capability/provider combinations, credential requirements, defaults, and model
 constraints. PydanticAI implements storyboard; Genblaze implements the four
-media capabilities. GMICloud remains the default for all media, while
-Replicate is registered only for image generation. Celery tasks use the
-provider factory rather than Alibaba, OpenAI, GMICloud, or Replicate classes.
+media capabilities. GMICloud remains the default for all media; Replicate and
+QwenCloud are registered for image and video generation. Celery tasks use the
+provider factory rather than concrete Alibaba, OpenAI, GMICloud, Replicate, or
+QwenCloud classes.
 
 Catalog entries also own credential requirements, including alternative-key
 groups such as `DASHSCOPE_API_KEY or ALIBABA_API_KEY`. The media registry maps

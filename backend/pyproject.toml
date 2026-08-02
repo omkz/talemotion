@@ -12,6 +12,7 @@ dependencies = [
     "genblaze-gmicloud>=0.3.5",
     "genblaze-replicate>=0.3.4",
     "genblaze-s3>=0.3.6",
+    "httpx>=0.28,<1.0",
     "psycopg[binary]>=3.2,<4",
     "pwdlib[argon2]>=0.3.0",
     "pydantic-ai-slim[openai]>=2.22.0",
@@ -23,7 +24,6 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28,<1.0",
     "pytest>=8.3,<9.0",
     "ruff>=0.9,<1.0",
 ]

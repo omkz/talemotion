@@ -27,6 +27,9 @@ class AppConfig(BaseSettings):
     replicate_api_token: SecretStr | None = None
     dashscope_api_key: SecretStr | None = None
     dashscope_base_url: str | None = None
+    dashscope_media_base_url: str = (
+        "https://dashscope-intl.aliyuncs.com/api/v1"
+    )
     alibaba_api_key: SecretStr | None = None
     openai_api_key: SecretStr | None = None
     talemotion_storage_provider: Literal["local", "b2"] = "local"
@@ -75,6 +78,14 @@ class AppConfig(BaseSettings):
         if isinstance(value, str):
             return value.strip() or None
         return value
+
+    @field_validator("dashscope_media_base_url")
+    @classmethod
+    def normalize_dashscope_media_base_url(cls, value: str) -> str:
+        normalized = value.strip().rstrip("/")
+        if not normalized:
+            raise ValueError("DashScope media base URL must not be empty.")
+        return normalized
 
     @field_validator("talemotion_storage_provider", mode="before")
     @classmethod

@@ -10,6 +10,10 @@ from app.providers.media.gmicloud import (
     create_gmicloud_image_adapter,
     create_gmicloud_video_adapter,
 )
+from app.providers.media.qwencloud import (
+    create_qwencloud_image_adapter,
+    create_qwencloud_video_adapter,
+)
 from app.providers.media.replicate import (
     create_replicate_image_adapter,
     create_replicate_video_adapter,
@@ -24,8 +28,10 @@ _MEDIA_ADAPTER_CONSTRUCTORS: dict[
 ] = {
     (ProviderCapability.IMAGE, "gmicloud"): create_gmicloud_image_adapter,
     (ProviderCapability.IMAGE, "replicate"): create_replicate_image_adapter,
+    (ProviderCapability.IMAGE, "qwencloud"): create_qwencloud_image_adapter,
     (ProviderCapability.VIDEO, "gmicloud"): create_gmicloud_video_adapter,
     (ProviderCapability.VIDEO, "replicate"): create_replicate_video_adapter,
+    (ProviderCapability.VIDEO, "qwencloud"): create_qwencloud_video_adapter,
     (ProviderCapability.TTS, "gmicloud"): create_gmicloud_audio_adapter,
     (ProviderCapability.MUSIC, "gmicloud"): create_gmicloud_audio_adapter,
 }

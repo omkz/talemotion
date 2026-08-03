@@ -1,3 +1,4 @@
+import pytest
 from pydantic import SecretStr
 from pydantic_ai.exceptions import ModelHTTPError, UnexpectedModelBehavior
 from pydantic_ai.models.test import TestModel
@@ -297,8 +298,131 @@ def test_storyboard_prompt_preserves_project_and_historical_constraints() -> Non
         "Source notes: Use the Nagarakretagama as user-provided context.",
         "Additional direction: Focus on political strategy",
         "Output language: en",
+        "Requested tone: cinematic",
     ):
         assert expected in prompt
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        ContentType.DOCUMENTARY,
+        ContentType.EDUCATIONAL,
+        ContentType.EXPLAINER,
+    ],
+)
+def test_story_approaches_preserve_the_complete_project_brief(
+    content_type: ContentType,
+) -> None:
+    prompt = build_storyboard_prompt(
+        brief=_brief(
+            content_type=content_type,
+            topic="The political and maritime rise of Majapahit",
+            source_notes="Use inscriptions as unverified source context.",
+            additional_direction="Emphasize diplomacy before conflict.",
+            language="id",
+            tone=ProjectTone.DRAMATIC,
+            target_audience="Students",
+            visual_style="Cinematic archival realism",
+            narration_style="Measured historical narration",
+            duration_seconds=45,
+        )
+    )
+
+    for expected in (
+        "The political and maritime rise of Majapahit",
+        "Use inscriptions as unverified source context.",
+        "Emphasize diplomacy before conflict.",
+        "Output language: id",
+        "Requested tone: dramatic",
+        "Target audience: Students",
+        "Visual style: Cinematic archival realism",
+        "Narration style: Measured historical narration",
+        "Target project duration: 45 seconds",
+        "Create exactly four scenes",
+        "historically plausible architecture",
+        "avoid false certainty",
+    ):
+        assert expected in prompt
+
+
+def test_documentary_prompt_uses_scene_driven_historical_progression() -> None:
+    prompt = build_storyboard_prompt(
+        brief=_brief(content_type=ContentType.DOCUMENTARY)
+    )
+
+    for expected in (
+        "Strong visual hook and historical situation",
+        "Main tension, conflict, or challenge",
+        "Turning point, reversal, or decisive development",
+        "Aftermath and lasting historical significance",
+        "event's consequence, legacy, or historical significance",
+    ):
+        assert expected in prompt
+    assert "what the viewer will understand" not in prompt
+    assert "State one clear opening question" not in prompt
+
+
+def test_educational_prompt_uses_ordered_learning_progression() -> None:
+    prompt = build_storyboard_prompt(
+        brief=_brief(content_type=ContentType.EDUCATIONAL)
+    )
+
+    for expected in (
+        "what the viewer will understand",
+        "essential context, actors, place, and chronology",
+        "clear, factual, and logically ordered",
+        "main learning takeaway",
+        "most important thing the viewer should remember",
+    ):
+        assert expected in prompt
+    assert "Main tension, conflict, or challenge" not in prompt
+    assert "State one clear opening question" not in prompt
+
+
+def test_explainer_prompt_uses_question_and_causal_progression() -> None:
+    prompt = build_storyboard_prompt(
+        brief=_brief(content_type=ContentType.EXPLAINER)
+    )
+
+    for expected in (
+        "State one clear opening question",
+        "cause, factor, or condition",
+        "factors interacted or produced the outcome",
+        "Answer the opening question explicitly",
+        "Explicitly answer the opening question in the final scene",
+    ):
+        assert expected in prompt
+    assert "Main tension, conflict, or challenge" not in prompt
+    assert "what the viewer will understand" not in prompt
+
+
+def test_story_approach_does_not_override_requested_tone() -> None:
+    prompt = build_storyboard_prompt(
+        brief=_brief(
+            content_type=ContentType.EDUCATIONAL,
+            tone=ProjectTone.DRAMATIC,
+        )
+    )
+
+    assert "Story approach: educational" in prompt
+    assert "Requested tone: dramatic" in prompt
+    assert "Respect the separately requested tone" in prompt
+    assert "without changing the selected story approach" in prompt
+
+
+def test_legacy_content_type_uses_generic_historical_fallback() -> None:
+    prompt = build_storyboard_prompt(
+        brief=_brief(content_type=ContentType.FICTION)
+    )
+
+    assert "Story approach: fiction" in prompt
+    assert "coherent four-scene historical narrative" in prompt
+    assert "Establish the historical situation and context" in prompt
+    assert "historical consequence, conclusion, or significance" in prompt
+    assert "Strong visual hook and historical situation" not in prompt
+    assert "what the viewer will understand" not in prompt
+    assert "State one clear opening question" not in prompt
 
 
 def test_duration_validation_rejects_incorrect_total() -> None:

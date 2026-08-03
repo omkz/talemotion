@@ -1,7 +1,7 @@
 export const TONE_OPTIONS = [
   { value: "cinematic", label: "Cinematic" },
-  { value: "informative", label: "Informative" },
   { value: "dramatic", label: "Dramatic" },
+  { value: "informative", label: "Informative" },
   { value: "inspirational", label: "Inspirational" },
   { value: "neutral", label: "Neutral" },
 ] as const;

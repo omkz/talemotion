@@ -269,6 +269,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     narrationEnabled: boolean;
     captionsEnabled: boolean;
     musicEnabled: boolean;
+    toneChanged: boolean;
     historicalAccuracyNote: string | null;
   }): Promise<boolean> => {
     if (realSceneGenerationEnabled) {
@@ -290,7 +291,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                 ...shared,
                 topic: next.brief.topic,
                 source_notes: next.brief.sourceNotes.trim() || null,
-                tone: next.brief.tone,
+                ...(next.toneChanged ? { tone: next.brief.tone } : {}),
                 target_audience: next.brief.targetAudience,
                 additional_direction: next.brief.additionalDirection,
                 historical_accuracy_note: next.historicalAccuracyNote,

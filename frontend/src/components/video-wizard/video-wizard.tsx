@@ -176,8 +176,11 @@ function ProjectReview({ values }: { values: WizardFormValues }) {
           <p className="text-muted-foreground">{values.title || "Working title will be created"}</p>
         </ReviewGroup>
         <ReviewGroup title="Creative Direction">
+          <p>
+            Narrative Tone: {optionLabel(TONE_OPTIONS, values.tone)}
+          </p>
           <p className="text-muted-foreground">
-            {optionLabel(LANGUAGE_OPTIONS, values.language)} · {optionLabel(TONE_OPTIONS, values.tone)}
+            Language: {optionLabel(LANGUAGE_OPTIONS, values.language)}
           </p>
           <p className="text-muted-foreground">{values.targetAudience}</p>
         </ReviewGroup>

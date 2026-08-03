@@ -70,6 +70,7 @@ describe("CustomVideoWizard", () => {
     await user.type(screen.getByLabelText(/Source notes/), "Include hand sorting.");
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("heading", { name: "Output", level: 2 })).toBeTruthy();
+    expect(screen.queryByText("Narrative Tone")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(
       (screen.getByLabelText("Describe your video") as HTMLTextAreaElement).value,

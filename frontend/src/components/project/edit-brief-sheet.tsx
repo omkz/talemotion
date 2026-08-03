@@ -35,6 +35,7 @@ export interface BriefSaveValues {
   narrationEnabled: boolean;
   captionsEnabled: boolean;
   musicEnabled: boolean;
+  toneChanged: boolean;
   historicalAccuracyNote: string | null;
 }
 
@@ -142,6 +143,10 @@ function EditBriefForm({
       narrationEnabled,
       captionsEnabled,
       musicEnabled,
+      toneChanged:
+        draft.mode === "historical-documentary" &&
+        brief.mode === "historical-documentary" &&
+        draft.tone !== brief.tone,
       historicalAccuracyNote:
         draft.mode === "historical-documentary"
           ? accuracyNote
@@ -185,11 +190,14 @@ function EditBriefForm({
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Tone</Label>
+                <Label htmlFor="brief-narrative-tone">Narrative Tone</Label>
                 <Select value={draft.tone} onValueChange={(tone) => setDraft({ ...draft, tone: tone as typeof draft.tone })}>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectTrigger id="brief-narrative-tone" className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>{TONE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  Controls the storytelling and narration style, not the visual brightness.
+                </p>
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="brief-audience">Target audience</Label>

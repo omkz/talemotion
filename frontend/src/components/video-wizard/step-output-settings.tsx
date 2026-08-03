@@ -96,6 +96,9 @@ export function StepOutputSettings() {
           render={({ field }) => (
             <FormItem>
               <FormLabel>Visual style</FormLabel>
+              <FormDescription>
+                Controls the visual look, lighting, colors, realism, and atmosphere.
+              </FormDescription>
               <Select value={field.value} onValueChange={field.onChange}>
                 <FormControl><SelectTrigger className="w-full"><SelectValue /></SelectTrigger></FormControl>
                 <SelectContent>{VISUAL_STYLES.map((style) => <SelectItem key={style} value={style}>{style}</SelectItem>)}</SelectContent>

@@ -95,7 +95,33 @@ describe("Historical VideoWizard", () => {
     await completeStory(user);
 
     expect(screen.queryByLabelText("Story approach")).toBeNull();
+    const narrativeTone = screen.getByRole("combobox", {
+      name: "Narrative Tone",
+    });
+    expect(narrativeTone.textContent).toContain("Cinematic");
+    expect(screen.queryByText(/^Tone$/)).toBeNull();
+    expect(
+      screen.getByText(
+        "Controls the storytelling and narration style, not the visual brightness.",
+      ),
+    ).toBeTruthy();
+    await user.click(narrativeTone);
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Cinematic",
+      "Dramatic",
+      "Informative",
+      "Inspirational",
+      "Neutral",
+    ]);
+    await user.click(screen.getByRole("option", { name: "Dramatic" }));
     await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Narrative Tone: Dramatic")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Controls the visual look, lighting, colors, realism, and atmosphere.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Visual style")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Create project" }));
 
     expect(createProjectMock).toHaveBeenCalledTimes(1);
@@ -104,6 +130,7 @@ describe("Historical VideoWizard", () => {
       brief: {
         mode: "historical-documentary",
         topic: "A documentary about Majapahit maritime power",
+        tone: "dramatic",
       },
       output: {
         duration: 45,

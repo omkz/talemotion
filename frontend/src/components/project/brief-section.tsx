@@ -23,6 +23,7 @@ interface BriefSectionProps {
     narrationEnabled: boolean;
     captionsEnabled: boolean;
     musicEnabled: boolean;
+    toneChanged: boolean;
     historicalAccuracyNote: string | null;
   }) => Promise<boolean>;
 }
@@ -33,7 +34,7 @@ function briefFields(brief: ModeBrief): { label: string; value: string }[] {
       return [
         { label: "Topic or story idea", value: brief.topic },
         { label: "Source notes", value: brief.sourceNotes },
-        { label: "Tone", value: brief.tone },
+        { label: "Narrative Tone", value: brief.tone },
         { label: "Target audience", value: brief.targetAudience },
         { label: "Additional direction", value: brief.additionalDirection },
       ];

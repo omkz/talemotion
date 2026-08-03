@@ -33,6 +33,29 @@ export function StepCreativeDirection({
       <div className="grid gap-6 sm:grid-cols-2">
         <FormField
           control={control}
+          name="tone"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Narrative Tone</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  {TONE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormDescription>
+                Controls the storytelling and narration style, not the visual brightness.
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={control}
           name="language"
           render={({ field }) => (
             <FormItem>
@@ -48,26 +71,6 @@ export function StepCreativeDirection({
                 </SelectContent>
               </Select>
               <FormDescription>Initial language options for the current MVP.</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={control}
-          name="tone"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Tone</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {TONE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
               <FormMessage />
             </FormItem>
           )}

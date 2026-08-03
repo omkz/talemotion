@@ -632,7 +632,7 @@ components:
         title: {type: [string, "null"], minLength: 1, maxLength: 200, description: Optional; a deterministic working title is derived from topic when omitted.}
         topic: {type: string, minLength: 1, maxLength: 4000}
         source_notes: {type: [string, "null"], maxLength: 12000}
-        content_type: {type: string, enum: [documentary, educational, fiction, explainer, promotional], default: documentary}
+        content_type: {type: string, enum: [documentary, educational, explainer], default: documentary}
         tone: {type: string, enum: [cinematic, informative, dramatic, inspirational, neutral], default: cinematic}
         target_audience: {type: string, minLength: 1, maxLength: 200, default: General audience}
         additional_direction: {type: string, default: ""}
@@ -652,7 +652,7 @@ components:
         title: {type: string, minLength: 1}
         topic: {type: string, minLength: 1}
         source_notes: {type: [string, "null"], maxLength: 12000}
-        content_type: {type: string, enum: [documentary, educational, fiction, explainer, promotional]}
+        content_type: {type: string, enum: [documentary, educational, explainer]}
         tone: {type: string, enum: [cinematic, informative, dramatic, inspirational, neutral]}
         target_audience: {type: string, minLength: 1, maxLength: 200}
         additional_direction: {type: string}

@@ -1,7 +1,7 @@
 import re
 from datetime import datetime
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from app.models.project import (
     AspectRatio,
@@ -13,6 +13,41 @@ from app.models.project import (
 )
 from app.schemas.chapter import ChapterResponse, chapter_to_response
 from app.schemas.common import NonEmptyText, StrictSchema
+
+HISTORICAL_CONTENT_TYPES = frozenset(
+    {
+        ContentType.DOCUMENTARY,
+        ContentType.EDUCATIONAL,
+        ContentType.EXPLAINER,
+    }
+)
+_REQUIRED_UPDATE_FIELDS = frozenset(
+    {
+        "title",
+        "topic",
+        "content_type",
+        "language",
+        "tone",
+        "target_audience",
+        "additional_direction",
+        "duration_seconds",
+        "aspect_ratio",
+        "visual_style",
+        "narration_style",
+        "captions_enabled",
+        "narration_enabled",
+        "music_enabled",
+    }
+)
+
+
+def validate_historical_content_type(value: ContentType) -> ContentType:
+    if value not in HISTORICAL_CONTENT_TYPES:
+        raise ValueError(
+            "Historical documentary projects support documentary, "
+            "educational, or explainer content."
+        )
+    return value
 
 
 class CreateProjectRequest(StrictSchema):
@@ -54,6 +89,11 @@ class CreateProjectRequest(StrictSchema):
     def validate_language(cls, value: str) -> str:
         return normalize_language_code(value)
 
+    @field_validator("content_type")
+    @classmethod
+    def validate_content_type(cls, value: ContentType) -> ContentType:
+        return validate_historical_content_type(value)
+
 
 class UpdateProjectRequest(StrictSchema):
     title: NonEmptyText | None = Field(default=None, max_length=200)
@@ -72,6 +112,23 @@ class UpdateProjectRequest(StrictSchema):
     narration_enabled: bool | None = None
     music_enabled: bool | None = None
     historical_accuracy_note: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_null_required_fields(cls, value: object) -> object:
+        if isinstance(value, dict):
+            null_fields = sorted(
+                field
+                for field in _REQUIRED_UPDATE_FIELDS
+                if field in value and value[field] is None
+            )
+            if null_fields:
+                raise ValueError(
+                    "These project fields cannot be null: "
+                    + ", ".join(null_fields)
+                    + "."
+                )
+        return value
 
     @field_validator("title")
     @classmethod
@@ -97,6 +154,17 @@ class UpdateProjectRequest(StrictSchema):
     @classmethod
     def validate_optional_language(cls, value: str | None) -> str | None:
         return normalize_language_code(value) if value is not None else None
+
+    @field_validator("content_type")
+    @classmethod
+    def validate_content_type(
+        cls, value: ContentType | None
+    ) -> ContentType | None:
+        return (
+            validate_historical_content_type(value)
+            if value is not None
+            else None
+        )
 
 
 class ProjectResponse(StrictSchema):

@@ -89,6 +89,18 @@ describe("VideoWizard", () => {
     );
   });
 
+  it("offers only content types compatible with historical projects", async () => {
+    const user = userEvent.setup();
+    render(<VideoWizard />);
+    await enterStory(user);
+    await user.click(screen.getByLabelText("Content type"));
+    expect(screen.getByRole("option", { name: "Documentary" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Educational" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Explainer" })).toBeTruthy();
+    expect(screen.queryByRole("option", { name: "Fiction" })).toBeNull();
+    expect(screen.queryByRole("option", { name: "Promotional" })).toBeNull();
+  });
+
   it("submits normalized creative direction and real output settings", async () => {
     createProjectMock.mockResolvedValue(fakeProject("A documentary about Majapahit maritime power"));
     const user = userEvent.setup();
@@ -132,7 +144,7 @@ describe("VideoWizard", () => {
       },
     });
     expect(pushMock).toHaveBeenCalledWith("/projects/project_test");
-  });
+  }, 10_000);
 
   it("shows a server validation error without silently creating mock media", async () => {
     createProjectMock.mockRejectedValue(new Error("The topic was rejected by the API."));

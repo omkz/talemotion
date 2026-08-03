@@ -109,6 +109,65 @@ def test_project_creation_brief_validation(
     assert response.json()["error"]["code"] == "validation_error"
 
 
+@pytest.mark.parametrize("content_type", ["documentary", "educational", "explainer"])
+def test_historical_project_accepts_compatible_content_types(
+    client: TestClient,
+    project_payload: dict[str, object],
+    content_type: str,
+) -> None:
+    response = client.post(
+        "/api/v1/projects",
+        json={**project_payload, "content_type": content_type},
+    )
+    assert response.status_code == 201
+    assert response.json()["content_type"] == content_type
+
+
+@pytest.mark.parametrize("content_type", ["fiction", "promotional"])
+def test_historical_project_rejects_incompatible_content_types(
+    client: TestClient,
+    project_payload: dict[str, object],
+    content_type: str,
+) -> None:
+    response = client.post(
+        "/api/v1/projects",
+        json={**project_payload, "content_type": content_type},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert "documentary, educational, or explainer" in str(response.json())
+
+
+@pytest.mark.parametrize("content_type", ["fiction", "promotional"])
+def test_historical_project_rejects_incompatible_content_type_patch(
+    client: TestClient,
+    project_payload: dict[str, object],
+    content_type: str,
+) -> None:
+    created = client.post("/api/v1/projects", json=project_payload).json()
+    response = client.patch(
+        f"/api/v1/projects/{created['id']}",
+        json={"content_type": content_type},
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+    assert client.get(f"/api/v1/projects/{created['id']}").json()[
+        "content_type"
+    ] == "documentary"
+
+
+def test_existing_persisted_valid_project_continues_to_load(
+    client: TestClient, project_payload: dict[str, object]
+) -> None:
+    created = client.post(
+        "/api/v1/projects",
+        json={**project_payload, "content_type": "explainer"},
+    ).json()
+    response = client.get(f"/api/v1/projects/{created['id']}")
+    assert response.status_code == 200
+    assert response.json()["content_type"] == "explainer"
+
+
 def test_project_creation_brief_can_be_updated_and_reopened(
     client: TestClient, project_payload: dict[str, object]
 ) -> None:
@@ -119,7 +178,7 @@ def test_project_creation_brief_can_be_updated_and_reopened(
             "title": "Updated title",
             "topic": "Updated topic",
             "source_notes": "Updated source context",
-            "content_type": "fiction",
+            "content_type": "educational",
             "language": "pt-BR",
             "tone": "dramatic",
             "target_audience": "Young adult readers",
@@ -132,12 +191,75 @@ def test_project_creation_brief_can_be_updated_and_reopened(
         "title": "Updated title",
         "topic": "Updated topic",
         "source_notes": "Updated source context",
-        "content_type": "fiction",
+        "content_type": "educational",
         "language": "pt-BR",
         "tone": "dramatic",
         "target_audience": "Young adult readers",
         "additional_direction": "Use a mystery structure.",
     }.items() <= reopened.items()
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "title",
+        "topic",
+        "content_type",
+        "language",
+        "tone",
+        "target_audience",
+        "duration_seconds",
+        "aspect_ratio",
+        "visual_style",
+        "narration_style",
+        "captions_enabled",
+        "narration_enabled",
+        "music_enabled",
+        "additional_direction",
+    ],
+)
+def test_project_patch_rejects_explicit_null_for_required_fields(
+    client: TestClient,
+    project_payload: dict[str, object],
+    field: str,
+) -> None:
+    created = client.post("/api/v1/projects", json=project_payload).json()
+    response = client.patch(
+        f"/api/v1/projects/{created['id']}", json={field: None}
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
+def test_project_patch_nullable_and_omitted_field_semantics(
+    client: TestClient, project_payload: dict[str, object]
+) -> None:
+    created = client.post(
+        "/api/v1/projects",
+        json={
+            **project_payload,
+            "source_notes": "Temporary sources",
+            "historical_accuracy_note": "Temporary accuracy note",
+            "additional_direction": "Original direction",
+        },
+    ).json()
+
+    response = client.patch(
+        f"/api/v1/projects/{created['id']}",
+        json={
+            "source_notes": None,
+            "historical_accuracy_note": None,
+            "additional_direction": "",
+        },
+    )
+    assert response.status_code == 200
+    updated = response.json()
+    assert updated["source_notes"] is None
+    assert updated["historical_accuracy_note"] is None
+    assert updated["additional_direction"] == ""
+    assert updated["title"] == created["title"]
+    assert updated["topic"] == created["topic"]
+    assert updated["duration_seconds"] == created["duration_seconds"]
 
 
 def test_legacy_language_label_is_normalized(

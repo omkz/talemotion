@@ -259,7 +259,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     setProject(refreshed);
   };
 
-  const handleBriefSave = (next: {
+  const handleBriefSave = async (next: {
     brief: ModeBrief;
     title: string;
     language: string;
@@ -269,39 +269,39 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     captionsEnabled: boolean;
     musicEnabled: boolean;
     historicalAccuracyNote: string | null;
-  }) => {
+  }): Promise<boolean> => {
     if (realSceneGenerationEnabled && next.brief.mode === "historical-documentary") {
       setSaveState("saving");
-      void updatePersistedProject(projectId, {
-        title: next.title,
-        topic: next.brief.topic,
-        source_notes: next.brief.sourceNotes.trim() || null,
-        content_type: next.brief.contentType,
-        language: next.language,
-        tone: next.brief.tone,
-        target_audience: next.brief.targetAudience,
-        additional_direction: next.brief.additionalDirection,
-        visual_style: next.visualStyle,
-        narration_style: next.narrationStyle,
-        narration_enabled: next.narrationEnabled,
-        captions_enabled: next.captionsEnabled,
-        music_enabled: next.musicEnabled,
-        historical_accuracy_note: next.historicalAccuracyNote,
-      })
-        .then((updated) => {
-          setProject(updated);
-          setSaveState("saved");
-          toast.success("Output settings updated");
-        })
-        .catch((error: unknown) => {
-          setSaveState("saved");
-          toast.error(
-            error instanceof Error
-              ? error.message
-              : "Could not update output settings.",
-          );
+      try {
+        const updated = await updatePersistedProject(projectId, {
+          title: next.title,
+          topic: next.brief.topic,
+          source_notes: next.brief.sourceNotes.trim() || null,
+          content_type: next.brief.contentType,
+          language: next.language,
+          tone: next.brief.tone,
+          target_audience: next.brief.targetAudience,
+          additional_direction: next.brief.additionalDirection,
+          visual_style: next.visualStyle,
+          narration_style: next.narrationStyle,
+          narration_enabled: next.narrationEnabled,
+          captions_enabled: next.captionsEnabled,
+          music_enabled: next.musicEnabled,
+          historical_accuracy_note: next.historicalAccuracyNote,
         });
-      return;
+        setProject(updated);
+        setSaveState("saved");
+        toast.success("Output settings updated");
+        return true;
+      } catch (error: unknown) {
+        setSaveState("saved");
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : "Could not update output settings.",
+        );
+        return false;
+      }
     }
     setProject((prev) =>
       prev
@@ -325,6 +325,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     );
     markDirty();
     toast.success("Brief updated");
+    return true;
   };
 
   const handleRenderChange = (nextRender: Render) => {

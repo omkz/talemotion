@@ -17,9 +17,7 @@ export const wizardSchema = z.object({
   contentType: z.enum([
     "documentary",
     "educational",
-    "fiction",
     "explainer",
-    "promotional",
   ]),
   language: z.enum(["en", "id", "nl", "de", "fr", "es"]),
   tone: z.enum([

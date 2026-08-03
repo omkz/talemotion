@@ -23,7 +23,7 @@ interface BriefSectionProps {
     captionsEnabled: boolean;
     musicEnabled: boolean;
     historicalAccuracyNote: string | null;
-  }) => void;
+  }) => Promise<boolean>;
 }
 
 function briefFields(brief: ModeBrief): { label: string; value: string }[] {

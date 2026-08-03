@@ -1,9 +1,7 @@
 export const CONTENT_TYPE_OPTIONS = [
   { value: "documentary", label: "Documentary" },
   { value: "educational", label: "Educational" },
-  { value: "fiction", label: "Fiction" },
   { value: "explainer", label: "Explainer" },
-  { value: "promotional", label: "Promotional" },
 ] as const;
 
 export const TONE_OPTIONS = [

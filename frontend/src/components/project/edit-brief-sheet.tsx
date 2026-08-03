@@ -47,7 +47,7 @@ interface EditBriefSheetProps {
   brief: ModeBrief;
   output: OutputConfig;
   historicalAccuracyNote: string | null;
-  onSave: (next: BriefSaveValues) => void;
+  onSave: (next: BriefSaveValues) => Promise<boolean>;
 }
 
 export function EditBriefSheet({
@@ -58,8 +58,15 @@ export function EditBriefSheet({
   historicalAccuracyNote,
   onSave,
 }: EditBriefSheetProps) {
+  const [isSaving, setIsSaving] = useState(false);
+
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!isSaving) onOpenChange(nextOpen);
+      }}
+    >
       <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader>
           <SheetTitle>Edit brief</SheetTitle>
@@ -73,10 +80,18 @@ export function EditBriefSheet({
             brief={brief}
             output={output}
             historicalAccuracyNote={historicalAccuracyNote}
+            isSaving={isSaving}
             onCancel={() => onOpenChange(false)}
-            onSave={(values) => {
-              onSave(values);
-              onOpenChange(false);
+            onSave={async (values) => {
+              if (isSaving) return false;
+              setIsSaving(true);
+              try {
+                const saved = await onSave(values);
+                if (saved) onOpenChange(false);
+                return saved;
+              } finally {
+                setIsSaving(false);
+              }
             }}
           />
         )}
@@ -89,13 +104,15 @@ function EditBriefForm({
   brief,
   output,
   historicalAccuracyNote,
+  isSaving,
   onSave,
   onCancel,
 }: {
   brief: ModeBrief;
   output: OutputConfig;
   historicalAccuracyNote: string | null;
-  onSave: (values: BriefSaveValues) => void;
+  isSaving: boolean;
+  onSave: (values: BriefSaveValues) => Promise<boolean>;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<ModeBrief>(brief);
@@ -109,9 +126,9 @@ function EditBriefForm({
   const [captionsEnabled, setCaptionsEnabled] = useState(output.captionsEnabled);
   const [musicEnabled, setMusicEnabled] = useState(output.musicEnabled);
   const [accuracyNote, setAccuracyNote] = useState(historicalAccuracyNote ?? "");
-
-  const handleSave = () => {
-    onSave({
+  const handleSave = async () => {
+    if (isSaving) return;
+    await onSave({
       brief: draft,
       title,
       language,
@@ -120,7 +137,10 @@ function EditBriefForm({
       narrationEnabled,
       captionsEnabled,
       musicEnabled,
-      historicalAccuracyNote: draft.mode === "historical-documentary" ? accuracyNote : historicalAccuracyNote,
+      historicalAccuracyNote:
+        draft.mode === "historical-documentary"
+          ? accuracyNote
+          : historicalAccuracyNote,
     });
   };
 
@@ -321,10 +341,12 @@ function EditBriefForm({
       </div>
 
       <SheetFooter>
-        <Button variant="outline" onClick={onCancel}>
+        <Button variant="outline" onClick={onCancel} disabled={isSaving}>
           Cancel
         </Button>
-        <Button onClick={handleSave}>Save changes</Button>
+        <Button onClick={handleSave} disabled={isSaving}>
+          {isSaving ? "Saving…" : "Save changes"}
+        </Button>
       </SheetFooter>
     </>
   );

@@ -15,8 +15,12 @@ export type SceneCountSetting = "auto" | 4 | 5 | 6;
 export interface HistoricalDocumentaryBrief {
   mode: "historical-documentary";
   topic: string;
-  additionalDirection: string;
   sourceNotes: string;
+  contentType: "documentary" | "educational" | "fiction" | "explainer" | "promotional";
+  language: string;
+  tone: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
+  targetAudience: string;
+  additionalDirection: string;
 }
 
 export interface MicrodramaBrief {

@@ -15,6 +15,8 @@ interface BriefSectionProps {
   historicalAccuracyNote: string | null;
   onSave: (next: {
     brief: ModeBrief;
+    title: string;
+    language: string;
     visualStyle: string;
     narrationStyle: string;
     narrationEnabled: boolean;
@@ -28,9 +30,12 @@ function briefFields(brief: ModeBrief): { label: string; value: string }[] {
   switch (brief.mode) {
     case "historical-documentary":
       return [
-        { label: "Topic", value: brief.topic },
-        { label: "Additional direction", value: brief.additionalDirection },
+        { label: "Topic or story idea", value: brief.topic },
         { label: "Source notes", value: brief.sourceNotes },
+        { label: "Content type", value: brief.contentType },
+        { label: "Tone", value: brief.tone },
+        { label: "Target audience", value: brief.targetAudience },
+        { label: "Additional direction", value: brief.additionalDirection },
       ];
     case "microdrama":
       return [

@@ -134,6 +134,15 @@ model and returns a typed, validated four-scene structure; only valid output is
 persisted. Project creation itself performs no LLM request.
 Existing scenes require `replace_existing=true`.
 
+Project creation persists a three-part brief: Story (`topic`, optional
+`source_notes`, and optional editable `title`), Creative Direction
+(`content_type`, BCP 47-compatible `language`, `tone`, `target_audience`, and
+`additional_direction`), and supported Output settings. A missing title is
+derived deterministically from the topic without a provider call. Storyboard
+queueing snapshots the normalized brief and output flags into the job payload,
+so retries do not pick up later project edits. The current historical workflow
+still produces exactly four scenes and supports only 30/45 seconds at 9:16.
+
 Alibaba Qwen is selected with:
 
 ```env

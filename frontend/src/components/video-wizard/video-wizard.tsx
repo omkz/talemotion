@@ -10,35 +10,27 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Form } from "@/components/ui/form";
 import { createProject } from "@/lib/mock-api";
-import {
-  createPersistedHistoricalProject,
-} from "@/lib/api/persisted-projects";
+import { createPersistedHistoricalProject } from "@/lib/api/persisted-projects";
 import { realSceneGenerationEnabled } from "@/lib/api/scene-generation-jobs";
-import { VIDEO_TEMPLATES, type VideoTemplatePreset } from "@/lib/mock-data";
 import { WizardStepper } from "./wizard-stepper";
-import { StepStartingPoint } from "./step-starting-point";
 import { StepContentForm } from "./step-content-form";
+import { StepCreativeDirection } from "./step-creative-direction";
 import { StepOutputSettings } from "./step-output-settings";
-import { STEP_FIELDS, WIZARD_DEFAULT_VALUES, wizardSchema, type WizardFormValues } from "./schema";
+import {
+  CONTENT_TYPE_OPTIONS,
+  LANGUAGE_OPTIONS,
+  TONE_OPTIONS,
+  optionLabel,
+} from "./project-options";
+import {
+  STEP_FIELDS,
+  WIZARD_DEFAULT_VALUES,
+  wizardSchema,
+  type WizardFormValues,
+} from "./schema";
 import { mapWizardValuesToProjectInput } from "./map-to-project";
 
-const STEP_TITLES = [
-  "Choose a story format",
-  "Add your content",
-  "Output settings",
-];
-
-const DEFAULT_TEMPLATE = VIDEO_TEMPLATES[0];
-const INITIAL_WIZARD_VALUES: WizardFormValues = {
-  ...WIZARD_DEFAULT_VALUES,
-  templateId: DEFAULT_TEMPLATE.id,
-  mode: DEFAULT_TEMPLATE.mode,
-  duration: String(DEFAULT_TEMPLATE.duration) as WizardFormValues["duration"],
-  aspectRatio: DEFAULT_TEMPLATE.aspectRatio,
-  sceneCount: String(DEFAULT_TEMPLATE.sceneCount) as WizardFormValues["sceneCount"],
-  visualStyle: DEFAULT_TEMPLATE.visualStyle,
-  narrationStyle: DEFAULT_TEMPLATE.narrationStyle,
-};
+const STEP_TITLES = ["Story", "Creative Direction", "Output"];
 
 export function VideoWizard() {
   const router = useRouter();
@@ -47,72 +39,55 @@ export function VideoWizard() {
 
   const form = useForm<WizardFormValues>({
     resolver: zodResolver(wizardSchema),
-    defaultValues: INITIAL_WIZARD_VALUES,
+    defaultValues: WIZARD_DEFAULT_VALUES,
     mode: "onChange",
   });
-
-  const [templateId, mode] = useWatch({
-    control: form.control,
-    name: ["templateId", "mode"],
-  });
-  const appliedTemplate = VIDEO_TEMPLATES.find((t) => t.id === templateId) ?? null;
+  const values = useWatch({ control: form.control });
 
   const goNext = async () => {
-    const valid = await form.trigger(STEP_FIELDS[step]);
-    if (valid) setStep((s) => Math.min(3, s + 1));
+    const valid = await form.trigger(STEP_FIELDS[step], { shouldFocus: true });
+    if (valid) setStep((current) => Math.min(3, current + 1));
   };
 
-  const goBack = () => setStep((s) => Math.max(1, s - 1));
+  const goBack = () => setStep((current) => Math.max(1, current - 1));
 
-  const applyTemplateDefaults = (template: VideoTemplatePreset) => {
-    form.setValue("duration", String(template.duration) as WizardFormValues["duration"]);
-    form.setValue("aspectRatio", template.aspectRatio);
-    form.setValue("sceneCount", String(template.sceneCount) as WizardFormValues["sceneCount"]);
-    form.setValue("visualStyle", template.visualStyle);
-    form.setValue("narrationStyle", template.narrationStyle);
-  };
-
-  const handleSelectTemplate = (template: VideoTemplatePreset) => {
-    form.setValue("templateId", template.id, { shouldValidate: true });
-    form.setValue("mode", template.mode, { shouldValidate: true });
-    applyTemplateDefaults(template);
-  };
-
-  const handleResetToTemplateDefaults = () => {
-    if (!appliedTemplate) return;
-    applyTemplateDefaults(appliedTemplate);
-    toast.success("Reset to template defaults");
-  };
-
-  const onSubmit = async (values: WizardFormValues) => {
+  const onSubmit = async (submitted: WizardFormValues) => {
+    if (isCreating) return;
     setIsCreating(true);
+    form.clearErrors("root.server");
+
     try {
       const project = realSceneGenerationEnabled
         ? await createPersistedHistoricalProject({
-            title: values.title,
-            topic: values.topic ?? "",
-            additional_direction: values.additionalDirection ?? "",
-            language: "English",
-            duration_seconds: Number(values.duration) as 30 | 45,
-            visual_style: values.visualStyle,
-            narration_style: values.narrationStyle,
-            narration_enabled: true,
-            captions_enabled: values.captionsEnabled,
-            music_enabled: values.musicEnabled,
-            historical_accuracy_note: values.sourceNotes?.trim() || null,
+            title: submitted.title.trim() || undefined,
+            topic: submitted.topic,
+            source_notes: submitted.sourceNotes.trim() || null,
+            content_type: submitted.contentType,
+            language: submitted.language,
+            tone: submitted.tone,
+            target_audience: submitted.targetAudience,
+            additional_direction: submitted.additionalDirection.trim(),
+            duration_seconds: Number(submitted.duration) as 30 | 45,
+            visual_style: submitted.visualStyle,
+            narration_style: submitted.narrationStyle,
+            narration_enabled: submitted.narrationEnabled,
+            captions_enabled: submitted.captionsEnabled,
+            music_enabled: submitted.musicEnabled,
+            historical_accuracy_note: null,
           })
-        : await createProject(mapWizardValuesToProjectInput(values));
-      toast.success(
-        realSceneGenerationEnabled ? "Project created" : "Storyboard created",
-        {
-          description: realSceneGenerationEnabled
-            ? `${project.output.title} is ready for storyboard planning.`
-            : `${project.output.title} is ready for review.`,
-        },
-      );
+        : await createProject(mapWizardValuesToProjectInput(submitted));
+
+      toast.success("Project created", {
+        description: `${project.output.title} is ready for storyboard planning.`,
+      });
       router.push(`/projects/${project.id}`);
-    } catch {
-      toast.error("Something went wrong creating the storyboard.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "The project could not be created. Please try again.";
+      form.setError("root.server", { message });
+      toast.error("Project creation failed", { description: message });
       setIsCreating(false);
     }
   };
@@ -124,9 +99,9 @@ export function VideoWizard() {
           <Sparkles className="size-6 animate-pulse" />
         </div>
         <div className="space-y-1.5">
-          <p className="text-base font-medium text-foreground">Generating your storyboard…</p>
+          <p className="text-base font-medium text-foreground">Creating your project…</p>
           <p className="text-sm text-muted-foreground">
-            Drafting scenes, narration, and visual prompts from your brief.
+            Saving your story, creative direction, and output settings.
           </p>
         </div>
         <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -140,40 +115,28 @@ export function VideoWizard() {
 
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
-          <Card className="p-6 sm:p-8">
+          <Card className="p-5 sm:p-8">
             <h2 className="mb-6 text-lg font-semibold text-foreground">
               {STEP_TITLES[step - 1]}
             </h2>
 
-            {step === 1 && (
-              <StepStartingPoint
-                templateId={templateId}
-                onSelectTemplate={handleSelectTemplate}
-              />
-            )}
-            {step === 2 && (
-              <StepContentForm
-                mode={mode}
-                control={form.control}
-                appliedTemplate={appliedTemplate}
-              />
-            )}
+            {step === 1 && <StepContentForm control={form.control} />}
+            {step === 2 && <StepCreativeDirection control={form.control} />}
             {step === 3 && (
-              <StepOutputSettings
-                control={form.control}
-                appliedTemplate={appliedTemplate}
-                onResetToTemplateDefaults={handleResetToTemplateDefaults}
-                realHistoricalOnly={realSceneGenerationEnabled}
-              />
+              <div className="space-y-8">
+                <StepOutputSettings control={form.control} />
+                <ProjectReview values={values as WizardFormValues} />
+              </div>
             )}
 
-            <div className="mt-8 flex items-center justify-between border-t border-border pt-6">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={goBack}
-                disabled={step === 1}
-              >
+            {form.formState.errors.root?.server?.message && (
+              <p className="mt-6 rounded-md border border-destructive/30 bg-destructive/8 p-3 text-sm text-destructive" role="alert">
+                {form.formState.errors.root.server.message}
+              </p>
+            )}
+
+            <div className="mt-8 flex items-center justify-between gap-3 border-t border-border pt-6">
+              <Button type="button" variant="outline" onClick={goBack} disabled={step === 1}>
                 <ArrowLeft className="size-4" />
                 Back
               </Button>
@@ -184,15 +147,54 @@ export function VideoWizard() {
                   <ArrowRight className="size-4" />
                 </Button>
               ) : (
-                <Button type="submit" disabled={form.formState.isSubmitting}>
+                <Button type="submit" disabled={isCreating || form.formState.isSubmitting}>
                   <Sparkles className="size-4" />
-                  Create Storyboard
+                  Create project
                 </Button>
               )}
             </div>
           </Card>
         </form>
       </Form>
+    </div>
+  );
+}
+
+function ProjectReview({ values }: { values: WizardFormValues }) {
+  return (
+    <section aria-labelledby="project-review-heading" className="space-y-4 border-t border-border pt-6">
+      <h3 id="project-review-heading" className="text-sm font-semibold text-foreground">
+        Review
+      </h3>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <ReviewGroup title="Story">
+          <p>{values.topic || "No topic entered"}</p>
+          <p className="text-muted-foreground">{values.title || "Working title will be created"}</p>
+        </ReviewGroup>
+        <ReviewGroup title="Creative Direction">
+          <p>{optionLabel(CONTENT_TYPE_OPTIONS, values.contentType)}</p>
+          <p className="text-muted-foreground">
+            {optionLabel(LANGUAGE_OPTIONS, values.language)} · {optionLabel(TONE_OPTIONS, values.tone)}
+          </p>
+          <p className="text-muted-foreground">{values.targetAudience}</p>
+        </ReviewGroup>
+        <ReviewGroup title="Output">
+          <p>{values.duration} seconds · {values.aspectRatio}</p>
+          <p className="text-muted-foreground">{values.visualStyle} · {values.narrationStyle}</p>
+          <p className="text-muted-foreground">
+            Narration {values.narrationEnabled ? "on" : "off"} · Captions {values.captionsEnabled ? "on" : "off"} · Music {values.musicEnabled ? "on" : "off"}
+          </p>
+        </ReviewGroup>
+      </div>
+    </section>
+  );
+}
+
+function ReviewGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1 rounded-lg border border-border bg-muted/20 p-4 text-sm">
+      <h4 className="font-medium text-foreground">{title}</h4>
+      {children}
     </div>
   );
 }

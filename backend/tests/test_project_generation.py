@@ -10,6 +10,7 @@ from app.models.job import JobStatus
 from app.repositories.sqlalchemy import JobRepository
 from app.schemas.storyboard import (
     HistoricalStoryboardDraft,
+    StoryboardProjectSnapshot,
     StoryboardSceneDraft,
 )
 from app.services import project_generation as project_generation_service
@@ -21,20 +22,16 @@ class ValidStoryboardGenerator:
     def generate(
         self,
         *,
-        topic: str,
-        additional_direction: str,
-        historical_accuracy_note: str | None,
-        visual_style: str,
-        duration_seconds: int,
+        brief: StoryboardProjectSnapshot,
     ) -> HistoricalStoryboardDraft:
-        durations = [12, 11, 11, 11] if duration_seconds == 45 else [8, 8, 7, 7]
+        durations = [12, 11, 11, 11] if brief.duration_seconds == 45 else [8, 8, 7, 7]
         return HistoricalStoryboardDraft(
             scenes=[
                 StoryboardSceneDraft(
                     title=f"Historical scene {position}",
-                    narration=f"Narration for {topic}, part {position}.",
+                    narration=f"Narration for {brief.topic}, part {position}.",
                     visual_prompt=(
-                        f"{visual_style}; plausible Southeast Asian setting; "
+                        f"{brief.visual_style}; plausible Southeast Asian setting; "
                         f"vertical composition; scene {position}."
                     ),
                     duration_seconds=duration,
@@ -49,12 +46,9 @@ class InvalidStoryboardGenerator:
     def generate(
         self,
         *,
-        topic: str,
-        additional_direction: str,
-        historical_accuracy_note: str | None,
-        visual_style: str,
-        duration_seconds: int,
+        brief: StoryboardProjectSnapshot,
     ) -> HistoricalStoryboardDraft:
+        del brief
         raise ValueError("Provider returned malformed structured output.")
 
 
@@ -132,6 +126,56 @@ def test_storyboard_job_creation_and_duplicate_active_rejection(
     assert queued_ids == [first.json()["id"]]
     assert second.status_code == 409
     assert second.json()["error"]["code"] == "state_conflict"
+
+
+def test_storyboard_job_snapshots_complete_brief_before_project_edits(
+    client: TestClient,
+    project_payload: dict[str, object],
+    monkeypatch,
+) -> None:
+    project = _create_project(
+        client,
+        {
+            **project_payload,
+            "source_notes": "Original source notes",
+            "content_type": "educational",
+            "tone": "informative",
+            "target_audience": "Students",
+            "language": "id",
+        },
+    )
+    monkeypatch.setattr(project_routes, "enqueue_storyboard", lambda _job_id: None)
+    queued = client.post(
+        f"/api/v1/projects/{project['id']}/storyboard",
+        json={},
+    )
+    assert queued.status_code == 202
+    original = queued.json()["input_payload"]["project_brief"]
+
+    updated = client.patch(
+        f"/api/v1/projects/{project['id']}",
+        json={
+            "topic": "Changed after queueing",
+            "source_notes": "Changed source notes",
+            "tone": "dramatic",
+        },
+    )
+    assert updated.status_code == 200
+
+    persisted = client.get(f"/api/v1/jobs/{queued.json()['id']}").json()
+    assert persisted["input_payload"]["project_brief"] == original
+    assert {
+        "title": project_payload["title"],
+        "topic": project_payload["topic"],
+        "source_notes": "Original source notes",
+        "content_type": "educational",
+        "language": "id",
+        "tone": "informative",
+        "target_audience": "Students",
+        "additional_direction": project_payload["additional_direction"],
+        "duration_seconds": 45,
+        "aspect_ratio": "9:16",
+    }.items() <= original.items()
 
 
 def test_storyboard_idempotency_returns_one_job(

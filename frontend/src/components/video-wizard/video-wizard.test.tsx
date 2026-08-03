@@ -1,29 +1,28 @@
 /** @vitest-environment jsdom */
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { VideoProject } from "@/types";
 import type { CreateVideoProjectInput } from "@/lib/api/video-project-api";
 
-afterEach(() => {
-  cleanup();
-});
+afterEach(cleanup);
 
-// jsdom doesn't implement ResizeObserver, which Radix's RadioGroup uses.
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
   disconnect() {}
 }
 vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+HTMLElement.prototype.hasPointerCapture = () => false;
+HTMLElement.prototype.setPointerCapture = () => undefined;
+HTMLElement.prototype.releasePointerCapture = () => undefined;
+HTMLElement.prototype.scrollIntoView = () => undefined;
 
 const pushMock = vi.fn();
 const createProjectMock = vi.fn<(input: CreateVideoProjectInput) => Promise<VideoProject>>();
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: pushMock }),
-}));
-
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
+vi.mock("@/lib/api/scene-generation-jobs", () => ({ realSceneGenerationEnabled: false }));
 vi.mock("@/lib/mock-api", () => ({
   createProject: (input: CreateVideoProjectInput) => createProjectMock(input),
 }));
@@ -31,143 +30,120 @@ vi.mock("@/lib/mock-api", () => ({
 const { VideoWizard } = await import("./video-wizard");
 
 function fakeProject(title: string): VideoProject {
-  return {
-    id: "project_test",
-    output: { title },
-  } as unknown as VideoProject;
+  return { id: "project_test", output: { title } } as unknown as VideoProject;
 }
 
-async function goToStep2(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: /next/i }));
+async function enterStory(user: ReturnType<typeof userEvent.setup>) {
+  await user.type(
+    screen.getByLabelText("Topic or story idea"),
+    "A documentary about Majapahit maritime power",
+  );
+  await user.type(screen.getByLabelText(/Source notes/), "A dated source excerpt.");
+  await user.click(screen.getByRole("button", { name: "Next" }));
 }
 
-async function goToStep3(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText("Topic"), "A surprising historical event.");
-  await user.click(screen.getByRole("button", { name: /next/i }));
+async function chooseSelect(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string,
+  option: string,
+) {
+  await user.click(screen.getByLabelText(label));
+  await user.click(screen.getByRole("option", { name: option }));
 }
 
-describe("VideoWizard — step 1", () => {
-  it("no longer renders a Custom Setup tab or Quick Templates tab", () => {
-    render(<VideoWizard />);
-
-    expect(screen.getByText("Choose a story format")).toBeTruthy();
-    expect(screen.queryByText(/custom setup/i)).toBeNull();
-    expect(screen.queryByText(/quick templates/i)).toBeNull();
-    expect(screen.queryByRole("tablist")).toBeNull();
+describe("VideoWizard", () => {
+  beforeEach(() => {
+    createProjectMock.mockReset();
+    pushMock.mockReset();
   });
 
-  it("displays exactly the four historical templates and no other modes", () => {
+  it("uses the Story, Creative Direction, and Output flow", () => {
     render(<VideoWizard />);
-
-    const group = screen.getByRole("radiogroup", { name: /story formats/i });
-    expect(
-      within(group).getByRole("radio", { name: /historical fact/i })
-    ).toBeTruthy();
-    expect(
-      within(group).getByRole("radio", { name: /battle & betrayal/i })
-    ).toBeTruthy();
-    expect(
-      within(group).getByRole("radio", { name: /rise of an empire/i })
-    ).toBeTruthy();
-    expect(
-      within(group).getByRole("radio", { name: /mystery from history/i })
-    ).toBeTruthy();
-    expect(within(group).getAllByRole("radio")).toHaveLength(4);
-
-    // Every visible template targets the only production-ready mode.
-    expect(within(group).queryByText(/microdrama/i)).toBeNull();
-    expect(within(group).queryByText(/product advertisement/i)).toBeNull();
+    expect(screen.getByRole("heading", { name: "Story" })).toBeTruthy();
+    expect(screen.getByText("Creative Direction")).toBeTruthy();
+    expect(screen.getByText("Output")).toBeTruthy();
+    expect(screen.getByLabelText("Topic or story idea")).toBeTruthy();
+    expect(screen.getByLabelText(/Source notes/)).toBeTruthy();
+    expect(screen.getByLabelText(/Project title/)).toBeTruthy();
   });
-});
 
-describe("VideoWizard — template selection", () => {
-  it("applies Battle & Betrayal's 30s / 4 scenes / 9:16 / dramatic settings", async () => {
+  it("blocks navigation and focuses validation on a missing topic", async () => {
     const user = userEvent.setup();
     render(<VideoWizard />);
-
-    await user.click(screen.getByRole("radio", { name: /battle & betrayal/i }));
-    await goToStep2(user);
-
-    expect(
-      screen.getByText(
-        /opposing sides, the conflict, the deception or turning point/i
-      )
-    ).toBeTruthy();
-
-    await goToStep3(user);
-
-    expect(
-      screen.getByRole("radio", { name: "30s" }).getAttribute("aria-checked")
-    ).toBe("true");
-    expect(
-      screen.getByRole("radio", { name: "45s" }).getAttribute("aria-checked")
-    ).toBe("false");
-    expect(
-      screen
-        .getByRole("radio", { name: /9:16 vertical/i })
-        .getAttribute("aria-checked")
-    ).toBe("true");
-    // Visual/narration style are Radix Selects — their displayed text isn't
-    // reliably queryable under jsdom without opening the dropdown, so their
-    // applied values are instead verified through the submitted payload in
-    // the "project creation" test below.
-    expect(screen.getByText(/based on/i)).toBeTruthy();
-    expect(screen.getByText("Battle & Betrayal")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Topic or story idea is required")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Story" })).toBeTruthy();
   });
 
-  it("resets manually-changed output settings back to the template defaults", async () => {
+  it("preserves story state while navigating backward and forward", async () => {
     const user = userEvent.setup();
     render(<VideoWizard />);
-
-    await user.click(screen.getByRole("radio", { name: /battle & betrayal/i }));
-    await goToStep2(user);
-    await goToStep3(user);
-
-    await user.click(screen.getByRole("radio", { name: "45s" }));
-    expect(
-      screen.getByRole("radio", { name: "45s" }).getAttribute("aria-checked")
-    ).toBe("true");
-
-    await user.click(
-      screen.getByRole("button", { name: /reset to template defaults/i })
+    await enterStory(user);
+    expect(screen.getByRole("heading", { name: "Creative Direction" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect((screen.getByLabelText("Topic or story idea") as HTMLTextAreaElement).value).toBe(
+      "A documentary about Majapahit maritime power",
     );
-
-    expect(
-      screen.getByRole("radio", { name: "30s" }).getAttribute("aria-checked")
-    ).toBe("true");
-    expect(
-      screen.getByRole("radio", { name: "45s" }).getAttribute("aria-checked")
-    ).toBe("false");
+    expect((screen.getByLabelText(/Source notes/) as HTMLTextAreaElement).value).toBe(
+      "A dated source excerpt.",
+    );
   });
-});
 
-describe("VideoWizard — project creation", () => {
-  it("submits the selected template's values to project creation", async () => {
-    createProjectMock.mockResolvedValue(fakeProject("Test title"));
+  it("submits normalized creative direction and real output settings", async () => {
+    createProjectMock.mockResolvedValue(fakeProject("A documentary about Majapahit maritime power"));
     const user = userEvent.setup();
     render(<VideoWizard />);
+    await enterStory(user);
+    await chooseSelect(user, "Content type", "Educational");
+    await chooseSelect(user, "Language", "Indonesian");
+    await chooseSelect(user, "Tone", "Informative");
+    await user.clear(screen.getByLabelText("Target audience"));
+    await user.type(screen.getByLabelText("Target audience"), "History students");
+    await user.type(screen.getByLabelText(/Additional direction/), "Use cautious pacing.");
+    await user.click(screen.getByRole("button", { name: "Next" }));
 
-    await user.click(screen.getByRole("radio", { name: /battle & betrayal/i }));
-    await goToStep2(user);
-    await goToStep3(user);
-
-    await user.type(screen.getByLabelText("Title"), "Test title");
-    await user.click(
-      screen.getByRole("button", { name: /create storyboard/i })
-    );
+    expect(screen.getByRole("heading", { name: "Output", level: 2 })).toBeTruthy();
+    await user.click(screen.getByRole("radio", { name: "30 seconds" }));
+    await user.click(screen.getByRole("switch", { name: "AI narration" }));
+    await user.click(screen.getByRole("switch", { name: "Captions" }));
+    await user.click(screen.getByRole("button", { name: "Create project" }));
 
     expect(createProjectMock).toHaveBeenCalledTimes(1);
-    const input = createProjectMock.mock.calls[0][0];
-    expect(input.mode).toBe("historical-documentary");
-    expect(input.templateId).toBe("battle-and-betrayal");
-    expect(input.output).toMatchObject({
-      title: "Test title",
-      duration: 30,
-      aspectRatio: "9:16",
-      sceneCount: 4,
-      visualStyle: "Epic Cinematic Realism",
-      narrationStyle: "Dramatic Documentary",
+    expect(createProjectMock.mock.calls[0][0]).toMatchObject({
+      mode: "historical-documentary",
+      brief: {
+        topic: "A documentary about Majapahit maritime power",
+        sourceNotes: "A dated source excerpt.",
+        contentType: "educational",
+        language: "id",
+        tone: "informative",
+        targetAudience: "History students",
+        additionalDirection: "Use cautious pacing.",
+      },
+      output: {
+        duration: 30,
+        aspectRatio: "9:16",
+        sceneCount: 4,
+        visualStyle: "Cinematic Realistic",
+        narrationStyle: "Documentary",
+        narrationEnabled: false,
+        captionsEnabled: true,
+        musicEnabled: false,
+      },
     });
     expect(pushMock).toHaveBeenCalledWith("/projects/project_test");
+  });
+
+  it("shows a server validation error without silently creating mock media", async () => {
+    createProjectMock.mockRejectedValue(new Error("The topic was rejected by the API."));
+    const user = userEvent.setup();
+    render(<VideoWizard />);
+    await enterStory(user);
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "The topic was rejected by the API.",
+    );
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });

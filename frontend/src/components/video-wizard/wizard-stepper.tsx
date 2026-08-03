@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const STEPS = ["Starting Point", "Content", "Output Settings"];
+const STEPS = ["Story", "Creative Direction", "Output"];
 
 export function WizardStepper({ currentStep }: { currentStep: number }) {
   return (

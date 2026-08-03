@@ -66,6 +66,13 @@ Each scene is stored independently, so users can review and regenerate one part 
 
 TaleMotion uses an AI-assisted planning workflow to convert a topic or story idea into a validated storyboard.
 
+New projects are created through Story, Creative Direction, and Output steps.
+Source notes remain distinct from presentation instructions, while content
+type, language, tone, and target audience guide storyboard planning. A working
+project title can be derived locally from the topic without an AI request. The
+current four-scene workflow exposes only its supported 30/45-second vertical
+output choices.
+
 The current workflow produces four ordered scenes containing:
 
 * scene title;
@@ -613,4 +620,3 @@ Before deployment:
 TaleMotion is licensed under the [Apache License 2.0](LICENSE).
 
 Copyright © 2026 Kurnia Muhamad.
-

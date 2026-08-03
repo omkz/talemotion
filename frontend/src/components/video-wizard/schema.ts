@@ -1,125 +1,88 @@
 import { z } from "zod";
 
-export const wizardSchema = z
-  .object({
-    // Every wizard run currently starts from a template — see
-    // step-starting-point.tsx for why Custom Setup is hidden for now.
-    // templateId stays nullable because CreateVideoProjectInput/mock data
-    // already model a template-less project as a valid, persisted state.
-    templateId: z.string().nullable(),
-    mode: z.enum(["historical-documentary", "microdrama", "product-advertisement"]),
-
-    // Historical Documentary
-    topic: z.string().optional(),
-    additionalDirection: z.string().optional(),
-    sourceNotes: z.string().optional(),
-
-    // Microdrama
-    premise: z.string().optional(),
-    mainCharacter: z.string().optional(),
-    genre: z.string().optional(),
-    desiredEnding: z.string().optional(),
-
-    // Product Advertisement
-    productName: z.string().optional(),
-    productDescription: z.string().optional(),
-    mainBenefit: z.string().optional(),
-    targetAudience: z.string().optional(),
-    callToAction: z.string().optional(),
-
-    // Output settings
-    title: z.string().min(1, "Title is required"),
-    language: z.string().min(1, "Language is required"),
-    duration: z.enum(["30", "45", "60"]),
-    aspectRatio: z.enum(["9:16", "16:9"]),
-    visualStyle: z.string().min(1, "Visual style is required"),
-    narrationStyle: z.string().min(1, "Narration style is required"),
-    sceneCount: z.enum(["auto", "4", "5", "6"]),
-    captionsEnabled: z.boolean(),
-    musicEnabled: z.boolean(),
-  })
-  .superRefine((data, ctx) => {
-    const requireField = (
-      field: keyof typeof data,
-      message: string
-    ) => {
-      const value = data[field];
-      if (typeof value !== "string" || !value.trim()) {
-        ctx.addIssue({ code: "custom", path: [field], message });
-      }
-    };
-
-    if (data.mode === "historical-documentary") {
-      requireField("topic", "Topic is required");
-    }
-    if (data.mode === "microdrama") {
-      requireField("premise", "Premise is required");
-      requireField("mainCharacter", "Main character is required");
-      requireField("genre", "Genre is required");
-      requireField("desiredEnding", "Desired ending is required");
-    }
-    if (data.mode === "product-advertisement") {
-      requireField("productName", "Product name is required");
-      requireField("productDescription", "Product description is required");
-      requireField("mainBenefit", "Main benefit is required");
-      requireField("targetAudience", "Target audience is required");
-      requireField("callToAction", "Call to action is required");
-    }
-  });
+export const wizardSchema = z.object({
+  topic: z
+    .string()
+    .trim()
+    .min(1, "Topic or story idea is required")
+    .max(4000, "Topic must be 4,000 characters or fewer"),
+  sourceNotes: z
+    .string()
+    .trim()
+    .max(12000, "Source notes must be 12,000 characters or fewer"),
+  title: z
+    .string()
+    .trim()
+    .max(200, "Project title must be 200 characters or fewer"),
+  contentType: z.enum([
+    "documentary",
+    "educational",
+    "fiction",
+    "explainer",
+    "promotional",
+  ]),
+  language: z.enum(["en", "id", "nl", "de", "fr", "es"]),
+  tone: z.enum([
+    "cinematic",
+    "informative",
+    "dramatic",
+    "inspirational",
+    "neutral",
+  ]),
+  targetAudience: z
+    .string()
+    .trim()
+    .min(1, "Target audience is required")
+    .max(200, "Target audience must be 200 characters or fewer"),
+  additionalDirection: z
+    .string()
+    .trim()
+    .max(4000, "Additional direction must be 4,000 characters or fewer"),
+  duration: z.enum(["30", "45"]),
+  aspectRatio: z.literal("9:16"),
+  visualStyle: z.string().trim().min(1),
+  narrationStyle: z.string().trim().min(1),
+  narrationEnabled: z.boolean(),
+  captionsEnabled: z.boolean(),
+  musicEnabled: z.boolean(),
+});
 
 export type WizardFormValues = z.infer<typeof wizardSchema>;
 
 export const STEP_FIELDS: Record<number, (keyof WizardFormValues)[]> = {
-  1: ["templateId", "mode"],
+  1: ["topic", "sourceNotes", "title"],
   2: [
-    "topic",
-    "additionalDirection",
-    "sourceNotes",
-    "premise",
-    "mainCharacter",
-    "genre",
-    "desiredEnding",
-    "productName",
-    "productDescription",
-    "mainBenefit",
+    "contentType",
+    "language",
+    "tone",
     "targetAudience",
-    "callToAction",
+    "additionalDirection",
   ],
   3: [
-    "title",
-    "language",
     "duration",
     "aspectRatio",
     "visualStyle",
     "narrationStyle",
-    "sceneCount",
+    "narrationEnabled",
     "captionsEnabled",
     "musicEnabled",
   ],
 };
 
 export const WIZARD_DEFAULT_VALUES: WizardFormValues = {
-  templateId: null,
-  mode: "historical-documentary",
   topic: "",
-  additionalDirection: "",
   sourceNotes: "",
-  premise: "",
-  mainCharacter: "",
-  genre: "",
-  desiredEnding: "",
-  productName: "",
-  productDescription: "",
-  mainBenefit: "",
-  targetAudience: "",
-  callToAction: "",
   title: "",
-  language: "English",
+  contentType: "documentary",
+  language: "en",
+  tone: "cinematic",
+  targetAudience: "General audience",
+  additionalDirection: "",
   duration: "45",
   aspectRatio: "9:16",
   visualStyle: "Cinematic Realistic",
   narrationStyle: "Documentary",
-  sceneCount: "5",
+  narrationEnabled: true,
   captionsEnabled: false,
   musicEnabled: false,
 };

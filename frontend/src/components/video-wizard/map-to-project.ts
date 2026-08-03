@@ -1,66 +1,32 @@
 import type { CreateVideoProjectInput } from "@/lib/api/video-project-api";
-import type { Duration, SceneCountSetting } from "@/types";
 import type { WizardFormValues } from "./schema";
 
 export function mapWizardValuesToProjectInput(
-  values: WizardFormValues
+  values: WizardFormValues,
 ): CreateVideoProjectInput {
-  const duration = Number(values.duration) as Duration;
-  const sceneCount: SceneCountSetting =
-    values.sceneCount === "auto" ? "auto" : (Number(values.sceneCount) as 4 | 5 | 6);
-
-  const output: CreateVideoProjectInput["output"] = {
-    title: values.title,
-    language: values.language,
-    duration,
-    aspectRatio: values.aspectRatio,
-    visualStyle: values.visualStyle,
-    narrationStyle: values.narrationStyle,
-    sceneCount,
-    captionsEnabled: values.captionsEnabled,
-    musicEnabled: values.musicEnabled,
-  };
-
-  if (values.mode === "microdrama") {
-    return {
-      mode: values.mode,
-      output,
-      brief: {
-        mode: "microdrama",
-        premise: values.premise ?? "",
-        mainCharacter: values.mainCharacter ?? "",
-        genre: values.genre ?? "",
-        desiredEnding: values.desiredEnding ?? "",
-      },
-      templateId: values.templateId,
-    };
-  }
-
-  if (values.mode === "product-advertisement") {
-    return {
-      mode: values.mode,
-      output,
-      brief: {
-        mode: "product-advertisement",
-        productName: values.productName ?? "",
-        productDescription: values.productDescription ?? "",
-        mainBenefit: values.mainBenefit ?? "",
-        targetAudience: values.targetAudience ?? "",
-        callToAction: values.callToAction ?? "",
-      },
-      templateId: values.templateId,
-    };
-  }
-
   return {
     mode: "historical-documentary",
-    output,
+    output: {
+      title: values.title.trim() || values.topic.trim(),
+      language: values.language,
+      duration: Number(values.duration) as 30 | 45,
+      aspectRatio: "9:16",
+      visualStyle: values.visualStyle,
+      narrationStyle: values.narrationStyle,
+      sceneCount: 4,
+      narrationEnabled: values.narrationEnabled,
+      captionsEnabled: values.captionsEnabled,
+      musicEnabled: values.musicEnabled,
+    },
     brief: {
       mode: "historical-documentary",
-      topic: values.topic ?? "",
-      additionalDirection: values.additionalDirection ?? "",
-      sourceNotes: values.sourceNotes ?? "",
+      topic: values.topic,
+      sourceNotes: values.sourceNotes,
+      contentType: values.contentType,
+      language: values.language,
+      tone: values.tone,
+      targetAudience: values.targetAudience,
+      additionalDirection: values.additionalDirection,
     },
-    templateId: values.templateId,
   };
 }

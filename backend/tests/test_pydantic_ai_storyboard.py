@@ -4,6 +4,7 @@ from pydantic_ai.models.test import TestModel
 
 from app.core.config import AppConfig
 from app.media import SceneMediaError
+from app.models.project import ContentType, ProjectTone
 from app.providers import ProviderCapability
 from app.providers.catalog import provider_entry
 from app.providers.storyboard import pydantic_ai as storyboard_provider
@@ -13,7 +14,7 @@ from app.providers.storyboard.pydantic_ai import (
     map_storyboard_error,
     resolved_storyboard_model,
 )
-from app.schemas.storyboard import HistoricalStoryboardDraft
+from app.schemas.storyboard import HistoricalStoryboardDraft, StoryboardProjectSnapshot
 from app.tasks.storyboard import _valid_duration
 
 
@@ -45,6 +46,29 @@ def _draft_arguments() -> dict[str, object]:
             for position, duration in enumerate(durations, start=1)
         ]
     }
+
+
+def _brief(**updates: object) -> StoryboardProjectSnapshot:
+    values: dict[str, object] = {
+        "title": "The Rise of Majapahit",
+        "topic": "The rise of Majapahit",
+        "source_notes": "Use the Nagarakretagama as user-provided context.",
+        "content_type": ContentType.DOCUMENTARY,
+        "language": "en",
+        "tone": ProjectTone.CINEMATIC,
+        "target_audience": "General audience",
+        "additional_direction": "Emphasize maritime strategy",
+        "historical_accuracy_note": "Avoid unsupported certainty",
+        "visual_style": "Cinematic historical realism",
+        "narration_style": "dramatic documentary",
+        "duration_seconds": 30,
+        "aspect_ratio": "9:16",
+        "narration_enabled": True,
+        "captions_enabled": False,
+        "music_enabled": False,
+    }
+    values.update(updates)
+    return StoryboardProjectSnapshot.model_validate(values)
 
 
 def test_storyboard_model_resolution_supports_alibaba_and_openai() -> None:
@@ -237,11 +261,7 @@ def test_generator_uses_pydantic_ai_typed_output() -> None:
     generator = PydanticAIStoryboardGenerator(_config(), model=model)
 
     result = generator.generate(
-        topic="The rise of Majapahit",
-        additional_direction="Emphasize maritime strategy",
-        historical_accuracy_note="Avoid unsupported certainty",
-        visual_style="Cinematic historical realism",
-        duration_seconds=30,
+        brief=_brief(),
     )
 
     assert isinstance(result, HistoricalStoryboardDraft)
@@ -252,11 +272,13 @@ def test_generator_uses_pydantic_ai_typed_output() -> None:
 
 def test_storyboard_prompt_preserves_project_and_historical_constraints() -> None:
     prompt = build_storyboard_prompt(
-        topic="Majapahit maritime trade",
-        additional_direction="Focus on political strategy",
-        historical_accuracy_note="Treat disputed details cautiously",
-        visual_style="Epic historical cinema",
-        duration_seconds=45,
+        brief=_brief(
+            topic="Majapahit maritime trade",
+            additional_direction="Focus on political strategy",
+            historical_accuracy_note="Treat disputed details cautiously",
+            visual_style="Epic historical cinema",
+            duration_seconds=45,
+        ),
     )
 
     for expected in (
@@ -264,10 +286,17 @@ def test_storyboard_prompt_preserves_project_and_historical_constraints() -> Non
         "Focus on political strategy",
         "Treat disputed details cautiously",
         "Epic historical cinema",
-        "45-second",
+        "45 seconds",
         "exactly four scenes",
         "Southeast Asian jong ships",
         "vertical 9:16",
+        "Source notes:",
+        "Additional direction:",
+        "Output language:",
+        "Target audience:",
+        "Source notes: Use the Nagarakretagama as user-provided context.",
+        "Additional direction: Focus on political strategy",
+        "Output language: en",
     ):
         assert expected in prompt
 
@@ -283,11 +312,11 @@ def test_duration_validation_rejects_incorrect_total() -> None:
         }
     )
     result = PydanticAIStoryboardGenerator(_config(), model=model).generate(
-        topic="Majapahit",
-        additional_direction="",
-        historical_accuracy_note=None,
-        visual_style="Cinematic",
-        duration_seconds=30,
+        brief=_brief(
+            topic="Majapahit",
+            additional_direction="",
+            historical_accuracy_note=None,
+        ),
     )
     assert not _valid_duration(result, 30)
 
@@ -298,11 +327,11 @@ def test_missing_dashscope_credentials_are_non_retryable() -> None:
     )
     try:
         generator.generate(
-            topic="Majapahit",
-            additional_direction="",
-            historical_accuracy_note=None,
-            visual_style="Cinematic",
-            duration_seconds=30,
+            brief=_brief(
+                topic="Majapahit",
+                additional_direction="",
+                historical_accuracy_note=None,
+            ),
         )
     except SceneMediaError as error:
         assert error.code == "missing_configuration"

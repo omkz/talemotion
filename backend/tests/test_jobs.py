@@ -21,6 +21,7 @@ def persisted_job(
     status: JobStatus = JobStatus.QUEUED,
     retry_count: int = 0,
     max_retries: int = 2,
+    input_payload: dict[str, object] | None = None,
 ) -> GenerationJob:
     project = client.post("/api/v1/projects", json=project_payload).json()
     with session_factory() as session:
@@ -33,7 +34,7 @@ def persisted_job(
             status=status,
             progress=0,
             current_stage="queued",
-            input_payload={"project_id": project["id"]},
+            input_payload=input_payload or {"project_id": project["id"]},
             retry_count=retry_count,
             max_retries=max_retries,
         )
@@ -67,7 +68,16 @@ def test_storyboard_retry_creates_new_persisted_job(
     monkeypatch,
 ) -> None:
     failed = persisted_job(
-        client, session_factory, project_payload, status=JobStatus.FAILED
+        client,
+        session_factory,
+        project_payload,
+        status=JobStatus.FAILED,
+        input_payload={
+            "project_brief": {
+                "topic": "Original topic",
+                "source_notes": "Original sources",
+            }
+        },
     )
     dispatched: list[str] = []
     monkeypatch.setattr(
@@ -79,6 +89,10 @@ def test_storyboard_retry_creates_new_persisted_job(
     assert response.status_code == 200
     assert response.json()["id"] != failed.id
     assert response.json()["retry_count"] == 1
+    assert response.json()["input_payload"]["project_brief"] == {
+        "topic": "Original topic",
+        "source_notes": "Original sources",
+    }
     assert dispatched == [response.json()["id"]]
 
     queued = persisted_job(client, session_factory, project_payload)

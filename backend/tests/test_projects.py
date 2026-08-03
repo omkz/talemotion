@@ -8,6 +8,7 @@ from app.models.project import Project
 from app.repositories.auth import AuthRepository
 from app.repositories.sqlalchemy import ProjectRepository
 from app.schemas.project import CreateProjectRequest
+from app.services.project_titles import derive_project_title
 from app.services.projects import ProjectService
 
 
@@ -23,6 +24,130 @@ def test_create_project_persists_main_chapter(
     assert project["chapters"][0]["position"] == 1
     assert project["chapters"][0]["status"] == "draft"
     assert project["chapters"][0]["scenes"] == []
+
+
+def test_create_project_persists_complete_creation_brief(
+    client: TestClient, project_payload: dict[str, object]
+) -> None:
+    payload = {
+        **project_payload,
+        "source_notes": "Nagarakretagama excerpt\nA disputed chronology.",
+        "content_type": "educational",
+        "language": "id-ID",
+        "tone": "informative",
+        "target_audience": "Pelajar sekolah menengah",
+        "additional_direction": "Jelaskan dengan hati-hati.",
+        "narration_enabled": False,
+        "captions_enabled": True,
+        "music_enabled": False,
+    }
+    response = client.post("/api/v1/projects", json=payload)
+    assert response.status_code == 201
+    assert {
+        "source_notes": payload["source_notes"],
+        "content_type": "educational",
+        "language": "id-ID",
+        "tone": "informative",
+        "target_audience": "Pelajar sekolah menengah",
+        "additional_direction": "Jelaskan dengan hati-hati.",
+        "narration_enabled": False,
+        "captions_enabled": True,
+        "music_enabled": False,
+    }.items() <= response.json().items()
+
+
+@pytest.mark.parametrize(
+    ("topic", "expected"),
+    [
+        ("The rise of maritime Majapahit", "The rise of maritime Majapahit"),
+        ("  Kebangkitan   kerajaan maritim  ", "Kebangkitan kerajaan maritim"),
+        ("海上シルクロードの物語", "海上シルクロードの物語"),
+        ("\n\nBaris pertama yang bermakna\nBaris kedua", "Baris pertama yang bermakna"),
+    ],
+)
+def test_working_title_derivation_preserves_language(
+    topic: str, expected: str
+) -> None:
+    assert derive_project_title(topic) == expected
+
+
+def test_working_title_truncates_without_splitting_a_word() -> None:
+    title = derive_project_title("sejarah " * 80, max_length=40)
+    assert len(title) <= 40
+    assert title.endswith("…")
+    assert title.removesuffix("…").split()[-1] == "sejarah"
+
+
+def test_create_project_derives_title_without_ai_request(client: TestClient) -> None:
+    response = client.post(
+        "/api/v1/projects",
+        json={
+            "mode": "historical_documentary",
+            "topic": "  Kisah   pelabuhan Nusantara. Bagian berikutnya  ",
+            "title": "   ",
+            "duration_seconds": 30,
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["title"] == "Kisah pelabuhan Nusantara."
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"topic": "   "},
+        {"content_type": "podcast"},
+        {"tone": "hyperbolic"},
+        {"language": "not_a_language"},
+    ],
+)
+def test_project_creation_brief_validation(
+    client: TestClient, project_payload: dict[str, object], patch: dict[str, str]
+) -> None:
+    response = client.post("/api/v1/projects", json={**project_payload, **patch})
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
+def test_project_creation_brief_can_be_updated_and_reopened(
+    client: TestClient, project_payload: dict[str, object]
+) -> None:
+    created = client.post("/api/v1/projects", json=project_payload).json()
+    response = client.patch(
+        f"/api/v1/projects/{created['id']}",
+        json={
+            "title": "Updated title",
+            "topic": "Updated topic",
+            "source_notes": "Updated source context",
+            "content_type": "fiction",
+            "language": "pt-BR",
+            "tone": "dramatic",
+            "target_audience": "Young adult readers",
+            "additional_direction": "Use a mystery structure.",
+        },
+    )
+    assert response.status_code == 200
+    reopened = client.get(f"/api/v1/projects/{created['id']}").json()
+    assert {
+        "title": "Updated title",
+        "topic": "Updated topic",
+        "source_notes": "Updated source context",
+        "content_type": "fiction",
+        "language": "pt-BR",
+        "tone": "dramatic",
+        "target_audience": "Young adult readers",
+        "additional_direction": "Use a mystery structure.",
+    }.items() <= reopened.items()
+
+
+def test_legacy_language_label_is_normalized(
+    client: TestClient, project_payload: dict[str, object]
+) -> None:
+    response = client.post(
+        "/api/v1/projects", json={**project_payload, "language": "English"}
+    )
+    assert response.status_code == 201
+    assert response.json()["language"] == "en"
 
 
 def test_project_creation_is_atomic_on_chapter_failure(

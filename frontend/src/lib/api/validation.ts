@@ -152,6 +152,10 @@ const briefSchema = z.discriminatedUnion("mode", [
     topic: z.string(),
     additional_direction: z.string(),
     source_notes: z.string(),
+    content_type: z.enum(["documentary", "educational", "fiction", "explainer", "promotional"]).optional(),
+    language: z.string().optional(),
+    tone: z.enum(["cinematic", "informative", "dramatic", "inspirational", "neutral"]).optional(),
+    target_audience: z.string().optional(),
   }),
   z.object({
     mode: z.literal("microdrama"),

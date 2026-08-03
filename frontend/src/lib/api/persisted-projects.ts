@@ -41,6 +41,10 @@ export interface PersistedProjectResponse {
     | "failed";
   title: string;
   topic: string;
+  source_notes: string | null;
+  content_type: "documentary" | "educational" | "fiction" | "explainer" | "promotional";
+  tone: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
+  target_audience: string;
   additional_direction: string;
   language: string;
   duration_seconds: 30 | 45;
@@ -123,8 +127,12 @@ export function mapPersistedProject(response: PersistedProjectResponse): VideoPr
     brief: {
       mode: "historical-documentary",
       topic: response.topic,
+      sourceNotes: response.source_notes ?? "",
+      contentType: response.content_type,
+      language: response.language,
+      tone: response.tone,
+      targetAudience: response.target_audience,
       additionalDirection: response.additional_direction,
-      sourceNotes: "",
     },
     output: {
       title: response.title,
@@ -170,8 +178,12 @@ export async function getPersistedProject(
 
 export async function createPersistedHistoricalProject(
   input: {
-    title: string;
+    title?: string;
     topic: string;
+    source_notes?: string | null;
+    content_type?: "documentary" | "educational" | "fiction" | "explainer" | "promotional";
+    tone?: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
+    target_audience?: string;
     additional_direction: string;
     language: string;
     duration_seconds: 30 | 45;
@@ -214,7 +226,13 @@ export async function deletePersistedProject(
 export async function updatePersistedProject(
   projectId: string,
   patch: {
+    title?: string;
     topic?: string;
+    source_notes?: string | null;
+    content_type?: "documentary" | "educational" | "fiction" | "explainer" | "promotional";
+    language?: string;
+    tone?: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
+    target_audience?: string;
     additional_direction?: string;
     visual_style?: string;
     narration_style?: string;

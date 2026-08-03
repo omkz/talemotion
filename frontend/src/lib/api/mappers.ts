@@ -56,6 +56,10 @@ function mapBriefToDto(brief: ModeBrief): VideoBriefDto {
         topic: brief.topic,
         additional_direction: brief.additionalDirection,
         source_notes: brief.sourceNotes,
+        content_type: brief.contentType,
+        language: brief.language,
+        tone: brief.tone,
+        target_audience: brief.targetAudience,
       };
     case "microdrama":
       return {
@@ -85,6 +89,10 @@ function mapBriefToDomain(brief: VideoBriefDto): ModeBrief {
         topic: brief.topic,
         additionalDirection: brief.additional_direction,
         sourceNotes: brief.source_notes,
+        contentType: brief.content_type ?? "documentary",
+        language: brief.language ?? "en",
+        tone: brief.tone ?? "cinematic",
+        targetAudience: brief.target_audience ?? "General audience",
       };
     case "microdrama":
       return {

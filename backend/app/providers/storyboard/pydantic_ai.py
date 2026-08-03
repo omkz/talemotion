@@ -19,7 +19,10 @@ from app.media import SceneMediaError, StoryboardGenerator
 from app.providers import ProviderCapability, ProviderSelection
 from app.providers.catalog import provider_entry, validate_selection
 from app.providers.errors import ProviderError
-from app.schemas.storyboard import HistoricalStoryboardDraft
+from app.schemas.storyboard import (
+    HistoricalStoryboardDraft,
+    StoryboardProjectSnapshot,
+)
 
 SYSTEM_PROMPT = (
     "You are TaleMotion's historical storyboard planner. "
@@ -37,23 +40,45 @@ def resolved_storyboard_model(config: AppConfig) -> str:
 
 def build_storyboard_prompt(
     *,
-    topic: str,
-    additional_direction: str,
-    historical_accuracy_note: str | None,
-    visual_style: str,
-    duration_seconds: int,
+    brief: StoryboardProjectSnapshot,
 ) -> str:
+    factual_guidance = (
+        "Treat source notes as user-provided context, not verified evidence. "
+        "Use factually cautious wording where evidence is uncertain and do not "
+        "invent citations."
+        if brief.content_type.value in {"documentary", "educational", "explainer"}
+        else (
+            "Treat source notes as reference or world-building material where "
+            "appropriate."
+        )
+    )
     return f"""
-Create exactly four scenes for a {duration_seconds}-second vertical historical
-documentary about: {topic}
+Create exactly four scenes for this TaleMotion project.
 
-Additional direction: {additional_direction or "None"}
-Historical accuracy note: {historical_accuracy_note or "None"}
-Visual style: {visual_style}
+Project title: {brief.title}
+Topic: {brief.topic}
+Content type: {brief.content_type.value}
+Output language: {brief.language}
+Tone: {brief.tone.value}
+Target audience: {brief.target_audience}
+Source notes: {brief.source_notes or "None provided"}
+Additional direction: {brief.additional_direction or "None provided"}
+Historical accuracy note: {brief.historical_accuracy_note or "None provided"}
+Visual style: {brief.visual_style}
+Narration style: {brief.narration_style}
+Aspect ratio: {brief.aspect_ratio.value}
+Narration enabled: {brief.narration_enabled}
+Captions enabled: {brief.captions_enabled}
+Background music enabled: {brief.music_enabled}
+Target project duration: {brief.duration_seconds} seconds
+
+Write all scene titles and narration in {brief.language}. The content type sets
+the narrative format, the tone sets the presentation style, and the target
+audience sets the complexity and framing. {factual_guidance}
 
 Each scene needs a concise title, narration, a production-ready visual prompt,
 duration_seconds, and position. Positions must be exactly 1, 2, 3, 4, and the
-durations must total {duration_seconds} seconds within two seconds.
+durations must total {brief.duration_seconds} seconds within two seconds.
 
 Historical and visual requirements:
 - historically plausible architecture, landscapes, clothing, weapons, trade
@@ -200,11 +225,7 @@ class PydanticAIStoryboardGenerator:
     def generate(
         self,
         *,
-        topic: str,
-        additional_direction: str,
-        historical_accuracy_note: str | None,
-        visual_style: str,
-        duration_seconds: int,
+        brief: StoryboardProjectSnapshot,
     ) -> HistoricalStoryboardDraft:
         if self.model is None:
             try:
@@ -223,11 +244,7 @@ class PydanticAIStoryboardGenerator:
             )
             result = agent.run_sync(
                 build_storyboard_prompt(
-                    topic=topic,
-                    additional_direction=additional_direction,
-                    historical_accuracy_note=historical_accuracy_note,
-                    visual_style=visual_style,
-                    duration_seconds=duration_seconds,
+                    brief=brief,
                 )
             )
             return result.output

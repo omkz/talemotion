@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -21,10 +22,17 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { NARRATION_STYLES, VISUAL_STYLES } from "@/lib/mock-data";
+import {
+  CONTENT_TYPE_OPTIONS,
+  LANGUAGE_OPTIONS,
+  TONE_OPTIONS,
+} from "@/components/video-wizard/project-options";
 import type { ModeBrief, OutputConfig } from "@/types";
 
 export interface BriefSaveValues {
   brief: ModeBrief;
+  title: string;
+  language: string;
   visualStyle: string;
   narrationStyle: string;
   narrationEnabled: boolean;
@@ -91,6 +99,8 @@ function EditBriefForm({
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<ModeBrief>(brief);
+  const [title, setTitle] = useState(output.title);
+  const [language, setLanguage] = useState(output.language);
   const [visualStyle, setVisualStyle] = useState(output.visualStyle);
   const [narrationStyle, setNarrationStyle] = useState(output.narrationStyle);
   const [narrationEnabled, setNarrationEnabled] = useState(
@@ -103,6 +113,8 @@ function EditBriefForm({
   const handleSave = () => {
     onSave({
       brief: draft,
+      title,
+      language,
       visualStyle,
       narrationStyle,
       narrationEnabled,
@@ -118,6 +130,10 @@ function EditBriefForm({
         {draft.mode === "historical-documentary" && (
           <>
             <div className="space-y-1.5">
+              <Label htmlFor="brief-title">Project title</Label>
+              <Input id="brief-title" value={title} onChange={(event) => setTitle(event.target.value)} />
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="brief-topic">Topic</Label>
               <Textarea
                 id="brief-topic"
@@ -127,21 +143,48 @@ function EditBriefForm({
               />
             </div>
             <div className="space-y-1.5">
+              <Label htmlFor="brief-sources">Source notes</Label>
+              <Textarea
+                id="brief-sources"
+                rows={3}
+                value={draft.sourceNotes}
+                onChange={(e) => setDraft({ ...draft, sourceNotes: e.target.value })}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Content type</Label>
+                <Select value={draft.contentType} onValueChange={(contentType) => setDraft({ ...draft, contentType: contentType as typeof draft.contentType })}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>{CONTENT_TYPE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Language</Label>
+                <Select value={language} onValueChange={setLanguage}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>{LANGUAGE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tone</Label>
+                <Select value={draft.tone} onValueChange={(tone) => setDraft({ ...draft, tone: tone as typeof draft.tone })}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>{TONE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="brief-audience">Target audience</Label>
+                <Input id="brief-audience" value={draft.targetAudience} onChange={(event) => setDraft({ ...draft, targetAudience: event.target.value })} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
               <Label htmlFor="brief-direction">Additional direction</Label>
               <Textarea
                 id="brief-direction"
                 rows={3}
                 value={draft.additionalDirection}
                 onChange={(e) => setDraft({ ...draft, additionalDirection: e.target.value })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="brief-sources">Source notes</Label>
-              <Textarea
-                id="brief-sources"
-                rows={2}
-                value={draft.sourceNotes}
-                onChange={(e) => setDraft({ ...draft, sourceNotes: e.target.value })}
               />
             </div>
             <div className="space-y-1.5">

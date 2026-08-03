@@ -52,6 +52,22 @@ class AspectRatio(StrEnum):
     VERTICAL = "9:16"
 
 
+class ContentType(StrEnum):
+    DOCUMENTARY = "documentary"
+    EDUCATIONAL = "educational"
+    FICTION = "fiction"
+    EXPLAINER = "explainer"
+    PROMOTIONAL = "promotional"
+
+
+class ProjectTone(StrEnum):
+    CINEMATIC = "cinematic"
+    INFORMATIVE = "informative"
+    DRAMATIC = "dramatic"
+    INSPIRATIONAL = "inspirational"
+    NEUTRAL = "neutral"
+
+
 class Project(Base, TimestampMixin):
     __tablename__ = "projects"
     __table_args__ = (
@@ -94,6 +110,28 @@ class Project(Base, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(String(200))
     topic: Mapped[str] = mapped_column(Text)
+    source_notes: Mapped[str | None] = mapped_column(Text)
+    content_type: Mapped[ContentType] = mapped_column(
+        Enum(
+            ContentType,
+            values_callable=enum_values,
+            native_enum=False,
+            length=32,
+        ),
+        default=ContentType.DOCUMENTARY,
+    )
+    tone: Mapped[ProjectTone] = mapped_column(
+        Enum(
+            ProjectTone,
+            values_callable=enum_values,
+            native_enum=False,
+            length=32,
+        ),
+        default=ProjectTone.CINEMATIC,
+    )
+    target_audience: Mapped[str] = mapped_column(
+        String(200), default="General audience"
+    )
     additional_direction: Mapped[str] = mapped_column(Text, default="")
     historical_accuracy_note: Mapped[str | None] = mapped_column(Text)
     language: Mapped[str] = mapped_column(String(32), default="en")

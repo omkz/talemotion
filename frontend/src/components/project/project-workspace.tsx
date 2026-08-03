@@ -261,6 +261,8 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
 
   const handleBriefSave = (next: {
     brief: ModeBrief;
+    title: string;
+    language: string;
     visualStyle: string;
     narrationStyle: string;
     narrationEnabled: boolean;
@@ -271,7 +273,13 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     if (realSceneGenerationEnabled && next.brief.mode === "historical-documentary") {
       setSaveState("saving");
       void updatePersistedProject(projectId, {
+        title: next.title,
         topic: next.brief.topic,
+        source_notes: next.brief.sourceNotes.trim() || null,
+        content_type: next.brief.contentType,
+        language: next.language,
+        tone: next.brief.tone,
+        target_audience: next.brief.targetAudience,
         additional_direction: next.brief.additionalDirection,
         visual_style: next.visualStyle,
         narration_style: next.narrationStyle,
@@ -303,6 +311,8 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
             historicalAccuracyNote: next.historicalAccuracyNote,
             output: {
               ...prev.output,
+              title: next.title,
+              language: next.language,
               visualStyle: next.visualStyle,
               narrationStyle: next.narrationStyle,
               narrationEnabled: next.narrationEnabled,

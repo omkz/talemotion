@@ -15,6 +15,7 @@ from app.repositories.sqlalchemy import JobRepository, ProjectRepository
 from app.schemas.storyboard import (
     CreateProjectGenerationRequest,
     CreateStoryboardRequest,
+    StoryboardProjectSnapshot,
 )
 from app.services.credits import CreditService
 from app.services.idempotency import existing_idempotent_job
@@ -50,8 +51,12 @@ class ProjectGenerationService:
         idempotency_key: str | None = None,
     ) -> QueuedStoryboard:
         project = self._historical_project(project_id)
+        brief_snapshot = _storyboard_snapshot(project)
         payload = payload_with_selections(
-            {"replace_existing": request.replace_existing},
+            {
+                "replace_existing": request.replace_existing,
+                "project_brief": brief_snapshot.model_dump(mode="json"),
+            },
             configured_selections(
                 settings, (ProviderCapability.STORYBOARD,)
             ),
@@ -250,3 +255,24 @@ class ProjectGenerationService:
                 details={"project_id": project_id},
             )
         return project
+
+
+def _storyboard_snapshot(project: Project) -> StoryboardProjectSnapshot:
+    return StoryboardProjectSnapshot(
+        title=project.title,
+        topic=project.topic,
+        source_notes=project.source_notes,
+        content_type=project.content_type,
+        language=project.language,
+        tone=project.tone,
+        target_audience=project.target_audience,
+        additional_direction=project.additional_direction,
+        historical_accuracy_note=project.historical_accuracy_note,
+        duration_seconds=project.duration_seconds,
+        aspect_ratio=project.aspect_ratio,
+        visual_style=project.visual_style,
+        narration_style=project.narration_style,
+        narration_enabled=project.narration_enabled,
+        captions_enabled=project.captions_enabled,
+        music_enabled=project.music_enabled,
+    )

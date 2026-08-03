@@ -19,8 +19,12 @@ from app.providers.factory import create_provider_factory
 from app.providers.selection import payload_with_selections, selections_from_payload
 from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import JobRepository, ProjectRepository
-from app.schemas.storyboard import HistoricalStoryboardDraft
+from app.schemas.storyboard import (
+    HistoricalStoryboardDraft,
+    StoryboardProjectSnapshot,
+)
 from app.services.credits import CreditService
+from app.services.project_generation import _storyboard_snapshot
 
 
 def _settle(session, job: GenerationJob) -> None:
@@ -77,6 +81,27 @@ def execute_storyboard_job(
             )
             session.commit()
         storyboard_selection = selections[ProviderCapability.STORYBOARD]
+        raw_brief = job.input_payload.get("project_brief")
+        try:
+            if raw_brief is None:
+                brief = _storyboard_snapshot(project)
+                job.input_payload = {
+                    **job.input_payload,
+                    "project_brief": brief.model_dump(mode="json"),
+                }
+                session.commit()
+            else:
+                brief = StoryboardProjectSnapshot.model_validate(raw_brief)
+        except ValidationError:
+            _fail(
+                job,
+                "invalid_request",
+                "The storyboard job contains an invalid project brief snapshot.",
+            )
+            project.status = ProjectStatus.FAILED
+            _settle(session, job)
+            session.commit()
+            return {"job_id": job.id, "status": "failed"}
         storyboard_generator = generator or create_provider_factory(
             settings
         ).storyboard(storyboard_selection)
@@ -100,11 +125,7 @@ def execute_storyboard_job(
                 return {"job_id": job.id, "status": "cancelled"}
             try:
                 candidate = storyboard_generator.generate(
-                    topic=project.topic,
-                    additional_direction=project.additional_direction,
-                    historical_accuracy_note=project.historical_accuracy_note,
-                    visual_style=project.visual_style,
-                    duration_seconds=project.duration_seconds,
+                    brief=brief,
                 )
                 CreditService(BillingRepository(session)).record_usage(
                     job=job,
@@ -115,10 +136,14 @@ def execute_storyboard_job(
                         UsageOperation.STORYBOARD_GENERATION
                     ),
                     idempotency_key=f"usage:{job.id}:storyboard",
-                    input_units=Decimal(len(project.topic)),
+                    input_units=Decimal(
+                        len(brief.topic)
+                        + len(brief.source_notes or "")
+                        + len(brief.additional_direction)
+                    ),
                     metadata={"attempt": attempt + 1},
                 )
-                if not _valid_duration(candidate, project.duration_seconds):
+                if not _valid_duration(candidate, brief.duration_seconds):
                     raise ValueError(
                         "Storyboard durations do not match the project duration."
                     )

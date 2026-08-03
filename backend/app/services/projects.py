@@ -11,6 +11,7 @@ from app.schemas.project import (
     CreateProjectRequest,
     UpdateProjectRequest,
 )
+from app.services.project_titles import derive_project_title, normalize_single_line
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,8 +43,16 @@ class ProjectService:
         project = Project(
             mode=request.mode,
             status=ProjectStatus.DRAFT,
-            title=request.title,
+            title=(
+                normalize_single_line(request.title)
+                if request.title
+                else derive_project_title(request.topic)
+            ),
             topic=request.topic,
+            source_notes=request.source_notes,
+            content_type=request.content_type,
+            tone=request.tone,
+            target_audience=request.target_audience,
             additional_direction=request.additional_direction,
             historical_accuracy_note=request.historical_accuracy_note,
             language=request.language,
@@ -131,6 +140,8 @@ class ProjectService:
                 message="Historical projects support 30 or 45 seconds.",
                 details={"duration_seconds": values["duration_seconds"]},
             )
+        if "title" in values:
+            values["title"] = normalize_single_line(values["title"])
         for field, value in values.items():
             setattr(project, field, value)
         project.updated_at = utc_now()

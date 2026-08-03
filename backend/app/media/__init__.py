@@ -4,7 +4,10 @@ from typing import Protocol
 
 from app.providers.errors import ProviderError
 from app.schemas.scene_run import SceneRunEvent, SceneRunRequest
-from app.schemas.storyboard import HistoricalStoryboardDraft
+from app.schemas.storyboard import (
+    HistoricalStoryboardDraft,
+    StoryboardProjectSnapshot,
+)
 
 SceneMediaError = ProviderError
 
@@ -19,11 +22,7 @@ class StoryboardGenerator(Protocol):
     def generate(
         self,
         *,
-        topic: str,
-        additional_direction: str,
-        historical_accuracy_note: str | None,
-        visual_style: str,
-        duration_seconds: int,
+        brief: StoryboardProjectSnapshot,
     ) -> HistoricalStoryboardDraft: ...
 
 

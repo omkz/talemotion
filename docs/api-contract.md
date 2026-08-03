@@ -11,6 +11,14 @@ All JSON fields use `snake_case`, IDs are opaque prefixed UUID strings, and
 timestamps are timezone-aware ISO 8601 values. Every new short-form project is
 created atomically with one `Main` chapter at position `1`.
 
+Project creation follows `Story → Creative Direction → Output`. `topic` is the
+required concept; `source_notes` preserves user-provided factual or reference
+context; and `additional_direction` remains a separate creative instruction.
+The API persists `content_type`, a BCP 47-compatible `language`, `tone`, and
+meaningful `target_audience` text. When `title` is omitted or blank, the backend
+derives a Unicode-safe working title deterministically from the first meaningful
+topic line or sentence—no AI request is made.
+
 All product resources require a cookie session. Passwords use Argon2 through
 `pwdlib`; the database stores only password hashes and SHA-256 session-token
 hashes. Authenticated mutations also require `X-CSRF-Token` to match the
@@ -169,6 +177,13 @@ persists and queues the paid planning job. Switching to
 configuration; Celery task and storyboard persistence behavior stay the same.
 Genblaze remains responsible for image, video, narration, music, manifests,
 and B2 media workflows.
+
+The queued storyboard job stores a credential-free `project_brief` snapshot
+containing the normalized title, story fields, creative direction, and supported
+output settings. The worker and any retry use that immutable snapshot even if
+the project is edited later. The provider prompt labels topic, source notes, and
+additional direction separately and uses language, content type, tone, audience,
+aspect ratio, and enabled output options during planning.
 
 ### Provider selections and job immutability
 

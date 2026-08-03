@@ -626,20 +626,24 @@ components:
     CreateProjectRequest:
       type: object
       additionalProperties: false
-      required: [mode, title, topic, duration_seconds, aspect_ratio]
+      required: [mode, topic]
       properties:
         mode: {$ref: "#/components/schemas/VideoMode"}
-        title: {type: string, minLength: 1}
-        topic: {type: string, minLength: 1}
+        title: {type: [string, "null"], minLength: 1, maxLength: 200, description: Optional; a deterministic working title is derived from topic when omitted.}
+        topic: {type: string, minLength: 1, maxLength: 4000}
+        source_notes: {type: [string, "null"], maxLength: 12000}
+        content_type: {type: string, enum: [documentary, educational, fiction, explainer, promotional], default: documentary}
+        tone: {type: string, enum: [cinematic, informative, dramatic, inspirational, neutral], default: cinematic}
+        target_audience: {type: string, minLength: 1, maxLength: 200, default: General audience}
         additional_direction: {type: string, default: ""}
-        language: {type: string, default: en}
-        duration_seconds: {type: integer, enum: [30, 45]}
-        aspect_ratio: {type: string, enum: ["9:16"]}
+        language: {type: string, pattern: '^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$', default: en}
+        duration_seconds: {type: integer, enum: [30, 45], default: 45}
+        aspect_ratio: {type: string, enum: ["9:16"], default: "9:16"}
         visual_style: {type: string}
         narration_style: {type: string}
-        captions_enabled: {type: boolean, default: true}
+        captions_enabled: {type: boolean, default: false}
         narration_enabled: {type: boolean, default: true}
-        music_enabled: {type: boolean, default: true}
+        music_enabled: {type: boolean, default: false}
         historical_accuracy_note: {type: [string, "null"]}
     UpdateProjectRequest:
       type: object
@@ -647,6 +651,10 @@ components:
       properties:
         title: {type: string, minLength: 1}
         topic: {type: string, minLength: 1}
+        source_notes: {type: [string, "null"], maxLength: 12000}
+        content_type: {type: string, enum: [documentary, educational, fiction, explainer, promotional]}
+        tone: {type: string, enum: [cinematic, informative, dramatic, inspirational, neutral]}
+        target_audience: {type: string, minLength: 1, maxLength: 200}
         additional_direction: {type: string}
         language: {type: string}
         duration_seconds: {type: integer, enum: [30, 45]}
@@ -661,7 +669,7 @@ components:
       allOf:
         - {$ref: "#/components/schemas/CreateProjectRequest"}
         - type: object
-          required: [id, status, generation_progress, chapters, created_at, updated_at]
+          required: [id, title, topic, content_type, language, tone, target_audience, status, generation_progress, chapters, created_at, updated_at]
           properties:
             id: {type: string}
             status: {$ref: "#/components/schemas/ProjectStatus"}

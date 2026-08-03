@@ -1,13 +1,16 @@
 import type { Control } from "react-hook-form";
-import { RectangleVertical, RectangleHorizontal, RotateCcw, Sparkles } from "lucide-react";
+import { RectangleVertical } from "lucide-react";
 import {
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -15,167 +18,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { LANGUAGES, NARRATION_STYLES, VISUAL_STYLES } from "@/lib/mock-data";
-import type { VideoTemplatePreset } from "@/lib/mock-data";
+import { NARRATION_STYLES, VISUAL_STYLES } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import type { WizardFormValues } from "./schema";
 
-interface StepOutputSettingsProps {
-  control: Control<WizardFormValues>;
-  appliedTemplate?: VideoTemplatePreset | null;
-  onResetToTemplateDefaults?: () => void;
-  realHistoricalOnly?: boolean;
-}
-
 export function StepOutputSettings({
   control,
-  appliedTemplate,
-  onResetToTemplateDefaults,
-  realHistoricalOnly = false,
-}: StepOutputSettingsProps) {
+}: {
+  control: Control<WizardFormValues>;
+}) {
   return (
     <div className="grid gap-6">
-      {appliedTemplate && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-accent/25 bg-accent/8 px-3.5 py-2.5">
-          <p className="flex items-center gap-2 text-sm text-foreground/90">
-            <Sparkles className="size-4 shrink-0 text-accent" />
-            Based on <span className="font-medium">{appliedTemplate.name}</span>
-          </p>
-          <Button type="button" variant="ghost" size="sm" onClick={onResetToTemplateDefaults}>
-            <RotateCcw className="size-3.5" />
-            Reset to template defaults
-          </Button>
-        </div>
-      )}
-
-      <FormField
-        control={control}
-        name="title"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Title</FormLabel>
-            <FormControl>
-              <Input
-                placeholder={appliedTemplate?.example.title ?? "The Rise of Majapahit"}
-                {...field}
-              />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <div className="grid gap-6 sm:grid-cols-2">
-        <FormField
-          control={control}
-          name="language"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Language</FormLabel>
-              <Select
-                value={field.value}
-                onValueChange={field.onChange}
-                disabled={realHistoricalOnly}
-              >
-                <FormControl>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {(realHistoricalOnly ? ["English"] : LANGUAGES).map((lang) => (
-                    <SelectItem key={lang} value={lang}>
-                      {lang}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={control}
-          name="visualStyle"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Visual style</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {VISUAL_STYLES.map((style) => (
-                    <SelectItem key={style} value={style}>
-                      {style}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={control}
-          name="narrationStyle"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Narration style</FormLabel>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {NARRATION_STYLES.map((style) => (
-                    <SelectItem key={style} value={style}>
-                      {style}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={control}
-          name="sceneCount"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Scene count</FormLabel>
-              <Select
-                value={field.value}
-                onValueChange={field.onChange}
-                disabled={realHistoricalOnly}
-              >
-                <FormControl>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {!realHistoricalOnly && <SelectItem value="auto">Auto</SelectItem>}
-                  <SelectItem value="4">4 scenes</SelectItem>
-                  {!realHistoricalOnly && <SelectItem value="5">5 scenes</SelectItem>}
-                  {!realHistoricalOnly && <SelectItem value="6">6 scenes</SelectItem>}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+      <div className="rounded-lg border border-border bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
+        The current workflow creates four scenes in a vertical 9:16 project.
       </div>
 
       <FormField
@@ -183,17 +38,17 @@ export function StepOutputSettings({
         name="duration"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Duration</FormLabel>
+            <FormLabel>Project duration</FormLabel>
+            <FormDescription>
+              Choose the supported total duration for the four-scene storyboard.
+            </FormDescription>
             <FormControl>
               <RadioGroup
                 value={field.value}
                 onValueChange={field.onChange}
-                className="flex gap-3"
+                className="flex flex-wrap gap-3"
               >
-                {(realHistoricalOnly
-                  ? (["30", "45"] as const)
-                  : (["30", "45", "60"] as const)
-                ).map((seconds) => (
+                {(["30", "45"] as const).map((seconds) => (
                   <Label
                     key={seconds}
                     htmlFor={`duration-${seconds}`}
@@ -201,11 +56,11 @@ export function StepOutputSettings({
                       "flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium",
                       field.value === seconds
                         ? "border-accent bg-accent/8 text-foreground"
-                        : "border-border text-muted-foreground hover:bg-muted/40"
+                        : "border-border text-muted-foreground hover:bg-muted/40",
                     )}
                   >
                     <RadioGroupItem value={seconds} id={`duration-${seconds}`} />
-                    {seconds}s
+                    {seconds} seconds
                   </Label>
                 ))}
               </RadioGroup>
@@ -222,39 +77,15 @@ export function StepOutputSettings({
           <FormItem>
             <FormLabel>Aspect ratio</FormLabel>
             <FormControl>
-              <RadioGroup
-                value={field.value}
-                onValueChange={field.onChange}
-                className="flex gap-3"
-              >
-                {(realHistoricalOnly
-                  ? [
-                      {
-                        value: "9:16" as const,
-                        label: "9:16 Vertical",
-                        icon: RectangleVertical,
-                      },
-                    ]
-                  : [
-                  { value: "9:16" as const, label: "9:16 Vertical", icon: RectangleVertical },
-                  { value: "16:9" as const, label: "16:9 Horizontal", icon: RectangleHorizontal },
-                    ]
-                ).map((option) => (
-                  <Label
-                    key={option.value}
-                    htmlFor={`aspect-${option.value}`}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium",
-                      field.value === option.value
-                        ? "border-accent bg-accent/8 text-foreground"
-                        : "border-border text-muted-foreground hover:bg-muted/40"
-                    )}
-                  >
-                    <RadioGroupItem value={option.value} id={`aspect-${option.value}`} />
-                    <option.icon className="size-4" />
-                    {option.label}
-                  </Label>
-                ))}
+              <RadioGroup value={field.value} onValueChange={field.onChange}>
+                <Label
+                  htmlFor="aspect-9:16"
+                  className="flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-accent bg-accent/8 px-4 py-2.5 text-sm font-medium text-foreground"
+                >
+                  <RadioGroupItem value="9:16" id="aspect-9:16" />
+                  <RectangleVertical className="size-4" />
+                  9:16 Vertical
+                </Label>
               </RadioGroup>
             </FormControl>
             <FormMessage />
@@ -262,38 +93,87 @@ export function StepOutputSettings({
         )}
       />
 
-      <div className="grid gap-4 rounded-lg border border-border p-4 sm:grid-cols-2">
+      <div className="grid gap-6 sm:grid-cols-2">
         <FormField
           control={control}
-          name="captionsEnabled"
+          name="visualStyle"
           render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <FormLabel className="text-sm">Captions</FormLabel>
-                <p className="text-xs text-muted-foreground">Burn in synced captions</p>
-              </div>
-              <FormControl>
-                <Switch checked={field.value} onCheckedChange={field.onChange} />
-              </FormControl>
+            <FormItem>
+              <FormLabel>Visual style</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl><SelectTrigger className="w-full"><SelectValue /></SelectTrigger></FormControl>
+                <SelectContent>{VISUAL_STYLES.map((style) => <SelectItem key={style} value={style}>{style}</SelectItem>)}</SelectContent>
+              </Select>
+              <FormMessage />
             </FormItem>
           )}
         />
         <FormField
           control={control}
-          name="musicEnabled"
+          name="narrationStyle"
           render={({ field }) => (
-            <FormItem className="flex flex-row items-center justify-between gap-3">
-              <div className="space-y-0.5">
-                <FormLabel className="text-sm">Background music</FormLabel>
-                <p className="text-xs text-muted-foreground">Add a mood-matched score</p>
-              </div>
-              <FormControl>
-                <Switch checked={field.value} onCheckedChange={field.onChange} />
-              </FormControl>
+            <FormItem>
+              <FormLabel>Narration style</FormLabel>
+              <Select value={field.value} onValueChange={field.onChange}>
+                <FormControl><SelectTrigger className="w-full"><SelectValue /></SelectTrigger></FormControl>
+                <SelectContent>{NARRATION_STYLES.map((style) => <SelectItem key={style} value={style}>{style}</SelectItem>)}</SelectContent>
+              </Select>
+              <FormMessage />
             </FormItem>
           )}
         />
       </div>
+
+      <div className="grid gap-4 rounded-lg border border-border p-4 sm:grid-cols-3">
+        <OutputToggle
+          control={control}
+          name="narrationEnabled"
+          label="AI narration"
+          description="Generate narration audio"
+        />
+        <OutputToggle
+          control={control}
+          name="captionsEnabled"
+          label="Captions"
+          description="Include timed captions"
+        />
+        <OutputToggle
+          control={control}
+          name="musicEnabled"
+          label="Background music"
+          description="Add a mood-matched score"
+        />
+      </div>
     </div>
+  );
+}
+
+function OutputToggle({
+  control,
+  name,
+  label,
+  description,
+}: {
+  control: Control<WizardFormValues>;
+  name: "narrationEnabled" | "captionsEnabled" | "musicEnabled";
+  label: string;
+  description: string;
+}) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem className="flex flex-row items-center justify-between gap-3">
+          <div className="space-y-0.5">
+            <FormLabel className="text-sm">{label}</FormLabel>
+            <p className="text-xs text-muted-foreground">{description}</p>
+          </div>
+          <FormControl>
+            <Switch checked={field.value} onCheckedChange={field.onChange} />
+          </FormControl>
+        </FormItem>
+      )}
+    />
   );
 }

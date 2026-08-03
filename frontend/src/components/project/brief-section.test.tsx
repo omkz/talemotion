@@ -54,6 +54,9 @@ describe("mode-aware project brief", () => {
     expect(screen.queryByText("Historical accuracy note")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.getByLabelText("Video description")).toBeTruthy();
+    expect(
+      (screen.getByLabelText("Target audience") as HTMLInputElement).value,
+    ).toBe("Coffee enthusiasts");
     expect(screen.queryByText("Narrative Tone")).toBeNull();
     expect(screen.queryByText("Story approach")).toBeNull();
     expect(screen.queryByText("Historical accuracy note")).toBeNull();
@@ -91,6 +94,10 @@ describe("mode-aware project brief", () => {
       name: "Narrative Tone",
     });
     expect(narrativeTone.textContent).toContain("Informative");
+    expect(
+      screen.getByRole("combobox", { name: "Target audience" }).textContent,
+    ).toContain("General Audience");
+    expect(screen.queryByLabelText("Describe the audience")).toBeNull();
     expect(
       screen.getByText(
         "Controls the storytelling and narration style, not the visual brightness.",
@@ -138,6 +145,44 @@ describe("mode-aware project brief", () => {
     expect(onSave.mock.calls[0][0]).toMatchObject({
       toneChanged: true,
       brief: { tone: "dramatic" },
+    });
+  });
+
+  it("loads and preserves an unknown Historical audience as Custom", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn(async () => true);
+    render(
+      <BriefSection
+        brief={{
+          mode: "historical-documentary",
+          topic: "The rise of Majapahit",
+          sourceNotes: "A source excerpt",
+          language: "en",
+          tone: "cinematic",
+          targetAudience: "Museum visitors",
+          additionalDirection: "Focus on maritime trade",
+        }}
+        output={output}
+        historicalAccuracyNote={null}
+        onSave={onSave}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(
+      screen.getByRole("combobox", { name: "Target audience" }).textContent,
+    ).toContain("Custom...");
+    expect(
+      (screen.getByLabelText("Describe the audience") as HTMLInputElement).value,
+    ).toBe("Museum visitors");
+    await user.clear(screen.getByLabelText("Topic"));
+    await user.type(screen.getByLabelText("Topic"), "A revised topic");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
+    expect(onSave.mock.calls[0][0].brief).toMatchObject({
+      targetAudience: "Museum visitors",
+      topic: "A revised topic",
     });
   });
 });

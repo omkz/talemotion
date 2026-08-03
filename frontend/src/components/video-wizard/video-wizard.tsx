@@ -17,6 +17,7 @@ import { StepContentForm } from "./step-content-form";
 import { StepCreativeDirection } from "./step-creative-direction";
 import { StepOutputSettings } from "./step-output-settings";
 import {
+  historicalTargetAudienceLabel,
   LANGUAGE_OPTIONS,
   TONE_OPTIONS,
   optionLabel,
@@ -182,7 +183,8 @@ function ProjectReview({ values }: { values: WizardFormValues }) {
           <p className="text-muted-foreground">
             Language: {optionLabel(LANGUAGE_OPTIONS, values.language)}
           </p>
-          <p className="text-muted-foreground">{values.targetAudience}</p>
+          <p className="text-muted-foreground">Target Audience</p>
+          <p>{historicalTargetAudienceLabel(values.targetAudience.trim())}</p>
         </ReviewGroup>
         <ReviewGroup title="Output">
           <p>{values.duration} seconds · {values.aspectRatio}</p>

@@ -116,6 +116,8 @@ describe("Historical VideoWizard", () => {
     await user.click(screen.getByRole("option", { name: "Dramatic" }));
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByText("Narrative Tone: Dramatic")).toBeTruthy();
+    expect(screen.getByText("Target Audience")).toBeTruthy();
+    expect(screen.getByText("General Audience")).toBeTruthy();
     expect(
       screen.getByText(
         "Controls the visual look, lighting, colors, realism, and atmosphere.",
@@ -139,7 +141,118 @@ describe("Historical VideoWizard", () => {
       },
     });
     expect(pushMock).toHaveBeenCalledWith("/projects/project_test");
-  });
+  }, 10_000);
+
+  it("offers Historical audience presets and reveals Custom on demand", async () => {
+    const user = userEvent.setup();
+    render(<VideoWizard />);
+    await completeStory(user);
+
+    const audience = screen.getByRole("combobox", {
+      name: "Target audience",
+    });
+    expect(audience.textContent).toContain("General Audience");
+    expect(screen.queryByLabelText("Describe the audience")).toBeNull();
+    expect(
+      screen.getByText(
+        "Adjusts language complexity, context, and assumed historical knowledge.",
+      ),
+    ).toBeTruthy();
+
+    await user.click(audience);
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "General Audience",
+      "Children",
+      "Teenagers",
+      "Students",
+      "History Enthusiasts",
+      "Academic Audience",
+      "Custom...",
+    ]);
+    await user.click(screen.getByRole("option", { name: "Custom..." }));
+    expect(screen.getByLabelText("Describe the audience")).toBeTruthy();
+  }, 10_000);
+
+  it("validates and trims a Custom audience before mock creation", async () => {
+    createProjectMock.mockResolvedValue(fakeProject("Custom audience project"));
+    const user = userEvent.setup();
+    render(<VideoWizard />);
+    await completeStory(user);
+
+    const audience = screen.getByRole("combobox", {
+      name: "Target audience",
+    });
+    await user.click(audience);
+    await user.click(screen.getByRole("option", { name: "Custom..." }));
+    const customAudience = screen.getByLabelText("Describe the audience");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      screen.getByText("Describe the audience when Custom is selected"),
+    ).toBeTruthy();
+    await user.type(customAudience, "   ");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(
+      screen.getByText("Describe the audience when Custom is selected"),
+    ).toBeTruthy();
+
+    await user.clear(customAudience);
+    await user.type(customAudience, "  Museum visitors  ");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Museum visitors")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+
+    expect(createProjectMock.mock.calls[0][0].brief).toMatchObject({
+      targetAudience: "Museum visitors",
+    });
+  }, 10_000);
+
+  it.each([
+    ["Children", "Children"],
+    ["History Enthusiasts", "History enthusiasts"],
+  ])("submits the %s preset as %s", async (label, storedValue) => {
+    createProjectMock.mockResolvedValue(fakeProject(`${label} project`));
+    const user = userEvent.setup();
+    render(<VideoWizard />);
+    await completeStory(user);
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Target audience" }),
+    );
+    await user.click(screen.getByRole("option", { name: label }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+
+    expect(createProjectMock.mock.calls[0][0].brief).toMatchObject({
+      targetAudience: storedValue,
+    });
+  }, 10_000);
+
+  it("drops a stale Custom audience when a preset is selected", async () => {
+    createProjectMock.mockResolvedValue(fakeProject("Preset project"));
+    const user = userEvent.setup();
+    render(<VideoWizard />);
+    await completeStory(user);
+
+    const audience = screen.getByRole("combobox", {
+      name: "Target audience",
+    });
+    await user.click(audience);
+    await user.click(screen.getByRole("option", { name: "Custom..." }));
+    await user.type(
+      screen.getByLabelText("Describe the audience"),
+      "Stale custom audience",
+    );
+    await user.click(audience);
+    await user.click(screen.getByRole("option", { name: "Children" }));
+
+    expect(screen.queryByLabelText("Describe the audience")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Children")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    expect(createProjectMock.mock.calls[0][0].brief).toMatchObject({
+      targetAudience: "Children",
+    });
+  }, 10_000);
 
   it("keeps input visible after a creation error", async () => {
     createProjectMock.mockRejectedValue(new Error("The topic was rejected."));

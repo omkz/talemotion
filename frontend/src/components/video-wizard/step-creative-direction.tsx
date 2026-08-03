@@ -8,6 +8,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -17,7 +18,9 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  AUDIENCE_SUGGESTIONS,
+  CUSTOM_TARGET_AUDIENCE_VALUE,
+  HISTORICAL_TARGET_AUDIENCE_OPTIONS,
+  isPresetTargetAudience,
   LANGUAGE_OPTIONS,
   TONE_OPTIONS,
 } from "./project-options";
@@ -78,19 +81,57 @@ export function StepCreativeDirection({
         <FormField
           control={control}
           name="targetAudience"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Target audience</FormLabel>
-              <FormControl>
-                <Input list="target-audience-options" {...field} />
-              </FormControl>
-              <datalist id="target-audience-options">
-                {AUDIENCE_SUGGESTIONS.map((audience) => <option key={audience} value={audience} />)}
-              </datalist>
-              <FormDescription>Choose a suggestion or enter a custom audience.</FormDescription>
-              <FormMessage />
-            </FormItem>
-          )}
+          render={({ field }) => {
+            const usesPreset = isPresetTargetAudience(field.value);
+            return (
+              <FormItem>
+                <FormLabel>Target audience</FormLabel>
+                <Select
+                  value={
+                    usesPreset ? field.value : CUSTOM_TARGET_AUDIENCE_VALUE
+                  }
+                  onValueChange={(value) =>
+                    field.onChange(
+                      value === CUSTOM_TARGET_AUDIENCE_VALUE ? "" : value,
+                    )
+                  }
+                >
+                  <FormControl>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {HISTORICAL_TARGET_AUDIENCE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={CUSTOM_TARGET_AUDIENCE_VALUE}>
+                      Custom...
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormDescription>
+                  Adjusts language complexity, context, and assumed historical knowledge.
+                </FormDescription>
+                {!usesPreset && (
+                  <div className="space-y-2 pt-1">
+                    <Label htmlFor="custom-target-audience">
+                      Describe the audience
+                    </Label>
+                    <Input
+                      id="custom-target-audience"
+                      placeholder="Indonesian high-school students"
+                      maxLength={200}
+                      value={field.value}
+                      onChange={field.onChange}
+                      onBlur={field.onBlur}
+                    />
+                  </div>
+                )}
+                <FormMessage />
+              </FormItem>
+            );
+          }}
         />
       </div>
       <FormField

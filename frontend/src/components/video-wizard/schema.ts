@@ -25,7 +25,7 @@ export const wizardSchema = z.object({
   targetAudience: z
     .string()
     .trim()
-    .min(1, "Target audience is required")
+    .min(1, "Describe the audience when Custom is selected")
     .max(200, "Target audience must be 200 characters or fewer"),
   additionalDirection: z
     .string()

@@ -20,7 +20,7 @@ function responseProject(): PersistedProjectResponse {
     source_notes: "Catatan sumber",
     content_type: "educational",
     tone: "informative",
-    target_audience: "Pelajar",
+    target_audience: "Museum visitors",
     additional_direction: "Gunakan bahasa yang hati-hati.",
     language: "id",
     duration_seconds: 30,
@@ -56,7 +56,7 @@ describe("persisted project creation", () => {
       source_notes: "Catatan sumber",
       language: "id",
       tone: "informative",
-      target_audience: "Pelajar",
+      target_audience: "Museum visitors",
       additional_direction: "Gunakan bahasa yang hati-hati.",
       duration_seconds: 30,
       visual_style: "cinematic historical realism",
@@ -75,7 +75,7 @@ describe("persisted project creation", () => {
       content_type: "documentary",
       language: "id",
       tone: "informative",
-      target_audience: "Pelajar",
+      target_audience: "Museum visitors",
       narration_enabled: false,
       captions_enabled: true,
       music_enabled: false,
@@ -84,7 +84,7 @@ describe("persisted project creation", () => {
       sourceNotes: "Catatan sumber",
       language: "id",
       tone: "informative",
-      targetAudience: "Pelajar",
+      targetAudience: "Museum visitors",
     });
   });
 
@@ -141,7 +141,7 @@ describe("persisted project creation", () => {
       prompt: response.topic,
       sourceNotes: "Catatan sumber",
       language: "id",
-      targetAudience: "Pelajar",
+      targetAudience: "Museum visitors",
     });
   });
 });

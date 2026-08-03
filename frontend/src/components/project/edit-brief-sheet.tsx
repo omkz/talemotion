@@ -22,7 +22,13 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { NARRATION_STYLES, VISUAL_STYLES } from "@/lib/mock-data";
-import { LANGUAGE_OPTIONS, TONE_OPTIONS } from "@/components/video-wizard/project-options";
+import {
+  CUSTOM_TARGET_AUDIENCE_VALUE,
+  HISTORICAL_TARGET_AUDIENCE_OPTIONS,
+  isPresetTargetAudience,
+  LANGUAGE_OPTIONS,
+  TONE_OPTIONS,
+} from "@/components/video-wizard/project-options";
 import type { ModeBrief, OutputConfig } from "@/types";
 
 export interface BriefSaveValues {
@@ -127,11 +133,16 @@ function EditBriefForm({
   const [captionsEnabled, setCaptionsEnabled] = useState(output.captionsEnabled);
   const [musicEnabled, setMusicEnabled] = useState(output.musicEnabled);
   const [accuracyNote, setAccuracyNote] = useState(historicalAccuracyNote ?? "");
+  const historicalAudienceInvalid =
+    draft.mode === "historical-documentary" &&
+    !draft.targetAudience.trim();
   const handleSave = async () => {
-    if (isSaving) return;
+    if (isSaving || historicalAudienceInvalid) return;
     const briefWithLanguage =
-      draft.mode === "historical-documentary" || draft.mode === "custom-video"
-        ? { ...draft, language }
+      draft.mode === "historical-documentary"
+        ? { ...draft, language, targetAudience: draft.targetAudience.trim() }
+        : draft.mode === "custom-video"
+          ? { ...draft, language }
         : draft;
     await onSave({
       brief: briefWithLanguage,
@@ -201,7 +212,59 @@ function EditBriefForm({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="brief-audience">Target audience</Label>
-                <Input id="brief-audience" value={draft.targetAudience} onChange={(event) => setDraft({ ...draft, targetAudience: event.target.value })} />
+                <Select
+                  value={
+                    isPresetTargetAudience(draft.targetAudience)
+                      ? draft.targetAudience
+                      : CUSTOM_TARGET_AUDIENCE_VALUE
+                  }
+                  onValueChange={(value) =>
+                    setDraft({
+                      ...draft,
+                      targetAudience:
+                        value === CUSTOM_TARGET_AUDIENCE_VALUE ? "" : value,
+                    })
+                  }
+                >
+                  <SelectTrigger id="brief-audience" className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {HISTORICAL_TARGET_AUDIENCE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={CUSTOM_TARGET_AUDIENCE_VALUE}>
+                      Custom...
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Adjusts language complexity, context, and assumed historical knowledge.
+                </p>
+                {!isPresetTargetAudience(draft.targetAudience) && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="brief-custom-audience">
+                      Describe the audience
+                    </Label>
+                    <Input
+                      id="brief-custom-audience"
+                      placeholder="Indonesian high-school students"
+                      maxLength={200}
+                      value={draft.targetAudience}
+                      onChange={(event) =>
+                        setDraft({
+                          ...draft,
+                          targetAudience: event.target.value,
+                        })
+                      }
+                    />
+                    {historicalAudienceInvalid && (
+                      <p className="text-xs text-destructive" role="alert">
+                        Describe the audience when Custom is selected.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             <div className="space-y-1.5">
@@ -407,7 +470,7 @@ function EditBriefForm({
         <Button variant="outline" onClick={onCancel} disabled={isSaving}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={isSaving}>
+        <Button onClick={handleSave} disabled={isSaving || historicalAudienceInvalid}>
           {isSaving ? "Saving…" : "Save changes"}
         </Button>
       </SheetFooter>

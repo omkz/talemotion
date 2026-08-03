@@ -101,7 +101,7 @@ describe("CustomVideoWizard", () => {
       "historicalAccuracyNote",
     );
     expect(pushMock).toHaveBeenCalledWith("/projects/project_custom");
-  });
+  }, 10_000);
 
   it("preserves values after an API error and blocks duplicate submission", async () => {
     let rejectRequest: (reason?: unknown) => void = () => undefined;

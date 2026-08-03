@@ -13,12 +13,10 @@ import { createProject } from "@/lib/mock-api";
 import { createPersistedHistoricalProject } from "@/lib/api/persisted-projects";
 import { realSceneGenerationEnabled } from "@/lib/api/scene-generation-jobs";
 import { WizardStepper } from "./wizard-stepper";
-import { StepModeSelect } from "./step-mode-select";
 import { StepContentForm } from "./step-content-form";
 import { StepCreativeDirection } from "./step-creative-direction";
 import { StepOutputSettings } from "./step-output-settings";
 import {
-  CONTENT_TYPE_OPTIONS,
   LANGUAGE_OPTIONS,
   TONE_OPTIONS,
   optionLabel,
@@ -30,14 +28,11 @@ import {
   type WizardFormValues,
 } from "./schema";
 import { mapWizardValuesToProjectInput } from "./map-to-project";
-import type { VideoMode } from "@/types";
 
 const STEP_TITLES = ["Story", "Creative Direction", "Output"];
 
 export function VideoWizard() {
   const router = useRouter();
-  const [selectedMode, setSelectedMode] = useState<VideoMode | null>(null);
-  const [formatSelected, setFormatSelected] = useState(false);
   const [step, setStep] = useState(1);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -55,17 +50,10 @@ export function VideoWizard() {
 
   const goBack = () => {
     if (step === 1) {
-      setFormatSelected(false);
+      router.push("/projects/new");
       return;
     }
     setStep((current) => current - 1);
-  };
-
-  const selectFormat = (mode: VideoMode) => {
-    if (mode !== "historical-documentary") return;
-    setSelectedMode(mode);
-    setStep(1);
-    setFormatSelected(true);
   };
 
   const onSubmit = async (submitted: WizardFormValues) => {
@@ -79,7 +67,6 @@ export function VideoWizard() {
             title: submitted.title.trim() || undefined,
             topic: submitted.topic,
             source_notes: submitted.sourceNotes.trim() || null,
-            content_type: submitted.contentType,
             language: submitted.language,
             tone: submitted.tone,
             target_audience: submitted.targetAudience,
@@ -126,22 +113,6 @@ export function VideoWizard() {
     );
   }
 
-  if (!formatSelected) {
-    return (
-      <Card className="p-5 sm:p-8">
-        <div className="mb-6 space-y-1.5">
-          <h2 className="text-lg font-semibold text-foreground">
-            Choose a video format
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Select the kind of video you want to create.
-          </p>
-        </div>
-        <StepModeSelect value={selectedMode} onChange={selectFormat} />
-      </Card>
-    );
-  }
-
   return (
     <div className="space-y-6">
       <WizardStepper currentStep={step} />
@@ -157,7 +128,7 @@ export function VideoWizard() {
             {step === 2 && <StepCreativeDirection control={form.control} />}
             {step === 3 && (
               <div className="space-y-8">
-                <StepOutputSettings control={form.control} />
+                <StepOutputSettings />
                 <ProjectReview values={values as WizardFormValues} />
               </div>
             )}
@@ -205,7 +176,6 @@ function ProjectReview({ values }: { values: WizardFormValues }) {
           <p className="text-muted-foreground">{values.title || "Working title will be created"}</p>
         </ReviewGroup>
         <ReviewGroup title="Creative Direction">
-          <p>{optionLabel(CONTENT_TYPE_OPTIONS, values.contentType)}</p>
           <p className="text-muted-foreground">
             {optionLabel(LANGUAGE_OPTIONS, values.language)} · {optionLabel(TONE_OPTIONS, values.tone)}
           </p>

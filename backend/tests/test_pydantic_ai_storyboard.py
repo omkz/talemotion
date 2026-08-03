@@ -5,17 +5,22 @@ from pydantic_ai.models.test import TestModel
 
 from app.core.config import AppConfig
 from app.media import SceneMediaError
-from app.models.project import ContentType, ProjectTone
+from app.models.project import ContentType, ProjectTone, VideoMode
 from app.providers import ProviderCapability
 from app.providers.catalog import provider_entry
 from app.providers.storyboard import pydantic_ai as storyboard_provider
 from app.providers.storyboard.pydantic_ai import (
+    CUSTOM_SYSTEM_PROMPT,
+    HISTORICAL_SYSTEM_PROMPT,
     PydanticAIStoryboardGenerator,
+    build_custom_storyboard_prompt,
+    build_historical_storyboard_prompt,
     build_storyboard_prompt,
     map_storyboard_error,
     resolved_storyboard_model,
+    system_prompt_for_mode,
 )
-from app.schemas.storyboard import HistoricalStoryboardDraft, StoryboardProjectSnapshot
+from app.schemas.storyboard import StoryboardDraft, StoryboardProjectSnapshot
 from app.tasks.storyboard import _valid_duration
 
 
@@ -51,6 +56,7 @@ def _draft_arguments() -> dict[str, object]:
 
 def _brief(**updates: object) -> StoryboardProjectSnapshot:
     values: dict[str, object] = {
+        "mode": VideoMode.HISTORICAL_DOCUMENTARY,
         "title": "The Rise of Majapahit",
         "topic": "The rise of Majapahit",
         "source_notes": "Use the Nagarakretagama as user-provided context.",
@@ -265,7 +271,7 @@ def test_generator_uses_pydantic_ai_typed_output() -> None:
         brief=_brief(),
     )
 
-    assert isinstance(result, HistoricalStoryboardDraft)
+    assert isinstance(result, StoryboardDraft)
     assert len(result.scenes) == 4
     assert [scene.position for scene in result.scenes] == [1, 2, 3, 4]
     assert _valid_duration(result, 30)
@@ -423,6 +429,96 @@ def test_legacy_content_type_uses_generic_historical_fallback() -> None:
     assert "Strong visual hook and historical situation" not in prompt
     assert "what the viewer will understand" not in prompt
     assert "State one clear opening question" not in prompt
+
+
+def test_custom_storyboard_uses_generic_prompt_and_complete_brief() -> None:
+    brief = _brief(
+        mode=VideoMode.CUSTOM_VIDEO,
+        title="From coffee farm to cup",
+        topic=(
+            "Follow coffee beans from a mountain farm through roasting to a "
+            "modern café, ending on the finished cup."
+        ),
+        source_notes="The farm is at high altitude and uses hand sorting.",
+        language="id",
+        target_audience="Coffee enthusiasts",
+        visual_style="Warm cinematic realism",
+        narration_style="Calm and informative",
+        duration_seconds=45,
+        narration_enabled=True,
+        captions_enabled=True,
+        music_enabled=False,
+    )
+
+    prompt = build_storyboard_prompt(brief=brief)
+
+    assert prompt == build_custom_storyboard_prompt(brief=brief)
+    for expected in (
+        "From coffee farm to cup",
+        "Follow coffee beans from a mountain farm",
+        "The farm is at high altitude",
+        "Output language: id",
+        "Target audience: Coffee enthusiasts",
+        "Visual style: Warm cinematic realism",
+        "Narration style: Calm and informative",
+        "Narration enabled: True",
+        "Captions enabled: True",
+        "Background music enabled: False",
+        "Create exactly four scenes",
+        "Target project duration: 45 seconds",
+        "Positions must be exactly 1, 2, 3, 4",
+        "clear opening,",
+        "progression, and ending",
+    ):
+        assert expected in prompt
+
+
+def test_custom_storyboard_does_not_receive_historical_guidance() -> None:
+    prompt = build_storyboard_prompt(
+        brief=_brief(
+            mode=VideoMode.CUSTOM_VIDEO,
+            topic="Show a handcrafted ceramic mug from clay to finished glaze.",
+            source_notes=None,
+            historical_accuracy_note=None,
+        )
+    )
+
+    for excluded in (
+        "Story approach:",
+        "Historical and visual requirements",
+        "historically plausible architecture",
+        "historically plausible clothing",
+        "historical weapons",
+        "disputed historical evidence",
+        "historical significance",
+        "Strong visual hook and historical situation",
+        "what the viewer will understand",
+        "State one clear opening question",
+    ):
+        assert excluded not in prompt
+
+
+def test_storyboard_system_prompt_and_dispatch_are_mode_aware() -> None:
+    historical = _brief(mode=VideoMode.HISTORICAL_DOCUMENTARY)
+    custom = _brief(mode=VideoMode.CUSTOM_VIDEO)
+
+    assert system_prompt_for_mode(historical.mode) == HISTORICAL_SYSTEM_PROMPT
+    assert system_prompt_for_mode(custom.mode) == CUSTOM_SYSTEM_PROMPT
+    assert build_storyboard_prompt(
+        brief=historical
+    ) == build_historical_storyboard_prompt(brief=historical)
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [VideoMode.MICRODRAMA, VideoMode.PRODUCT_ADVERTISEMENT],
+)
+def test_unsupported_storyboard_modes_fail_clearly(mode: VideoMode) -> None:
+    with pytest.raises(SceneMediaError) as error:
+        build_storyboard_prompt(brief=_brief(mode=mode))
+
+    assert error.value.code == "invalid_request"
+    assert error.value.retryable is False
 
 
 def test_duration_validation_rejects_incorrect_total() -> None:

@@ -589,7 +589,7 @@ components:
         csrf_token: {type: string}
     VideoMode:
       type: string
-      enum: [historical_documentary, microdrama, product_advertisement]
+      enum: [historical_documentary, custom_video, microdrama, product_advertisement]
     ProjectStatus:
       type: string
       enum: [draft, storyboard_pending, storyboard_generating, storyboard_ready, media_generating, rendering, ready, failed, deleted]

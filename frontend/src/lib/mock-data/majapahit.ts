@@ -88,7 +88,6 @@ export function createMajapahitProject(): VideoProject {
         "Emphasize strategy and resilience over spectacle. Keep tone reverent and cinematic, suitable for a general audience.",
       sourceNotes:
         "Based on the Pararaton and Nagarakretagama chronicles; simplified for a 45-second narrative.",
-      contentType: "documentary",
       language: "en",
       tone: "cinematic",
       targetAudience: "General audience",

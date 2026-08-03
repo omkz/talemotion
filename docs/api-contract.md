@@ -160,16 +160,20 @@ The Celery queues are `storyboard`, `media`, `rendering`, and `system`.
 `app.tasks.media.generate_scene_media` is routed to `media`; API requests never
 execute Genblaze or paid provider work in the FastAPI process.
 
-## Historical storyboard and Generate All
+## Storyboard planning and Generate All
 
-Only `historical_documentary`, `9:16`, 30/45-second projects are supported.
+`historical_documentary` and `custom_video` support `9:16`, 30/45-second,
+four-scene projects. Microdrama and Product Advertisement remain unavailable.
 Storyboard jobs resolve
 `TALEMOTION_STORYBOARD_PROVIDER:TALEMOTION_STORYBOARD_MODEL` through
 PydanticAI. The default is `alibaba:qwen-plus` using `DASHSCOPE_API_KEY` (or
 `ALIBABA_API_KEY`). The structured response must contain exactly four
 ordered scenes whose durations total the requested duration within two
-seconds. Invalid output is retried at most the configured limit; no hardcoded
-storyboard fallback is used.
+seconds. Historical Documentary uses the historical planner and its factual and
+visual constraints. Custom Video uses a general short-form planner that infers
+structure from the stored video description without adding historical rules.
+Invalid output is retried at most the configured limit; no hardcoded storyboard
+fallback is used.
 
 Creating a project performs no LLM request. Clicking Generate Storyboard
 persists and queues the paid planning job. Switching to
@@ -179,7 +183,7 @@ Genblaze remains responsible for image, video, narration, music, manifests,
 and B2 media workflows.
 
 The queued storyboard job stores a credential-free `project_brief` snapshot
-containing the normalized title, story fields, creative direction, and supported
+containing the project mode, normalized title, story fields, creative direction, and supported
 output settings. The worker and any retry use that immutable snapshot even if
 the project is edited later. The provider prompt labels topic, source notes, and
 additional direction separately and uses language, content type, tone, audience,

@@ -22,7 +22,6 @@ export function mapWizardValuesToProjectInput(
       mode: "historical-documentary",
       topic: values.topic,
       sourceNotes: values.sourceNotes,
-      contentType: values.contentType,
       language: values.language,
       tone: values.tone,
       targetAudience: values.targetAudience,

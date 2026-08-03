@@ -48,13 +48,16 @@ class SceneGenerationService:
                 details={"scene_id": scene_id},
             )
         project = scene.chapter.project
-        if project.mode is not VideoMode.HISTORICAL_DOCUMENTARY:
+        if project.mode not in {
+            VideoMode.HISTORICAL_DOCUMENTARY,
+            VideoMode.CUSTOM_VIDEO,
+        }:
             raise ApiError(
                 status_code=409,
                 code="state_conflict",
                 message=(
-                    "Real scene generation currently supports historical "
-                    "documentary projects only."
+                    "Real scene generation currently supports Historical "
+                    "Documentary and Custom Video projects only."
                 ),
                 details={"scene_id": scene_id, "mode": project.mode.value},
             )

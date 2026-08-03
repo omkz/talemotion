@@ -5,6 +5,7 @@
 
 export type VideoModeDto =
   | "historical_documentary"
+  | "custom_video"
   | "microdrama"
   | "product_advertisement";
 
@@ -73,6 +74,14 @@ export interface HistoricalDocumentaryBriefDto {
   target_audience?: string;
 }
 
+export interface CustomVideoBriefDto {
+  mode: "custom_video";
+  prompt: string;
+  source_notes: string;
+  language: string;
+  target_audience: string;
+}
+
 export interface MicrodramaBriefDto {
   mode: "microdrama";
   premise: string;
@@ -92,6 +101,7 @@ export interface ProductAdvertisementBriefDto {
 
 export type VideoBriefDto =
   | HistoricalDocumentaryBriefDto
+  | CustomVideoBriefDto
   | MicrodramaBriefDto
   | ProductAdvertisementBriefDto;
 

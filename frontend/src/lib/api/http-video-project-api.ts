@@ -51,6 +51,7 @@ function mapProjectStatus(status?: ProjectListFilters["status"]) {
 
 function mapVideoMode(mode?: ProjectListFilters["mode"]) {
   if (mode === "historical-documentary") return "historical_documentary";
+  if (mode === "custom-video") return "custom_video";
   if (mode === "product-advertisement") return "product_advertisement";
   return mode;
 }

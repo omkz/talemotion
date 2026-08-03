@@ -30,6 +30,8 @@ function mapVideoModeToDto(mode: VideoMode): VideoModeDto {
   switch (mode) {
     case "historical-documentary":
       return "historical_documentary";
+    case "custom-video":
+      return "custom_video";
     case "product-advertisement":
       return "product_advertisement";
     case "microdrama":
@@ -41,6 +43,8 @@ function mapVideoModeToDomain(mode: VideoModeDto): VideoMode {
   switch (mode) {
     case "historical_documentary":
       return "historical-documentary";
+    case "custom_video":
+      return "custom-video";
     case "product_advertisement":
       return "product-advertisement";
     case "microdrama":
@@ -56,9 +60,17 @@ function mapBriefToDto(brief: ModeBrief): VideoBriefDto {
         topic: brief.topic,
         additional_direction: brief.additionalDirection,
         source_notes: brief.sourceNotes,
-        content_type: brief.contentType,
+        content_type: "documentary",
         language: brief.language,
         tone: brief.tone,
+        target_audience: brief.targetAudience,
+      };
+    case "custom-video":
+      return {
+        mode: "custom_video",
+        prompt: brief.prompt,
+        source_notes: brief.sourceNotes,
+        language: brief.language,
         target_audience: brief.targetAudience,
       };
     case "microdrama":
@@ -89,10 +101,17 @@ function mapBriefToDomain(brief: VideoBriefDto): ModeBrief {
         topic: brief.topic,
         additionalDirection: brief.additional_direction,
         sourceNotes: brief.source_notes,
-        contentType: brief.content_type ?? "documentary",
         language: brief.language ?? "en",
         tone: brief.tone ?? "cinematic",
         targetAudience: brief.target_audience ?? "General audience",
+      };
+    case "custom_video":
+      return {
+        mode: "custom-video",
+        prompt: brief.prompt,
+        sourceNotes: brief.source_notes,
+        language: brief.language,
+        targetAudience: brief.target_audience,
       };
     case "microdrama":
       return {

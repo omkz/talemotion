@@ -9,7 +9,7 @@ from app.api.v1 import projects as project_routes
 from app.models.job import JobStatus
 from app.repositories.sqlalchemy import JobRepository
 from app.schemas.storyboard import (
-    HistoricalStoryboardDraft,
+    StoryboardDraft,
     StoryboardProjectSnapshot,
     StoryboardSceneDraft,
 )
@@ -23,9 +23,9 @@ class ValidStoryboardGenerator:
         self,
         *,
         brief: StoryboardProjectSnapshot,
-    ) -> HistoricalStoryboardDraft:
+    ) -> StoryboardDraft:
         durations = [12, 11, 11, 11] if brief.duration_seconds == 45 else [8, 8, 7, 7]
-        return HistoricalStoryboardDraft(
+        return StoryboardDraft(
             scenes=[
                 StoryboardSceneDraft(
                     title=f"Historical scene {position}",
@@ -47,7 +47,7 @@ class InvalidStoryboardGenerator:
         self,
         *,
         brief: StoryboardProjectSnapshot,
-    ) -> HistoricalStoryboardDraft:
+    ) -> StoryboardDraft:
         del brief
         raise ValueError("Provider returned malformed structured output.")
 
@@ -165,6 +165,7 @@ def test_storyboard_job_snapshots_complete_brief_before_project_edits(
     persisted = client.get(f"/api/v1/jobs/{queued.json()['id']}").json()
     assert persisted["input_payload"]["project_brief"] == original
     assert {
+        "mode": "historical_documentary",
         "title": project_payload["title"],
         "topic": project_payload["topic"],
         "source_notes": "Original source notes",
@@ -176,6 +177,43 @@ def test_storyboard_job_snapshots_complete_brief_before_project_edits(
         "duration_seconds": 45,
         "aspect_ratio": "9:16",
     }.items() <= original.items()
+
+
+def test_custom_storyboard_job_snapshots_mode_and_brief(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    project = _create_project(
+        client,
+        {
+            "mode": "custom_video",
+            "title": None,
+            "topic": "Show coffee moving from a mountain farm to a café.",
+            "source_notes": "Include hand sorting and roasting.",
+            "language": "en",
+            "target_audience": "General audience",
+            "duration_seconds": 45,
+            "aspect_ratio": "9:16",
+            "visual_style": "Warm cinematic realism",
+            "narration_style": "Calm and informative",
+            "narration_enabled": True,
+            "captions_enabled": False,
+            "music_enabled": False,
+        },
+    )
+    monkeypatch.setattr(project_routes, "enqueue_storyboard", lambda _job_id: None)
+
+    queued = client.post(
+        f"/api/v1/projects/{project['id']}/storyboard",
+        json={},
+    )
+
+    assert queued.status_code == 202
+    brief = queued.json()["input_payload"]["project_brief"]
+    assert brief["mode"] == "custom_video"
+    assert brief["topic"] == "Show coffee moving from a mountain farm to a café."
+    assert brief["content_type"] == "documentary"
+    assert brief["historical_accuracy_note"] is None
 
 
 def test_storyboard_idempotency_returns_one_job(
@@ -336,6 +374,52 @@ def test_generate_all_creates_parent_and_four_child_jobs(
             child.input_payload["provider_selections"] == parent_selections
             for child in jobs.children(parent["id"])
         )
+
+
+def test_custom_video_can_complete_storyboard_and_queue_all_scenes(
+    client: TestClient,
+    session_factory: sessionmaker[Session],
+    monkeypatch,
+) -> None:
+    custom_payload = {
+        "mode": "custom_video",
+        "title": "Coffee journey",
+        "topic": "Follow coffee from a mountain farm to a modern café.",
+        "source_notes": "Include sorting and roasting.",
+        "language": "en",
+        "target_audience": "General audience",
+        "duration_seconds": 45,
+        "aspect_ratio": "9:16",
+        "visual_style": "Warm cinematic realism",
+        "narration_style": "Calm and informative",
+        "narration_enabled": True,
+        "captions_enabled": False,
+        "music_enabled": False,
+    }
+    project_id, _ = _run_storyboard(
+        client,
+        custom_payload,
+        session_factory,
+        monkeypatch,
+    )
+    dispatched: list[str] = []
+    monkeypatch.setattr(
+        project_routes,
+        "enqueue_project_children",
+        dispatched.extend,
+    )
+
+    response = client.post(
+        f"/api/v1/projects/{project_id}/generations",
+        json={"generate_video": True},
+    )
+
+    assert response.status_code == 202
+    assert len(response.json()["children"]) == 4
+    assert len(dispatched) == 4
+    assert client.get(f"/api/v1/projects/{project_id}").json()["mode"] == (
+        "custom_video"
+    )
 
 
 def test_parent_progress_uses_latest_persisted_child_jobs(

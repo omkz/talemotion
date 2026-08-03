@@ -1,10 +1,11 @@
 /**
  * The kind of video the user is producing. Historical Documentary is the
- * flagship MVP mode; Microdrama and Product Advertisement share the same
- * pipeline but collect different brief fields (see `ModeBrief`).
+ * flagship workflow, Custom Video is the free-form short-video workflow, and
+ * the remaining modes are future-facing domain definitions.
  */
 export type VideoMode =
   | "historical-documentary"
+  | "custom-video"
   | "microdrama"
   | "product-advertisement";
 
@@ -22,6 +23,13 @@ export const VIDEO_MODES: VideoModeDefinition[] = [
     description:
       "A narrated documentary that brings a historical event, figure, or era to life with cinematic realism.",
     example: "“The Rise of Majapahit” — a 45s origin story of a 13th-century kingdom.",
+  },
+  {
+    id: "custom-video",
+    label: "Custom Video",
+    description:
+      "Describe the short video you want to create in your own words.",
+    example: "A focused four-scene vertical video shaped from your description.",
   },
   {
     id: "microdrama",

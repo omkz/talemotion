@@ -32,6 +32,7 @@ def enum_values(enum_type: type[StrEnum]) -> list[str]:
 
 class VideoMode(StrEnum):
     HISTORICAL_DOCUMENTARY = "historical_documentary"
+    CUSTOM_VIDEO = "custom_video"
     MICRODRAMA = "microdrama"
     PRODUCT_ADVERTISEMENT = "product_advertisement"
 

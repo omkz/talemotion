@@ -140,8 +140,12 @@ Project creation persists a three-part brief: Story (`topic`, optional
 `additional_direction`), and supported Output settings. A missing title is
 derived deterministically from the topic without a provider call. Storyboard
 queueing snapshots the normalized brief and output flags into the job payload,
-so retries do not pick up later project edits. The current historical workflow
-still produces exactly four scenes and supports only 30/45 seconds at 9:16.
+including the project mode, so retries do not pick up later project edits or
+change planners. Historical Documentary keeps its story-approach, factual, and
+visual-plausibility guidance. Custom Video uses a general short-form planner
+driven by its stored description and does not receive automatic historical
+constraints. Both real workflows produce exactly four scenes and support only
+30/45 seconds at 9:16; Microdrama and Product Advertisement remain unavailable.
 
 Alibaba Qwen is selected with:
 

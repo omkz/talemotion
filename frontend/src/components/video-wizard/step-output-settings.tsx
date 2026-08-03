@@ -1,4 +1,4 @@
-import type { Control } from "react-hook-form";
+import { useFormContext } from "react-hook-form";
 import { RectangleVertical } from "lucide-react";
 import {
   FormControl,
@@ -20,13 +20,9 @@ import {
 } from "@/components/ui/select";
 import { NARRATION_STYLES, VISUAL_STYLES } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
-import type { WizardFormValues } from "./schema";
 
-export function StepOutputSettings({
-  control,
-}: {
-  control: Control<WizardFormValues>;
-}) {
+export function StepOutputSettings() {
+  const { control } = useFormContext();
   return (
     <div className="grid gap-6">
       <div className="rounded-lg border border-border bg-muted/25 px-4 py-3 text-sm text-muted-foreground">
@@ -126,19 +122,16 @@ export function StepOutputSettings({
 
       <div className="grid gap-4 rounded-lg border border-border p-4 sm:grid-cols-3">
         <OutputToggle
-          control={control}
           name="narrationEnabled"
           label="AI narration"
           description="Generate narration audio"
         />
         <OutputToggle
-          control={control}
           name="captionsEnabled"
           label="Captions"
           description="Include timed captions"
         />
         <OutputToggle
-          control={control}
           name="musicEnabled"
           label="Background music"
           description="Add a mood-matched score"
@@ -149,16 +142,15 @@ export function StepOutputSettings({
 }
 
 function OutputToggle({
-  control,
   name,
   label,
   description,
 }: {
-  control: Control<WizardFormValues>;
   name: "narrationEnabled" | "captionsEnabled" | "musicEnabled";
   label: string;
   description: string;
 }) {
+  const { control } = useFormContext();
   return (
     <FormField
       control={control}

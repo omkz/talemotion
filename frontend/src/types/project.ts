@@ -16,11 +16,18 @@ export interface HistoricalDocumentaryBrief {
   mode: "historical-documentary";
   topic: string;
   sourceNotes: string;
-  contentType: "documentary" | "educational" | "explainer";
   language: string;
   tone: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
   targetAudience: string;
   additionalDirection: string;
+}
+
+export interface CustomVideoBrief {
+  mode: "custom-video";
+  prompt: string;
+  sourceNotes: string;
+  language: string;
+  targetAudience: string;
 }
 
 export interface MicrodramaBrief {
@@ -43,6 +50,7 @@ export interface ProductAdvertisementBrief {
 /** The mode-specific content collected in wizard step 2. */
 export type ModeBrief =
   | HistoricalDocumentaryBrief
+  | CustomVideoBrief
   | MicrodramaBrief
   | ProductAdvertisementBrief;
 

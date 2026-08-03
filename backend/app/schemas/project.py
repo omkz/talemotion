@@ -89,10 +89,11 @@ class CreateProjectRequest(StrictSchema):
     def validate_language(cls, value: str) -> str:
         return normalize_language_code(value)
 
-    @field_validator("content_type")
-    @classmethod
-    def validate_content_type(cls, value: ContentType) -> ContentType:
-        return validate_historical_content_type(value)
+    @model_validator(mode="after")
+    def validate_mode_specific_fields(self) -> "CreateProjectRequest":
+        if self.mode is VideoMode.HISTORICAL_DOCUMENTARY:
+            validate_historical_content_type(self.content_type)
+        return self
 
 
 class UpdateProjectRequest(StrictSchema):
@@ -165,7 +166,6 @@ class UpdateProjectRequest(StrictSchema):
             if value is not None
             else None
         )
-
 
 class ProjectResponse(StrictSchema):
     id: str

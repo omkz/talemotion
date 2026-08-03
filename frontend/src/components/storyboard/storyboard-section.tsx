@@ -20,13 +20,14 @@ import {
   pollPersistedJob,
   realSceneGenerationEnabled,
 } from "@/lib/api/scene-generation-jobs";
-import type { AspectRatio, Scene } from "@/types";
+import type { AspectRatio, Scene, VideoMode } from "@/types";
 import { SceneCard } from "./scene-card";
 import { SceneEditDialog } from "./scene-edit-dialog";
 import { useCredits } from "@/components/credits/credits-provider";
 
 interface StoryboardSectionProps {
   projectId: string;
+  projectMode: VideoMode;
   scenes: Scene[];
   aspectRatio: AspectRatio;
   onScenesChange: (scenes: Scene[]) => void;
@@ -36,6 +37,7 @@ interface StoryboardSectionProps {
 
 export function StoryboardSection({
   projectId,
+  projectMode,
   scenes,
   aspectRatio,
   onScenesChange,
@@ -239,7 +241,9 @@ export function StoryboardSection({
           title="No scenes yet"
           description={
             realSceneGenerationEnabled
-              ? "Generate four historically grounded scenes from this project's topic."
+              ? projectMode === "custom-video"
+                ? "Generate four structured scenes from this project's video description."
+                : "Generate four historically grounded scenes from this project's topic."
               : "Add your first scene to start building this storyboard."
           }
           action={

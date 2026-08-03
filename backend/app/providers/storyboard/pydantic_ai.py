@@ -17,19 +17,27 @@ from pydantic_ai.providers import Provider, infer_provider_class
 
 from app.core.config import AppConfig
 from app.media import SceneMediaError, StoryboardGenerator
-from app.models.project import ContentType
+from app.models.project import ContentType, VideoMode
 from app.providers import ProviderCapability, ProviderSelection
 from app.providers.catalog import provider_entry, validate_selection
 from app.providers.errors import ProviderError
 from app.schemas.storyboard import (
-    HistoricalStoryboardDraft,
+    StoryboardDraft,
     StoryboardProjectSnapshot,
 )
 
-SYSTEM_PROMPT = (
+HISTORICAL_SYSTEM_PROMPT = (
     "You are TaleMotion's historical storyboard planner. "
     "Return a historically grounded four-scene storyboard matching the "
     "required structured output."
+)
+CUSTOM_SYSTEM_PROMPT = (
+    "You are TaleMotion's general short-form storyboard planner. Turn the "
+    "user's video description into a coherent, production-ready four-scene "
+    "vertical-video storyboard. Infer the most suitable hook, progression, "
+    "pacing, and ending from the user's description. Do not assume the project "
+    "is historical, educational, fictional, or promotional unless the user "
+    "requests that direction."
 )
 
 
@@ -214,7 +222,7 @@ def resolved_storyboard_model(config: AppConfig) -> str:
     return f"{selection.provider}:{selection.model}"
 
 
-def build_storyboard_prompt(
+def build_historical_storyboard_prompt(
     *,
     brief: StoryboardProjectSnapshot,
 ) -> str:
@@ -264,6 +272,74 @@ Historical and visual requirements:
 - narration must form a coherent factual progression and avoid false certainty
   where historical evidence is disputed.
 """.strip()
+
+
+def build_custom_storyboard_prompt(
+    *,
+    brief: StoryboardProjectSnapshot,
+) -> str:
+    return f"""
+Create exactly four scenes for this TaleMotion Custom Video project.
+
+Project title: {brief.title}
+Video description: {brief.topic}
+Source notes: {brief.source_notes or "None provided"}
+Output language: {brief.language}
+Target audience: {brief.target_audience}
+Visual style: {brief.visual_style}
+Narration style: {brief.narration_style}
+Aspect ratio: {brief.aspect_ratio.value}
+Narration enabled: {brief.narration_enabled}
+Captions enabled: {brief.captions_enabled}
+Background music enabled: {brief.music_enabled}
+Target project duration: {brief.duration_seconds} seconds
+
+Infer an appropriate narrative or informational structure from the video
+description. Give every scene a distinct purpose and create a clear opening,
+progression, and ending. Respect any explicit sequencing, mood, subject, call
+to action, teaching goal, or ending requested by the user. Maintain continuity
+when recurring people, products, objects, or locations are described.
+
+Create production-ready visual prompts with distinct shots rather than generic
+repetition. Do not depend on readable text being generated inside images. Do
+not invent factual claims, citations, testimonials, product performance, or
+real-world evidence not supplied by the user. Fictional details are allowed
+when the user clearly requests fiction.
+
+Write all scene titles and narration in {brief.language}, using complexity and
+framing appropriate for {brief.target_audience}. Each scene needs a concise
+title, narration, a production-ready visual prompt, duration_seconds, and
+position. Positions must be exactly 1, 2, 3, 4, and the durations must total
+{brief.duration_seconds} seconds within two seconds. Keep one consistent visual
+style across all four scenes and compose every scene for vertical 9:16 output.
+""".strip()
+
+
+def _unsupported_mode(mode: VideoMode) -> SceneMediaError:
+    return SceneMediaError(
+        "invalid_request",
+        f"Storyboard generation does not support project mode '{mode.value}'.",
+        False,
+    )
+
+
+def system_prompt_for_mode(mode: VideoMode) -> str:
+    if mode is VideoMode.HISTORICAL_DOCUMENTARY:
+        return HISTORICAL_SYSTEM_PROMPT
+    if mode is VideoMode.CUSTOM_VIDEO:
+        return CUSTOM_SYSTEM_PROMPT
+    raise _unsupported_mode(mode)
+
+
+def build_storyboard_prompt(
+    *,
+    brief: StoryboardProjectSnapshot,
+) -> str:
+    if brief.mode is VideoMode.HISTORICAL_DOCUMENTARY:
+        return build_historical_storyboard_prompt(brief=brief)
+    if brief.mode is VideoMode.CUSTOM_VIDEO:
+        return build_custom_storyboard_prompt(brief=brief)
+    raise _unsupported_mode(brief.mode)
 
 
 def _configured_model(
@@ -382,7 +458,7 @@ class PydanticAIStoryboardGenerator:
         *,
         selection: ProviderSelection | None = None,
         model: Model | None = None,
-        agent_factory: Callable[..., Agent[Any, HistoricalStoryboardDraft]] = Agent,
+        agent_factory: Callable[..., Agent[Any, StoryboardDraft]] = Agent,
     ) -> None:
         self.config = config
         self.selection = selection or config.default_provider_selection(
@@ -397,7 +473,9 @@ class PydanticAIStoryboardGenerator:
         self,
         *,
         brief: StoryboardProjectSnapshot,
-    ) -> HistoricalStoryboardDraft:
+    ) -> StoryboardDraft:
+        system_prompt = system_prompt_for_mode(brief.mode)
+        user_prompt = build_storyboard_prompt(brief=brief)
         if self.model is None:
             try:
                 validate_selection(self.config, self.selection)
@@ -408,16 +486,12 @@ class PydanticAIStoryboardGenerator:
         try:
             agent = self.agent_factory(
                 self.model or _configured_model(self.config, self.selection),
-                output_type=HistoricalStoryboardDraft,
-                system_prompt=SYSTEM_PROMPT,
+                output_type=StoryboardDraft,
+                system_prompt=system_prompt,
                 model_settings=_storyboard_model_settings(self.selection),
                 retries=0,
             )
-            result = agent.run_sync(
-                build_storyboard_prompt(
-                    brief=brief,
-                )
-            )
+            result = agent.run_sync(user_prompt)
             return result.output
         except Exception as error:
             raise map_storyboard_error(error) from error

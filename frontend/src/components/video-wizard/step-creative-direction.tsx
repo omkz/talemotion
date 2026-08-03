@@ -18,7 +18,6 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   AUDIENCE_SUGGESTIONS,
-  CONTENT_TYPE_OPTIONS,
   LANGUAGE_OPTIONS,
   TONE_OPTIONS,
 } from "./project-options";
@@ -32,29 +31,6 @@ export function StepCreativeDirection({
   return (
     <div className="grid gap-6">
       <div className="grid gap-6 sm:grid-cols-2">
-        <FormField
-          control={control}
-          name="contentType"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Story approach</FormLabel>
-              <FormDescription>
-                Choose how the historical story should be presented.
-              </FormDescription>
-              <Select value={field.value} onValueChange={field.onChange}>
-                <FormControl>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                </FormControl>
-                <SelectContent>
-                  {CONTENT_TYPE_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
         <FormField
           control={control}
           name="language"

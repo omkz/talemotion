@@ -14,11 +14,6 @@ export const wizardSchema = z.object({
     .string()
     .trim()
     .max(200, "Project title must be 200 characters or fewer"),
-  contentType: z.enum([
-    "documentary",
-    "educational",
-    "explainer",
-  ]),
   language: z.enum(["en", "id", "nl", "de", "fr", "es"]),
   tone: z.enum([
     "cinematic",
@@ -50,7 +45,6 @@ export type WizardFormValues = z.infer<typeof wizardSchema>;
 export const STEP_FIELDS: Record<number, (keyof WizardFormValues)[]> = {
   1: ["topic", "sourceNotes", "title"],
   2: [
-    "contentType",
     "language",
     "tone",
     "targetAudience",
@@ -71,7 +65,6 @@ export const WIZARD_DEFAULT_VALUES: WizardFormValues = {
   topic: "",
   sourceNotes: "",
   title: "",
-  contentType: "documentary",
   language: "en",
   tone: "cinematic",
   targetAudience: "General audience",

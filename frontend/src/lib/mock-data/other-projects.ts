@@ -234,7 +234,6 @@ export function createLostCityProject(): VideoProject {
       additionalDirection:
         "Focus on mystery and marine archaeology. Present it as a legend explored through evidence, not a settled fact.",
       sourceNotes: "Marine archaeological surveys off the coast of Gujarat, India.",
-      contentType: "documentary",
       language: "en",
       tone: "cinematic",
       targetAudience: "General audience",

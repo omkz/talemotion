@@ -3,10 +3,16 @@ import { cn } from "@/lib/utils";
 
 const STEPS = ["Story", "Creative Direction", "Output"];
 
-export function WizardStepper({ currentStep }: { currentStep: number }) {
+export function WizardStepper({
+  currentStep,
+  steps = STEPS,
+}: {
+  currentStep: number;
+  steps?: readonly string[];
+}) {
   return (
     <ol className="flex items-center gap-2 sm:gap-4">
-      {STEPS.map((label, index) => {
+      {steps.map((label, index) => {
         const stepNumber = index + 1;
         const isComplete = stepNumber < currentStep;
         const isCurrent = stepNumber === currentStep;
@@ -32,7 +38,7 @@ export function WizardStepper({ currentStep }: { currentStep: number }) {
                 {label}
               </span>
             </div>
-            {stepNumber < STEPS.length && (
+            {stepNumber < steps.length && (
               <div className={cn("h-px flex-1", isComplete ? "bg-accent" : "bg-border")} />
             )}
           </li>

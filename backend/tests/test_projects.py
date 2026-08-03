@@ -92,6 +92,55 @@ def test_create_project_derives_title_without_ai_request(client: TestClient) -> 
     assert response.json()["title"] == "Kisah pelabuhan Nusantara."
 
 
+def test_create_custom_video_persists_shared_defaults_and_derives_title(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/api/v1/projects",
+        json={
+            "mode": "custom_video",
+            "title": "   ",
+            "topic": "Coffee beans from a mountain farm to a modern café",
+            "source_notes": "Use hand sorting and a light roast.",
+            "language": "en",
+            "target_audience": "Coffee enthusiasts",
+            "duration_seconds": 45,
+            "aspect_ratio": "9:16",
+            "visual_style": "Warm cinematic realism",
+            "narration_style": "Calm and informative",
+            "narration_enabled": True,
+            "captions_enabled": False,
+            "music_enabled": False,
+        },
+    )
+
+    assert response.status_code == 201
+    project = response.json()
+    assert project["mode"] == "custom_video"
+    assert project["title"] == (
+        "Coffee beans from a mountain farm to a modern café"
+    )
+    assert project["content_type"] == "documentary"
+    assert project["tone"] == "cinematic"
+    assert project["additional_direction"] == ""
+    assert project["historical_accuracy_note"] is None
+
+
+@pytest.mark.parametrize("mode", ["microdrama", "product_advertisement"])
+def test_unavailable_project_modes_remain_rejected(
+    client: TestClient,
+    project_payload: dict[str, object],
+    mode: str,
+) -> None:
+    response = client.post(
+        "/api/v1/projects",
+        json={**project_payload, "mode": mode},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "not_implemented"
+
+
 @pytest.mark.parametrize(
     "patch",
     [

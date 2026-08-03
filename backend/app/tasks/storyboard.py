@@ -20,7 +20,7 @@ from app.providers.selection import payload_with_selections, selections_from_pay
 from app.repositories.billing import BillingRepository
 from app.repositories.sqlalchemy import JobRepository, ProjectRepository
 from app.schemas.storyboard import (
-    HistoricalStoryboardDraft,
+    StoryboardDraft,
     StoryboardProjectSnapshot,
 )
 from app.services.credits import CreditService
@@ -32,7 +32,7 @@ def _settle(session, job: GenerationJob) -> None:
 
 
 def _valid_duration(
-    draft: HistoricalStoryboardDraft,
+    draft: StoryboardDraft,
     target_seconds: int,
 ) -> bool:
     total = sum(scene.duration_seconds for scene in draft.scenes)
@@ -106,13 +106,17 @@ def execute_storyboard_job(
             settings
         ).storyboard(storyboard_selection)
         job.status = JobStatus.RUNNING
-        job.current_stage = "planning_historical_storyboard"
+        job.current_stage = (
+            "planning_historical_storyboard"
+            if brief.mode.value == "historical_documentary"
+            else "planning_custom_storyboard"
+        )
         job.progress = 10
         job.started_at = utc_now()
         project.status = ProjectStatus.STORYBOARD_GENERATING
         session.commit()
 
-        draft: HistoricalStoryboardDraft | None = None
+        draft: StoryboardDraft | None = None
         last_error: Exception | None = None
         attempts = max(1, min(settings.talemotion_storyboard_max_attempts, 5))
         for attempt in range(attempts):

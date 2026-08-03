@@ -74,6 +74,7 @@ def test_storyboard_retry_creates_new_persisted_job(
         status=JobStatus.FAILED,
         input_payload={
             "project_brief": {
+                "mode": "custom_video",
                 "topic": "Original topic",
                 "source_notes": "Original sources",
             }
@@ -90,6 +91,7 @@ def test_storyboard_retry_creates_new_persisted_job(
     assert response.json()["id"] != failed.id
     assert response.json()["retry_count"] == 1
     assert response.json()["input_payload"]["project_brief"] == {
+        "mode": "custom_video",
         "topic": "Original topic",
         "source_notes": "Original sources",
     }

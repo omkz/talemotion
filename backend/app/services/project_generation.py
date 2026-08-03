@@ -50,7 +50,7 @@ class ProjectGenerationService:
         *,
         idempotency_key: str | None = None,
     ) -> QueuedStoryboard:
-        project = self._historical_project(project_id)
+        project = self._supported_project(project_id)
         brief_snapshot = _storyboard_snapshot(project)
         payload = payload_with_selections(
             {
@@ -114,7 +114,7 @@ class ProjectGenerationService:
         *,
         idempotency_key: str | None = None,
     ) -> ProjectGenerationJobs:
-        project = self._historical_project(project_id)
+        project = self._supported_project(project_id)
         scenes = project.chapters[0].scenes
         media_capabilities = [
             ProviderCapability.IMAGE,
@@ -234,7 +234,7 @@ class ProjectGenerationService:
             credits.settle(job_id)
         self.jobs.commit()
 
-    def _historical_project(self, project_id: str) -> Project:
+    def _supported_project(self, project_id: str) -> Project:
         project = self.projects.get_for_update(project_id)
         if project is None:
             raise ApiError(
@@ -244,14 +244,21 @@ class ProjectGenerationService:
                 details={"project_id": project_id},
             )
         if (
-            project.mode is not VideoMode.HISTORICAL_DOCUMENTARY
+            project.mode
+            not in {
+                VideoMode.HISTORICAL_DOCUMENTARY,
+                VideoMode.CUSTOM_VIDEO,
+            }
             or project.aspect_ratio.value != "9:16"
             or project.duration_seconds not in (30, 45)
         ):
             raise ApiError(
                 status_code=409,
                 code="state_conflict",
-                message="This workflow supports vertical historical projects only.",
+                message=(
+                    "This workflow supports vertical Historical Documentary "
+                    "and Custom Video projects only."
+                ),
                 details={"project_id": project_id},
             )
         return project
@@ -259,6 +266,7 @@ class ProjectGenerationService:
 
 def _storyboard_snapshot(project: Project) -> StoryboardProjectSnapshot:
     return StoryboardProjectSnapshot(
+        mode=project.mode,
         title=project.title,
         topic=project.topic,
         source_notes=project.source_notes,

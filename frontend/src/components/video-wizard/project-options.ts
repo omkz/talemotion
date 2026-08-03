@@ -1,9 +1,3 @@
-export const CONTENT_TYPE_OPTIONS = [
-  { value: "documentary", label: "Documentary" },
-  { value: "educational", label: "Educational" },
-  { value: "explainer", label: "Explainer" },
-] as const;
-
 export const TONE_OPTIONS = [
   { value: "cinematic", label: "Cinematic" },
   { value: "informative", label: "Informative" },

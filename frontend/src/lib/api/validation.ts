@@ -158,6 +158,13 @@ const briefSchema = z.discriminatedUnion("mode", [
     target_audience: z.string().optional(),
   }),
   z.object({
+    mode: z.literal("custom_video"),
+    prompt: z.string(),
+    source_notes: z.string(),
+    language: z.string(),
+    target_audience: z.string(),
+  }),
+  z.object({
     mode: z.literal("microdrama"),
     premise: z.string(),
     main_character: z.string(),
@@ -178,6 +185,7 @@ export const projectResponseSchema: z.ZodType<ProjectResponse> = z.object({
   id: z.string(),
   mode: z.enum([
     "historical_documentary",
+    "custom_video",
     "microdrama",
     "product_advertisement",
   ]),

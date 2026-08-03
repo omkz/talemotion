@@ -17,6 +17,7 @@ interface BriefSectionProps {
     brief: ModeBrief;
     title: string;
     language: string;
+    duration: 30 | 45;
     visualStyle: string;
     narrationStyle: string;
     narrationEnabled: boolean;
@@ -32,10 +33,15 @@ function briefFields(brief: ModeBrief): { label: string; value: string }[] {
       return [
         { label: "Topic or story idea", value: brief.topic },
         { label: "Source notes", value: brief.sourceNotes },
-        { label: "Story approach", value: brief.contentType },
         { label: "Tone", value: brief.tone },
         { label: "Target audience", value: brief.targetAudience },
         { label: "Additional direction", value: brief.additionalDirection },
+      ];
+    case "custom-video":
+      return [
+        { label: "Video description", value: brief.prompt },
+        { label: "Source notes", value: brief.sourceNotes },
+        { label: "Target audience", value: brief.targetAudience },
       ];
     case "microdrama":
       return [
@@ -80,7 +86,7 @@ export function BriefSection({ brief, output, historicalAccuracyNote, onSave }: 
           ))}
         </div>
 
-        {historicalAccuracyNote && (
+        {brief.mode === "historical-documentary" && historicalAccuracyNote && (
           <div className="mt-5 flex gap-2.5 rounded-lg border border-accent/25 bg-accent/8 p-3.5">
             <ShieldAlert className="mt-0.5 size-4 shrink-0 text-accent" />
             <div>

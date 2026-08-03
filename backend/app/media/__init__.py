@@ -5,7 +5,7 @@ from typing import Protocol
 from app.providers.errors import ProviderError
 from app.schemas.scene_run import SceneRunEvent, SceneRunRequest
 from app.schemas.storyboard import (
-    HistoricalStoryboardDraft,
+    StoryboardDraft,
     StoryboardProjectSnapshot,
 )
 
@@ -23,7 +23,7 @@ class StoryboardGenerator(Protocol):
         self,
         *,
         brief: StoryboardProjectSnapshot,
-    ) -> HistoricalStoryboardDraft: ...
+    ) -> StoryboardDraft: ...
 
 
 @dataclass(frozen=True, slots=True)

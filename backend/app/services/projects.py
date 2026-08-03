@@ -5,11 +5,18 @@ from dataclasses import dataclass
 from app.core.errors import ApiError
 from app.core.ids import utc_now
 from app.models.chapter import Chapter, ChapterStatus
-from app.models.project import Project, ProjectStatus, VideoMode
+from app.models.project import (
+    ContentType,
+    Project,
+    ProjectStatus,
+    ProjectTone,
+    VideoMode,
+)
 from app.repositories.sqlalchemy import ProjectRepository
 from app.schemas.project import (
     CreateProjectRequest,
     UpdateProjectRequest,
+    validate_historical_content_type,
 )
 from app.services.project_titles import derive_project_title, normalize_single_line
 
@@ -26,18 +33,21 @@ class ProjectService:
         self.repository = repository
 
     def create_project(self, request: CreateProjectRequest) -> Project:
-        if request.mode is not VideoMode.HISTORICAL_DOCUMENTARY:
+        if request.mode not in {
+            VideoMode.HISTORICAL_DOCUMENTARY,
+            VideoMode.CUSTOM_VIDEO,
+        }:
             raise ApiError(
                 status_code=409,
                 code="not_implemented",
-                message="This project mode is not implemented by the backend yet.",
+                message="This project mode is not available yet.",
                 details={"mode": request.mode.value, "availability": "coming_soon"},
             )
         if request.duration_seconds not in (30, 45):
             raise ApiError(
                 status_code=422,
                 code="validation_error",
-                message="Historical projects support 30 or 45 seconds.",
+                message="Projects support 30 or 45 seconds.",
                 details={"duration_seconds": request.duration_seconds},
             )
         project = Project(
@@ -50,11 +60,27 @@ class ProjectService:
             ),
             topic=request.topic,
             source_notes=request.source_notes,
-            content_type=request.content_type,
-            tone=request.tone,
+            content_type=(
+                request.content_type
+                if request.mode is VideoMode.HISTORICAL_DOCUMENTARY
+                else ContentType.DOCUMENTARY
+            ),
+            tone=(
+                request.tone
+                if request.mode is VideoMode.HISTORICAL_DOCUMENTARY
+                else ProjectTone.CINEMATIC
+            ),
             target_audience=request.target_audience,
-            additional_direction=request.additional_direction,
-            historical_accuracy_note=request.historical_accuracy_note,
+            additional_direction=(
+                request.additional_direction
+                if request.mode is VideoMode.HISTORICAL_DOCUMENTARY
+                else ""
+            ),
+            historical_accuracy_note=(
+                request.historical_accuracy_note
+                if request.mode is VideoMode.HISTORICAL_DOCUMENTARY
+                else None
+            ),
             language=request.language,
             duration_seconds=request.duration_seconds,
             aspect_ratio=request.aspect_ratio,
@@ -137,11 +163,25 @@ class ProjectService:
             raise ApiError(
                 status_code=422,
                 code="validation_error",
-                message="Historical projects support 30 or 45 seconds.",
+                message="Projects support 30 or 45 seconds.",
                 details={"duration_seconds": values["duration_seconds"]},
             )
         if "title" in values:
             values["title"] = normalize_single_line(values["title"])
+        if "content_type" in values:
+            if project.mode is VideoMode.HISTORICAL_DOCUMENTARY:
+                validate_historical_content_type(values["content_type"])
+            elif values["content_type"] is not project.content_type:
+                raise ApiError(
+                    status_code=422,
+                    code="validation_error",
+                    message="Custom Video does not expose a story approach.",
+                    details={"field": "content_type"},
+                )
+        if project.mode is VideoMode.CUSTOM_VIDEO:
+            values.pop("historical_accuracy_note", None)
+            values.pop("additional_direction", None)
+            values.pop("tone", None)
         for field, value in values.items():
             setattr(project, field, value)
         project.updated_at = utc_now()

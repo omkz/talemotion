@@ -29,7 +29,7 @@ interface PersistedChapterResponse {
 
 export interface PersistedProjectResponse {
   id: string;
-  mode: "historical_documentary";
+  mode: "historical_documentary" | "custom_video";
   status:
     | "draft"
     | "storyboard_pending"
@@ -120,20 +120,31 @@ function mapScene(scene: PersistedSceneResponse): Scene {
 }
 
 export function mapPersistedProject(response: PersistedProjectResponse): VideoProject {
+  const mode =
+    response.mode === "custom_video" ? "custom-video" : "historical-documentary";
+  const brief: VideoProject["brief"] =
+    mode === "custom-video"
+      ? {
+          mode,
+          prompt: response.topic,
+          sourceNotes: response.source_notes ?? "",
+          language: response.language,
+          targetAudience: response.target_audience,
+        }
+      : {
+          mode,
+          topic: response.topic,
+          sourceNotes: response.source_notes ?? "",
+          language: response.language,
+          tone: response.tone,
+          targetAudience: response.target_audience,
+          additionalDirection: response.additional_direction,
+        };
   return {
     id: response.id,
-    mode: "historical-documentary",
+    mode,
     status: mapProjectStatus(response.status),
-    brief: {
-      mode: "historical-documentary",
-      topic: response.topic,
-      sourceNotes: response.source_notes ?? "",
-      contentType: response.content_type,
-      language: response.language,
-      tone: response.tone,
-      targetAudience: response.target_audience,
-      additionalDirection: response.additional_direction,
-    },
+    brief,
     output: {
       title: response.title,
       language: response.language,
@@ -176,13 +187,12 @@ export async function getPersistedProject(
   }
 }
 
-export async function createPersistedHistoricalProject(
-  input: {
+interface PersistedProjectCreateInput {
     title?: string;
     topic: string;
     source_notes?: string | null;
-    content_type?: "documentary" | "educational" | "explainer";
-    tone?: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
+    content_type: "documentary";
+    tone: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
     target_audience?: string;
     additional_direction: string;
     language: string;
@@ -193,18 +203,53 @@ export async function createPersistedHistoricalProject(
     narration_enabled: boolean;
     music_enabled: boolean;
     historical_accuracy_note?: string | null;
-  },
+}
+
+async function createPersistedProject(
+  mode: PersistedProjectResponse["mode"],
+  input: PersistedProjectCreateInput,
   signal?: AbortSignal,
 ): Promise<VideoProject> {
   const response = await client().post<PersistedProjectResponse>("/projects", {
     body: {
-      mode: "historical_documentary",
+      mode,
       aspect_ratio: "9:16",
       ...input,
     },
     signal,
   });
   return mapPersistedProject(response);
+}
+
+export async function createPersistedHistoricalProject(
+  input: Omit<PersistedProjectCreateInput, "content_type">,
+  signal?: AbortSignal,
+): Promise<VideoProject> {
+  return createPersistedProject(
+    "historical_documentary",
+    { ...input, content_type: "documentary" },
+    signal,
+  );
+}
+
+export async function createPersistedCustomProject(
+  input: Omit<
+    PersistedProjectCreateInput,
+    "content_type" | "tone" | "additional_direction" | "historical_accuracy_note"
+  >,
+  signal?: AbortSignal,
+): Promise<VideoProject> {
+  return createPersistedProject(
+    "custom_video",
+    {
+      ...input,
+      content_type: "documentary",
+      tone: "cinematic",
+      additional_direction: "",
+      historical_accuracy_note: null,
+    },
+    signal,
+  );
 }
 
 export async function listPersistedProjects(
@@ -234,6 +279,7 @@ export async function updatePersistedProject(
     tone?: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
     target_audience?: string;
     additional_direction?: string;
+    duration_seconds?: 30 | 45;
     visual_style?: string;
     narration_style?: string;
     narration_enabled?: boolean;

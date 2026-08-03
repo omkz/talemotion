@@ -22,17 +22,14 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { NARRATION_STYLES, VISUAL_STYLES } from "@/lib/mock-data";
-import {
-  CONTENT_TYPE_OPTIONS,
-  LANGUAGE_OPTIONS,
-  TONE_OPTIONS,
-} from "@/components/video-wizard/project-options";
+import { LANGUAGE_OPTIONS, TONE_OPTIONS } from "@/components/video-wizard/project-options";
 import type { ModeBrief, OutputConfig } from "@/types";
 
 export interface BriefSaveValues {
   brief: ModeBrief;
   title: string;
   language: string;
+  duration: 30 | 45;
   visualStyle: string;
   narrationStyle: string;
   narrationEnabled: boolean;
@@ -118,6 +115,9 @@ function EditBriefForm({
   const [draft, setDraft] = useState<ModeBrief>(brief);
   const [title, setTitle] = useState(output.title);
   const [language, setLanguage] = useState(output.language);
+  const [duration, setDuration] = useState<30 | 45>(
+    output.duration === 30 ? 30 : 45,
+  );
   const [visualStyle, setVisualStyle] = useState(output.visualStyle);
   const [narrationStyle, setNarrationStyle] = useState(output.narrationStyle);
   const [narrationEnabled, setNarrationEnabled] = useState(
@@ -128,10 +128,15 @@ function EditBriefForm({
   const [accuracyNote, setAccuracyNote] = useState(historicalAccuracyNote ?? "");
   const handleSave = async () => {
     if (isSaving) return;
+    const briefWithLanguage =
+      draft.mode === "historical-documentary" || draft.mode === "custom-video"
+        ? { ...draft, language }
+        : draft;
     await onSave({
-      brief: draft,
+      brief: briefWithLanguage,
       title,
       language,
+      duration,
       visualStyle,
       narrationStyle,
       narrationEnabled,
@@ -173,13 +178,6 @@ function EditBriefForm({
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>Story approach</Label>
-                <Select value={draft.contentType} onValueChange={(contentType) => setDraft({ ...draft, contentType: contentType as typeof draft.contentType })}>
-                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                  <SelectContent>{CONTENT_TYPE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
                 <Label>Language</Label>
                 <Select value={language} onValueChange={setLanguage}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
@@ -215,6 +213,50 @@ function EditBriefForm({
                 value={accuracyNote}
                 onChange={(e) => setAccuracyNote(e.target.value)}
               />
+            </div>
+          </>
+        )}
+
+        {draft.mode === "custom-video" && (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-title">Project title</Label>
+              <Input id="brief-title" value={title} onChange={(event) => setTitle(event.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-custom-prompt">Video description</Label>
+              <Textarea
+                id="brief-custom-prompt"
+                rows={5}
+                value={draft.prompt}
+                onChange={(event) => setDraft({ ...draft, prompt: event.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="brief-custom-sources">Source notes</Label>
+              <Textarea
+                id="brief-custom-sources"
+                rows={3}
+                value={draft.sourceNotes}
+                onChange={(event) => setDraft({ ...draft, sourceNotes: event.target.value })}
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Language</Label>
+                <Select value={language} onValueChange={setLanguage}>
+                  <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                  <SelectContent>{LANGUAGE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="brief-custom-audience">Target audience</Label>
+                <Input
+                  id="brief-custom-audience"
+                  value={draft.targetAudience}
+                  onChange={(event) => setDraft({ ...draft, targetAudience: event.target.value })}
+                />
+              </div>
             </div>
           </>
         )}
@@ -284,6 +326,19 @@ function EditBriefForm({
         )}
 
         <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Project duration</Label>
+            <Select
+              value={String(duration)}
+              onValueChange={(value) => setDuration(value === "30" ? 30 : 45)}
+            >
+              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="30">30 seconds</SelectItem>
+                <SelectItem value="45">45 seconds</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-1.5">
             <Label>Visual style</Label>
             <Select value={visualStyle} onValueChange={setVisualStyle}>

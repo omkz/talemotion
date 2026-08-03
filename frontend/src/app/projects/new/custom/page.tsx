@@ -1,29 +1,26 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { StepModeSelect } from "@/components/video-wizard/step-mode-select";
+import { CustomVideoWizard } from "@/components/video-wizard/custom-video-wizard";
 
-export default function NewProjectPage() {
+export default function NewCustomProjectPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
       <Link
-        href="/projects"
+        href="/projects/new"
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="size-3.5" />
-        Back to projects
+        Back to video formats
       </Link>
       <div className="mb-6 space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-          Choose what you want to create
+          Custom Video
         </h1>
         <p className="text-sm text-muted-foreground">
-          Start with a workflow designed for your video.
+          Describe the short video you want to create.
         </p>
       </div>
-      <Card className="p-5 sm:p-8">
-        <StepModeSelect />
-      </Card>
+      <CustomVideoWizard />
     </div>
   );
 }

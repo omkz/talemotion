@@ -263,6 +263,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     brief: ModeBrief;
     title: string;
     language: string;
+    duration: 30 | 45;
     visualStyle: string;
     narrationStyle: string;
     narrationEnabled: boolean;
@@ -270,25 +271,40 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     musicEnabled: boolean;
     historicalAccuracyNote: string | null;
   }): Promise<boolean> => {
-    if (realSceneGenerationEnabled && next.brief.mode === "historical-documentary") {
+    if (realSceneGenerationEnabled) {
       setSaveState("saving");
       try {
-        const updated = await updatePersistedProject(projectId, {
+        const shared = {
           title: next.title,
-          topic: next.brief.topic,
-          source_notes: next.brief.sourceNotes.trim() || null,
-          content_type: next.brief.contentType,
           language: next.language,
-          tone: next.brief.tone,
-          target_audience: next.brief.targetAudience,
-          additional_direction: next.brief.additionalDirection,
+          duration_seconds: next.duration,
           visual_style: next.visualStyle,
           narration_style: next.narrationStyle,
           narration_enabled: next.narrationEnabled,
           captions_enabled: next.captionsEnabled,
           music_enabled: next.musicEnabled,
-          historical_accuracy_note: next.historicalAccuracyNote,
-        });
+        };
+        const patch =
+          next.brief.mode === "historical-documentary"
+            ? {
+                ...shared,
+                topic: next.brief.topic,
+                source_notes: next.brief.sourceNotes.trim() || null,
+                tone: next.brief.tone,
+                target_audience: next.brief.targetAudience,
+                additional_direction: next.brief.additionalDirection,
+                historical_accuracy_note: next.historicalAccuracyNote,
+              }
+            : next.brief.mode === "custom-video"
+              ? {
+                  ...shared,
+                  topic: next.brief.prompt,
+                  source_notes: next.brief.sourceNotes.trim() || null,
+                  target_audience: next.brief.targetAudience,
+                }
+              : null;
+        if (!patch) throw new Error("This project mode cannot be edited yet.");
+        const updated = await updatePersistedProject(projectId, patch);
         setProject(updated);
         setSaveState("saved");
         toast.success("Output settings updated");
@@ -313,6 +329,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
               ...prev.output,
               title: next.title,
               language: next.language,
+              duration: next.duration,
               visualStyle: next.visualStyle,
               narrationStyle: next.narrationStyle,
               narrationEnabled: next.narrationEnabled,
@@ -495,6 +512,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           <TabsContent value="storyboard">
             <StoryboardSection
               projectId={project.id}
+              projectMode={project.mode}
               scenes={scenes}
               aspectRatio={project.output.aspectRatio}
               onScenesChange={handleStoryboardScenesChange}

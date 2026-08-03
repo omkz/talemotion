@@ -1,6 +1,8 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
+from decimal import Decimal
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -67,6 +69,20 @@ class RecordingStoryboardGenerator(ValidStoryboardGenerator):
         self.modes.append(brief.mode)
         self.prompts.append(build_storyboard_prompt(brief=brief))
         return super().generate(brief=brief)
+
+
+class FailIfCalledStoryboardGenerator:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def generate(
+        self,
+        *,
+        brief: StoryboardProjectSnapshot,
+    ) -> StoryboardDraft:
+        del brief
+        self.calls += 1
+        raise AssertionError("Unsupported modes must not reach the generator.")
 
 
 def _use_mixed_media_settings(monkeypatch) -> None:
@@ -285,11 +301,25 @@ def test_storyboard_snapshot_normalization_preserves_existing_modes() -> None:
     )
 
 
-def test_storyboard_worker_does_not_rewrite_unsupported_snapshot_mode(
+def test_storyboard_stage_mapping_is_explicit_for_supported_modes() -> None:
+    assert storyboard_tasks.storyboard_stage_for_mode(
+        VideoMode.HISTORICAL_DOCUMENTARY
+    ) == "planning_historical_storyboard"
+    assert storyboard_tasks.storyboard_stage_for_mode(
+        VideoMode.CUSTOM_VIDEO
+    ) == "planning_custom_storyboard"
+
+
+@pytest.mark.parametrize(
+    "unsupported_mode",
+    [VideoMode.MICRODRAMA, VideoMode.PRODUCT_ADVERTISEMENT],
+)
+def test_storyboard_worker_rejects_unsupported_mode_before_generator_call(
     client: TestClient,
     project_payload: dict[str, object],
     session_factory: sessionmaker[Session],
     monkeypatch,
+    unsupported_mode: VideoMode,
 ) -> None:
     project = _create_project(client, project_payload)
     monkeypatch.setattr(project_routes, "enqueue_storyboard", lambda _job_id: None)
@@ -301,7 +331,7 @@ def test_storyboard_worker_does_not_rewrite_unsupported_snapshot_mode(
         job = JobRepository(session).get(job_id)
         assert job is not None
         brief = dict(job.input_payload["project_brief"])
-        brief["mode"] = "microdrama"
+        brief["mode"] = unsupported_mode.value
         job.input_payload = {**job.input_payload, "project_brief": brief}
         session.commit()
 
@@ -311,15 +341,27 @@ def test_storyboard_worker_does_not_rewrite_unsupported_snapshot_mode(
             yield session
 
     monkeypatch.setattr(storyboard_tasks, "session_scope", test_session_scope)
+    reserved_before = Decimal(client.get("/api/v1/credits").json()["reserved"])
+    generator = FailIfCalledStoryboardGenerator()
     result = storyboard_tasks.execute_storyboard_job(
         job_id,
-        generator=RecordingStoryboardGenerator(),
+        generator=generator,
     )
 
     assert result["status"] == "failed"
+    assert generator.calls == 0
     persisted = client.get(f"/api/v1/jobs/{job_id}").json()
     assert persisted["error_code"] == "invalid_request"
-    assert persisted["input_payload"]["project_brief"]["mode"] == "microdrama"
+    assert persisted["current_stage"] == "failed"
+    assert persisted["input_payload"]["project_brief"]["mode"] == (
+        unsupported_mode.value
+    )
+    assert client.get(f"/api/v1/projects/{project['id']}").json()["status"] == (
+        "failed"
+    )
+    credits_after = client.get("/api/v1/credits").json()
+    assert reserved_before > 0
+    assert Decimal(credits_after["reserved"]) == 0
 
 
 def test_storyboard_worker_still_rejects_malformed_legacy_snapshot(

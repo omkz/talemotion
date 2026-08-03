@@ -49,6 +49,18 @@ def normalize_storyboard_snapshot_payload(raw_brief: object) -> object:
     }
 
 
+def storyboard_stage_for_mode(mode: VideoMode) -> str:
+    if mode is VideoMode.HISTORICAL_DOCUMENTARY:
+        return "planning_historical_storyboard"
+    if mode is VideoMode.CUSTOM_VIDEO:
+        return "planning_custom_storyboard"
+    raise SceneMediaError(
+        "invalid_request",
+        f"Storyboard generation does not support project mode '{mode.value}'.",
+        False,
+    )
+
+
 def execute_storyboard_job(
     job_id: str,
     *,
@@ -123,15 +135,19 @@ def execute_storyboard_job(
             _settle(session, job)
             session.commit()
             return {"job_id": job.id, "status": "failed"}
+        try:
+            planning_stage = storyboard_stage_for_mode(brief.mode)
+        except SceneMediaError as error:
+            _fail(job, error.code, error.message)
+            project.status = ProjectStatus.FAILED
+            _settle(session, job)
+            session.commit()
+            return {"job_id": job.id, "status": "failed"}
         storyboard_generator = generator or create_provider_factory(
             settings
         ).storyboard(storyboard_selection)
         job.status = JobStatus.RUNNING
-        job.current_stage = (
-            "planning_historical_storyboard"
-            if brief.mode.value == "historical_documentary"
-            else "planning_custom_storyboard"
-        )
+        job.current_stage = planning_stage
         job.progress = 10
         job.started_at = utc_now()
         project.status = ProjectStatus.STORYBOARD_GENERATING

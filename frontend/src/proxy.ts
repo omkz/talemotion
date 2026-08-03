@@ -9,6 +9,13 @@ const PROTECTED_PREFIXES = [
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const hasSession = request.cookies.has("talemotion_session");
+
+  if (pathname === "/") {
+    return NextResponse.redirect(
+      new URL(hasSession ? "/projects" : "/login", request.url)
+    );
+  }
+
   const protectedPath = PROTECTED_PREFIXES.some(
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
   );
@@ -23,6 +30,7 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    "/",
     "/projects/:path*",
     "/assets/:path*",
     "/settings/:path*",

@@ -9,27 +9,24 @@ export const MODE_ICONS: Record<VideoMode, LucideIcon> = {
 };
 
 interface StepModeSelectProps {
-  value: VideoMode;
+  value: VideoMode | null;
   onChange: (mode: VideoMode) => void;
-  historicalOnly?: boolean;
 }
 
 export function StepModeSelect({
   value,
   onChange,
-  historicalOnly = false,
 }: StepModeSelectProps) {
   return (
     <div
       role="radiogroup"
-      aria-label="Video type"
+      aria-label="Video format"
       className="grid gap-4 sm:grid-cols-3"
     >
       {VIDEO_MODES.map((mode) => {
         const Icon = MODE_ICONS[mode.id];
         const isSelected = value === mode.id;
-        const disabled =
-          historicalOnly && mode.id !== "historical-documentary";
+        const disabled = mode.id !== "historical-documentary";
         return (
           <button
             key={mode.id}

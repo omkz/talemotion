@@ -427,7 +427,6 @@ export function mapCreateProjectInputToRequest(
       captions_enabled: input.output.captionsEnabled,
       background_music_enabled: input.output.musicEnabled,
     },
-    template_id: input.templateId ?? null,
   };
 }
 

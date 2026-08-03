@@ -204,7 +204,6 @@ export interface CreateProjectRequest {
   mode: VideoModeDto;
   brief: VideoBriefDto;
   output_config: OutputConfigDto;
-  template_id?: string | null;
 }
 
 export interface UpdateProjectRequest {

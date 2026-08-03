@@ -13,6 +13,7 @@ import { createProject } from "@/lib/mock-api";
 import { createPersistedHistoricalProject } from "@/lib/api/persisted-projects";
 import { realSceneGenerationEnabled } from "@/lib/api/scene-generation-jobs";
 import { WizardStepper } from "./wizard-stepper";
+import { StepModeSelect } from "./step-mode-select";
 import { StepContentForm } from "./step-content-form";
 import { StepCreativeDirection } from "./step-creative-direction";
 import { StepOutputSettings } from "./step-output-settings";
@@ -29,11 +30,14 @@ import {
   type WizardFormValues,
 } from "./schema";
 import { mapWizardValuesToProjectInput } from "./map-to-project";
+import type { VideoMode } from "@/types";
 
 const STEP_TITLES = ["Story", "Creative Direction", "Output"];
 
 export function VideoWizard() {
   const router = useRouter();
+  const [selectedMode, setSelectedMode] = useState<VideoMode | null>(null);
+  const [formatSelected, setFormatSelected] = useState(false);
   const [step, setStep] = useState(1);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -49,7 +53,20 @@ export function VideoWizard() {
     if (valid) setStep((current) => Math.min(3, current + 1));
   };
 
-  const goBack = () => setStep((current) => Math.max(1, current - 1));
+  const goBack = () => {
+    if (step === 1) {
+      setFormatSelected(false);
+      return;
+    }
+    setStep((current) => current - 1);
+  };
+
+  const selectFormat = (mode: VideoMode) => {
+    if (mode !== "historical-documentary") return;
+    setSelectedMode(mode);
+    setStep(1);
+    setFormatSelected(true);
+  };
 
   const onSubmit = async (submitted: WizardFormValues) => {
     if (isCreating) return;
@@ -109,6 +126,22 @@ export function VideoWizard() {
     );
   }
 
+  if (!formatSelected) {
+    return (
+      <Card className="p-5 sm:p-8">
+        <div className="mb-6 space-y-1.5">
+          <h2 className="text-lg font-semibold text-foreground">
+            Choose a video format
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Select the kind of video you want to create.
+          </p>
+        </div>
+        <StepModeSelect value={selectedMode} onChange={selectFormat} />
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <WizardStepper currentStep={step} />
@@ -136,7 +169,7 @@ export function VideoWizard() {
             )}
 
             <div className="mt-8 flex items-center justify-between gap-3 border-t border-border pt-6">
-              <Button type="button" variant="outline" onClick={goBack} disabled={step === 1}>
+              <Button type="button" variant="outline" onClick={goBack}>
                 <ArrowLeft className="size-4" />
                 Back
               </Button>

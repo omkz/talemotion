@@ -27,7 +27,6 @@ export interface CreateVideoProjectInput {
   mode: VideoMode;
   brief: ModeBrief;
   output: OutputConfig;
-  templateId?: string | null;
 }
 
 export interface GenerateStoryboardOptions {

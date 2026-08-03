@@ -173,7 +173,7 @@ function EditBriefForm({
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>Content type</Label>
+                <Label>Story approach</Label>
                 <Select value={draft.contentType} onValueChange={(contentType) => setDraft({ ...draft, contentType: contentType as typeof draft.contentType })}>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                   <SelectContent>{CONTENT_TYPE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>

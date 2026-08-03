@@ -37,7 +37,10 @@ export function StepCreativeDirection({
           name="contentType"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Content type</FormLabel>
+              <FormLabel>Story approach</FormLabel>
+              <FormDescription>
+                Choose how the historical story should be presented.
+              </FormDescription>
               <Select value={field.value} onValueChange={field.onChange}>
                 <FormControl>
                   <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>

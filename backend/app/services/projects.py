@@ -20,6 +20,17 @@ from app.schemas.project import (
 )
 from app.services.project_titles import derive_project_title, normalize_single_line
 
+HISTORICAL_VISUAL_STYLE = "cinematic historical realism"
+HISTORICAL_NARRATION_STYLE = "dramatic documentary"
+CUSTOM_VISUAL_STYLE = "Cinematic Realistic"
+CUSTOM_NARRATION_STYLE = "Documentary"
+
+
+def default_creation_styles(mode: VideoMode) -> tuple[str, str]:
+    if mode is VideoMode.CUSTOM_VIDEO:
+        return CUSTOM_VISUAL_STYLE, CUSTOM_NARRATION_STYLE
+    return HISTORICAL_VISUAL_STYLE, HISTORICAL_NARRATION_STYLE
+
 
 @dataclass(frozen=True, slots=True)
 class ProjectPage:
@@ -50,6 +61,9 @@ class ProjectService:
                 message="Projects support 30 or 45 seconds.",
                 details={"duration_seconds": request.duration_seconds},
             )
+        default_visual_style, default_narration_style = (
+            default_creation_styles(request.mode)
+        )
         project = Project(
             mode=request.mode,
             status=ProjectStatus.DRAFT,
@@ -84,8 +98,8 @@ class ProjectService:
             language=request.language,
             duration_seconds=request.duration_seconds,
             aspect_ratio=request.aspect_ratio,
-            visual_style=request.visual_style,
-            narration_style=request.narration_style,
+            visual_style=request.visual_style or default_visual_style,
+            narration_style=request.narration_style or default_narration_style,
             captions_enabled=request.captions_enabled,
             narration_enabled=request.narration_enabled,
             music_enabled=request.music_enabled,

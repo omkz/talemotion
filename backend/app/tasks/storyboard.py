@@ -11,7 +11,7 @@ from app.media import SceneMediaError, StoryboardGenerator
 from app.models.chapter import ChapterStatus
 from app.models.credits import UsageOperation
 from app.models.job import GenerationJob, JobStatus
-from app.models.project import ProjectStatus
+from app.models.project import ProjectStatus, VideoMode
 from app.models.scene import Scene, SceneStatus
 from app.providers import ProviderCapability
 from app.providers.errors import ProviderError
@@ -37,6 +37,16 @@ def _valid_duration(
 ) -> bool:
     total = sum(scene.duration_seconds for scene in draft.scenes)
     return abs(total - target_seconds) <= 2
+
+
+def normalize_storyboard_snapshot_payload(raw_brief: object) -> object:
+    """Upgrade pre-Custom-Video snapshots without weakening current validation."""
+    if not isinstance(raw_brief, dict) or "mode" in raw_brief:
+        return raw_brief
+    return {
+        **raw_brief,
+        "mode": VideoMode.HISTORICAL_DOCUMENTARY.value,
+    }
 
 
 def execute_storyboard_job(
@@ -91,7 +101,18 @@ def execute_storyboard_job(
                 }
                 session.commit()
             else:
-                brief = StoryboardProjectSnapshot.model_validate(raw_brief)
+                normalized_brief = normalize_storyboard_snapshot_payload(
+                    raw_brief
+                )
+                brief = StoryboardProjectSnapshot.model_validate(
+                    normalized_brief
+                )
+                if normalized_brief is not raw_brief:
+                    job.input_payload = {
+                        **job.input_payload,
+                        "project_brief": brief.model_dump(mode="json"),
+                    }
+                    session.commit()
         except ValidationError:
             _fail(
                 job,

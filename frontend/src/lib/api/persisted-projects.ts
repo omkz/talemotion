@@ -2,6 +2,7 @@ import type {
   ProjectStatus,
   Scene,
   SceneStatus,
+  VideoMode,
   VideoProject,
 } from "@/types";
 import { ApiClient } from "./client";
@@ -29,7 +30,11 @@ interface PersistedChapterResponse {
 
 export interface PersistedProjectResponse {
   id: string;
-  mode: "historical_documentary" | "custom_video";
+  mode:
+    | "historical_documentary"
+    | "custom_video"
+    | "microdrama"
+    | "product_advertisement";
   status:
     | "draft"
     | "storyboard_pending"
@@ -119,27 +124,55 @@ function mapScene(scene: PersistedSceneResponse): Scene {
   };
 }
 
+export function mapPersistedMode(
+  mode: PersistedProjectResponse["mode"],
+): VideoMode {
+  switch (mode) {
+    case "historical_documentary":
+      return "historical-documentary";
+    case "custom_video":
+      return "custom-video";
+    case "microdrama":
+      return "microdrama";
+    case "product_advertisement":
+      return "product-advertisement";
+    default: {
+      const unsupportedMode: never = mode;
+      throw new Error(`Unsupported persisted project mode: ${unsupportedMode}`);
+    }
+  }
+}
+
 export function mapPersistedProject(response: PersistedProjectResponse): VideoProject {
-  const mode =
-    response.mode === "custom_video" ? "custom-video" : "historical-documentary";
-  const brief: VideoProject["brief"] =
-    mode === "custom-video"
-      ? {
-          mode,
-          prompt: response.topic,
-          sourceNotes: response.source_notes ?? "",
-          language: response.language,
-          targetAudience: response.target_audience,
-        }
-      : {
-          mode,
-          topic: response.topic,
-          sourceNotes: response.source_notes ?? "",
-          language: response.language,
-          tone: response.tone,
-          targetAudience: response.target_audience,
-          additionalDirection: response.additional_direction,
-        };
+  const mode = mapPersistedMode(response.mode);
+  let brief: VideoProject["brief"];
+  switch (mode) {
+    case "historical-documentary":
+      brief = {
+        mode,
+        topic: response.topic,
+        sourceNotes: response.source_notes ?? "",
+        language: response.language,
+        tone: response.tone,
+        targetAudience: response.target_audience,
+        additionalDirection: response.additional_direction,
+      };
+      break;
+    case "custom-video":
+      brief = {
+        mode,
+        prompt: response.topic,
+        sourceNotes: response.source_notes ?? "",
+        language: response.language,
+        targetAudience: response.target_audience,
+      };
+      break;
+    case "microdrama":
+    case "product-advertisement":
+      throw new Error(
+        `Persisted ${mode} projects do not include the mode-specific brief fields required by the frontend.`,
+      );
+  }
   return {
     id: response.id,
     mode,

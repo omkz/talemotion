@@ -639,8 +639,12 @@ components:
         language: {type: string, pattern: '^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$', default: en}
         duration_seconds: {type: integer, enum: [30, 45], default: 45}
         aspect_ratio: {type: string, enum: ["9:16"], default: "9:16"}
-        visual_style: {type: string}
-        narration_style: {type: string}
+        visual_style:
+          type: string
+          description: Optional. Defaults to cinematic historical realism for Historical Documentary and Cinematic Realistic for Custom Video.
+        narration_style:
+          type: string
+          description: Optional. Defaults to dramatic documentary for Historical Documentary and Documentary for Custom Video.
         captions_enabled: {type: boolean, default: false}
         narration_enabled: {type: boolean, default: true}
         music_enabled: {type: boolean, default: false}

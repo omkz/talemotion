@@ -64,8 +64,8 @@ class CreateProjectRequest(StrictSchema):
     language: str = Field(default="en", min_length=2, max_length=32)
     duration_seconds: int = Field(default=45)
     aspect_ratio: AspectRatio = AspectRatio.VERTICAL
-    visual_style: NonEmptyText = "cinematic historical realism"
-    narration_style: NonEmptyText = "dramatic documentary"
+    visual_style: NonEmptyText | None = None
+    narration_style: NonEmptyText | None = None
     captions_enabled: bool = False
     narration_enabled: bool = True
     music_enabled: bool = False

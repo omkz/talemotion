@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createPersistedCustomProject,
   createPersistedHistoricalProject,
+  mapPersistedMode,
+  mapPersistedProject,
   type PersistedProjectResponse,
 } from "./persisted-projects";
 
@@ -141,5 +143,32 @@ describe("persisted project creation", () => {
       language: "id",
       targetAudience: "Pelajar",
     });
+  });
+});
+
+describe("persisted project mode mapping", () => {
+  it.each([
+    ["historical_documentary", "historical-documentary"],
+    ["custom_video", "custom-video"],
+    ["microdrama", "microdrama"],
+    ["product_advertisement", "product-advertisement"],
+  ] as const)("maps %s explicitly to %s", (apiMode, domainMode) => {
+    expect(mapPersistedMode(apiMode)).toBe(domainMode);
+  });
+
+  it.each(["microdrama", "product_advertisement"] as const)(
+    "does not fabricate a Historical brief for %s",
+    (mode) => {
+      expect(() => mapPersistedProject({ ...responseProject(), mode })).toThrow(
+        /do not include the mode-specific brief fields/,
+      );
+    },
+  );
+
+  it("fails explicitly for an unknown runtime mode", () => {
+    const unknownMode = "future_mode" as PersistedProjectResponse["mode"];
+    expect(() => mapPersistedMode(unknownMode)).toThrow(
+      "Unsupported persisted project mode: future_mode",
+    );
   });
 });

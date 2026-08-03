@@ -126,6 +126,58 @@ def test_create_custom_video_persists_shared_defaults_and_derives_title(
     assert project["historical_accuracy_note"] is None
 
 
+@pytest.mark.parametrize(
+    ("mode", "expected_visual", "expected_narration"),
+    [
+        (
+            "historical_documentary",
+            "cinematic historical realism",
+            "dramatic documentary",
+        ),
+        ("custom_video", "Cinematic Realistic", "Documentary"),
+    ],
+)
+def test_project_creation_resolves_mode_specific_style_defaults(
+    client: TestClient,
+    mode: str,
+    expected_visual: str,
+    expected_narration: str,
+) -> None:
+    response = client.post(
+        "/api/v1/projects",
+        json={
+            "mode": mode,
+            "topic": "A concise project concept",
+            "duration_seconds": 30,
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["visual_style"] == expected_visual
+    assert response.json()["narration_style"] == expected_narration
+
+
+@pytest.mark.parametrize("mode", ["historical_documentary", "custom_video"])
+def test_project_creation_preserves_explicit_style_values(
+    client: TestClient,
+    mode: str,
+) -> None:
+    response = client.post(
+        "/api/v1/projects",
+        json={
+            "mode": mode,
+            "topic": "A concise project concept",
+            "duration_seconds": 30,
+            "visual_style": "Hand-painted paper collage",
+            "narration_style": "Quiet conversational voice",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["visual_style"] == "Hand-painted paper collage"
+    assert response.json()["narration_style"] == "Quiet conversational voice"
+
+
 @pytest.mark.parametrize("mode", ["microdrama", "product_advertisement"])
 def test_unavailable_project_modes_remain_rejected(
     client: TestClient,

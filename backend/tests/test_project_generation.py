@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.api.v1 import jobs as job_routes
 from app.api.v1 import projects as project_routes
 from app.models.job import JobStatus
+from app.models.project import VideoMode
+from app.providers.storyboard.pydantic_ai import build_storyboard_prompt
 from app.repositories.sqlalchemy import JobRepository
 from app.schemas.storyboard import (
     StoryboardDraft,
@@ -50,6 +52,21 @@ class InvalidStoryboardGenerator:
     ) -> StoryboardDraft:
         del brief
         raise ValueError("Provider returned malformed structured output.")
+
+
+class RecordingStoryboardGenerator(ValidStoryboardGenerator):
+    def __init__(self) -> None:
+        self.modes: list[VideoMode] = []
+        self.prompts: list[str] = []
+
+    def generate(
+        self,
+        *,
+        brief: StoryboardProjectSnapshot,
+    ) -> StoryboardDraft:
+        self.modes.append(brief.mode)
+        self.prompts.append(build_storyboard_prompt(brief=brief))
+        return super().generate(brief=brief)
 
 
 def _use_mixed_media_settings(monkeypatch) -> None:
@@ -214,6 +231,132 @@ def test_custom_storyboard_job_snapshots_mode_and_brief(
     assert brief["topic"] == "Show coffee moving from a mountain farm to a café."
     assert brief["content_type"] == "documentary"
     assert brief["historical_accuracy_note"] is None
+
+
+def test_legacy_storyboard_snapshot_is_upgraded_and_completed_as_historical(
+    client: TestClient,
+    project_payload: dict[str, object],
+    session_factory: sessionmaker[Session],
+    monkeypatch,
+) -> None:
+    project = _create_project(client, project_payload)
+    monkeypatch.setattr(project_routes, "enqueue_storyboard", lambda _job_id: None)
+    job_id = client.post(
+        f"/api/v1/projects/{project['id']}/storyboard",
+        json={},
+    ).json()["id"]
+    with session_factory() as session:
+        job = JobRepository(session).get(job_id)
+        assert job is not None
+        payload = dict(job.input_payload)
+        legacy_brief = dict(payload["project_brief"])
+        legacy_brief.pop("mode")
+        job.input_payload = {**payload, "project_brief": legacy_brief}
+        session.commit()
+
+    @contextmanager
+    def test_session_scope() -> Iterator[Session]:
+        with session_factory() as session:
+            yield session
+
+    monkeypatch.setattr(storyboard_tasks, "session_scope", test_session_scope)
+    generator = RecordingStoryboardGenerator()
+    result = storyboard_tasks.execute_storyboard_job(
+        job_id,
+        generator=generator,
+    )
+
+    assert result["status"] == "completed"
+    assert generator.modes == [VideoMode.HISTORICAL_DOCUMENTARY]
+    assert "historically plausible architecture" in generator.prompts[0]
+    persisted = client.get(f"/api/v1/jobs/{job_id}").json()
+    assert persisted["input_payload"]["project_brief"]["mode"] == (
+        "historical_documentary"
+    )
+
+
+def test_storyboard_snapshot_normalization_preserves_existing_modes() -> None:
+    custom = {"mode": "custom_video", "topic": "Coffee journey"}
+    unsupported = {"mode": "microdrama", "topic": "A palace secret"}
+
+    assert storyboard_tasks.normalize_storyboard_snapshot_payload(custom) is custom
+    assert storyboard_tasks.normalize_storyboard_snapshot_payload(unsupported) is (
+        unsupported
+    )
+
+
+def test_storyboard_worker_does_not_rewrite_unsupported_snapshot_mode(
+    client: TestClient,
+    project_payload: dict[str, object],
+    session_factory: sessionmaker[Session],
+    monkeypatch,
+) -> None:
+    project = _create_project(client, project_payload)
+    monkeypatch.setattr(project_routes, "enqueue_storyboard", lambda _job_id: None)
+    job_id = client.post(
+        f"/api/v1/projects/{project['id']}/storyboard",
+        json={},
+    ).json()["id"]
+    with session_factory() as session:
+        job = JobRepository(session).get(job_id)
+        assert job is not None
+        brief = dict(job.input_payload["project_brief"])
+        brief["mode"] = "microdrama"
+        job.input_payload = {**job.input_payload, "project_brief": brief}
+        session.commit()
+
+    @contextmanager
+    def test_session_scope() -> Iterator[Session]:
+        with session_factory() as session:
+            yield session
+
+    monkeypatch.setattr(storyboard_tasks, "session_scope", test_session_scope)
+    result = storyboard_tasks.execute_storyboard_job(
+        job_id,
+        generator=RecordingStoryboardGenerator(),
+    )
+
+    assert result["status"] == "failed"
+    persisted = client.get(f"/api/v1/jobs/{job_id}").json()
+    assert persisted["error_code"] == "invalid_request"
+    assert persisted["input_payload"]["project_brief"]["mode"] == "microdrama"
+
+
+def test_storyboard_worker_still_rejects_malformed_legacy_snapshot(
+    client: TestClient,
+    project_payload: dict[str, object],
+    session_factory: sessionmaker[Session],
+    monkeypatch,
+) -> None:
+    project = _create_project(client, project_payload)
+    monkeypatch.setattr(project_routes, "enqueue_storyboard", lambda _job_id: None)
+    job_id = client.post(
+        f"/api/v1/projects/{project['id']}/storyboard",
+        json={},
+    ).json()["id"]
+    with session_factory() as session:
+        job = JobRepository(session).get(job_id)
+        assert job is not None
+        job.input_payload = {
+            **job.input_payload,
+            "project_brief": {"topic": "Incomplete legacy snapshot"},
+        }
+        session.commit()
+
+    @contextmanager
+    def test_session_scope() -> Iterator[Session]:
+        with session_factory() as session:
+            yield session
+
+    monkeypatch.setattr(storyboard_tasks, "session_scope", test_session_scope)
+    result = storyboard_tasks.execute_storyboard_job(
+        job_id,
+        generator=RecordingStoryboardGenerator(),
+    )
+
+    assert result["status"] == "failed"
+    persisted = client.get(f"/api/v1/jobs/{job_id}").json()
+    assert persisted["error_code"] == "invalid_request"
 
 
 def test_storyboard_idempotency_returns_one_job(

@@ -20,8 +20,14 @@ import {
 } from "@/components/ui/select";
 import { NARRATION_STYLES, VISUAL_STYLES } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  CUSTOM_VISUAL_STYLE_VALUE,
+  HISTORICAL_VISUAL_STYLE_OPTIONS,
+  isHistoricalVisualStylePreset,
+} from "./project-options";
 
-export function StepOutputSettings() {
+export function StepOutputSettings({ historical = false }: { historical?: boolean }) {
   const { control } = useFormContext();
   return (
     <div className="grid gap-6">
@@ -99,10 +105,58 @@ export function StepOutputSettings() {
               <FormDescription>
                 Controls the visual look, lighting, colors, realism, and atmosphere.
               </FormDescription>
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select
+                value={
+                  historical
+                    ? isHistoricalVisualStylePreset(field.value)
+                      ? field.value
+                      : CUSTOM_VISUAL_STYLE_VALUE
+                    : field.value
+                }
+                onValueChange={(value) => {
+                  if (!historical || value !== CUSTOM_VISUAL_STYLE_VALUE) {
+                    field.onChange(value);
+                  } else if (isHistoricalVisualStylePreset(field.value)) {
+                    field.onChange("");
+                  }
+                }}
+              >
                 <FormControl><SelectTrigger className="w-full"><SelectValue /></SelectTrigger></FormControl>
-                <SelectContent>{VISUAL_STYLES.map((style) => <SelectItem key={style} value={style}>{style}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  {historical
+                    ? HISTORICAL_VISUAL_STYLE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))
+                    : VISUAL_STYLES.map((style) => (
+                        <SelectItem key={style} value={style}>{style}</SelectItem>
+                      ))}
+                  {historical && (
+                    <SelectItem value={CUSTOM_VISUAL_STYLE_VALUE}>Custom...</SelectItem>
+                  )}
+                </SelectContent>
               </Select>
+              {historical && !isHistoricalVisualStylePreset(field.value) && (
+                <div className="grid gap-2">
+                  <Label htmlFor="historical-custom-visual-style">
+                    Describe the visual style
+                  </Label>
+                  <Textarea
+                    id="historical-custom-visual-style"
+                    rows={3}
+                    maxLength={100}
+                    placeholder="Cold cinematic realism with muted colors, misty landscapes, and low-key lighting."
+                    value={field.value}
+                    onChange={field.onChange}
+                    onBlur={field.onBlur}
+                    aria-invalid={Boolean(
+                      field.value.trim().length === 0 ||
+                        field.value.trim().length > 100,
+                    )}
+                  />
+                </div>
+              )}
               <FormMessage />
             </FormItem>
           )}

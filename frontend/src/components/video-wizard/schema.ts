@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { HISTORICAL_VISUAL_STYLE_OPTIONS } from "./project-options";
 
 export const wizardSchema = z.object({
   topic: z
@@ -33,7 +34,11 @@ export const wizardSchema = z.object({
     .max(4000, "Additional direction must be 4,000 characters or fewer"),
   duration: z.enum(["30", "45"]),
   aspectRatio: z.literal("9:16"),
-  visualStyle: z.string().trim().min(1),
+  visualStyle: z
+    .string()
+    .trim()
+    .min(1, "Describe the visual style when Custom is selected")
+    .max(100, "Visual style must be 100 characters or fewer"),
   narrationStyle: z.string().trim().min(1),
   narrationEnabled: z.boolean(),
   captionsEnabled: z.boolean(),
@@ -71,7 +76,7 @@ export const WIZARD_DEFAULT_VALUES: WizardFormValues = {
   additionalDirection: "",
   duration: "45",
   aspectRatio: "9:16",
-  visualStyle: "Cinematic Realistic",
+  visualStyle: HISTORICAL_VISUAL_STYLE_OPTIONS[0].value,
   narrationStyle: "Documentary",
   narrationEnabled: true,
   captionsEnabled: false,

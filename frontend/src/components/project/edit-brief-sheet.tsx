@@ -24,7 +24,10 @@ import { Switch } from "@/components/ui/switch";
 import { NARRATION_STYLES, VISUAL_STYLES } from "@/lib/mock-data";
 import {
   CUSTOM_TARGET_AUDIENCE_VALUE,
+  CUSTOM_VISUAL_STYLE_VALUE,
   HISTORICAL_TARGET_AUDIENCE_OPTIONS,
+  HISTORICAL_VISUAL_STYLE_OPTIONS,
+  isHistoricalVisualStylePreset,
   isPresetTargetAudience,
   LANGUAGE_OPTIONS,
   TONE_OPTIONS,
@@ -136,8 +139,11 @@ function EditBriefForm({
   const historicalAudienceInvalid =
     draft.mode === "historical-documentary" &&
     !draft.targetAudience.trim();
+  const historicalVisualStyleInvalid =
+    draft.mode === "historical-documentary" &&
+    (!visualStyle.trim() || visualStyle.trim().length > 100);
   const handleSave = async () => {
-    if (isSaving || historicalAudienceInvalid) return;
+    if (isSaving || historicalAudienceInvalid || historicalVisualStyleInvalid) return;
     const briefWithLanguage =
       draft.mode === "historical-documentary"
         ? { ...draft, language, targetAudience: draft.targetAudience.trim() }
@@ -149,7 +155,10 @@ function EditBriefForm({
       title,
       language,
       duration,
-      visualStyle,
+      visualStyle:
+        draft.mode === "historical-documentary"
+          ? visualStyle.trim()
+          : visualStyle,
       narrationStyle,
       narrationEnabled,
       captionsEnabled,
@@ -411,19 +420,72 @@ function EditBriefForm({
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Visual style</Label>
-            <Select value={visualStyle} onValueChange={setVisualStyle}>
-              <SelectTrigger className="w-full">
+            <Label htmlFor="brief-visual-style">Visual style</Label>
+            <p className="text-xs text-muted-foreground">
+              {draft.mode === "historical-documentary"
+                ? "Controls the visual look, lighting, colors, realism, and atmosphere."
+                : "Choose the visual treatment for generated scenes."}
+            </p>
+            <Select
+              value={
+                draft.mode === "historical-documentary"
+                  ? isHistoricalVisualStylePreset(visualStyle)
+                    ? visualStyle
+                    : CUSTOM_VISUAL_STYLE_VALUE
+                  : visualStyle
+              }
+              onValueChange={(value) => {
+                if (
+                  draft.mode !== "historical-documentary" ||
+                  value !== CUSTOM_VISUAL_STYLE_VALUE
+                ) {
+                  setVisualStyle(value);
+                } else if (isHistoricalVisualStylePreset(visualStyle)) {
+                  setVisualStyle("");
+                }
+              }}
+            >
+              <SelectTrigger id="brief-visual-style" className="w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {VISUAL_STYLES.map((style) => (
-                  <SelectItem key={style} value={style}>
-                    {style}
-                  </SelectItem>
-                ))}
+                {draft.mode === "historical-documentary"
+                  ? HISTORICAL_VISUAL_STYLE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))
+                  : VISUAL_STYLES.map((style) => (
+                      <SelectItem key={style} value={style}>{style}</SelectItem>
+                    ))}
+                {draft.mode === "historical-documentary" && (
+                  <SelectItem value={CUSTOM_VISUAL_STYLE_VALUE}>Custom...</SelectItem>
+                )}
               </SelectContent>
             </Select>
+            {draft.mode === "historical-documentary" &&
+              !isHistoricalVisualStylePreset(visualStyle) && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="brief-custom-visual-style">
+                    Describe the visual style
+                  </Label>
+                  <Textarea
+                    id="brief-custom-visual-style"
+                    rows={3}
+                    maxLength={100}
+                    placeholder="Cold cinematic realism with muted colors, misty landscapes, and low-key lighting."
+                    value={visualStyle}
+                    onChange={(event) => setVisualStyle(event.target.value)}
+                  />
+                  {historicalVisualStyleInvalid && (
+                    <p className="text-xs text-destructive" role="alert">
+                      {visualStyle.trim()
+                        ? "Visual style must be 100 characters or fewer."
+                        : "Describe the visual style when Custom is selected."}
+                    </p>
+                  )}
+                </div>
+              )}
           </div>
           <div className="space-y-1.5">
             <Label>Narration style</Label>
@@ -470,7 +532,12 @@ function EditBriefForm({
         <Button variant="outline" onClick={onCancel} disabled={isSaving}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={isSaving || historicalAudienceInvalid}>
+        <Button
+          onClick={handleSave}
+          disabled={
+            isSaving || historicalAudienceInvalid || historicalVisualStyleInvalid
+          }
+        >
           {isSaving ? "Saving…" : "Save changes"}
         </Button>
       </SheetFooter>

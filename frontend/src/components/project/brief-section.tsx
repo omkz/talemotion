@@ -8,6 +8,7 @@ import { SettingChip } from "@/components/shared/setting-chip";
 import { BriefField } from "./brief-field";
 import { EditBriefSheet } from "./edit-brief-sheet";
 import type { ModeBrief, OutputConfig } from "@/types";
+import { historicalVisualStyleLabel } from "@/components/video-wizard/project-options";
 
 interface BriefSectionProps {
   brief: ModeBrief;
@@ -104,7 +105,14 @@ export function BriefSection({ brief, output, historicalAccuracyNote, onSave }: 
           <SettingChip label="Language" value={output.language} />
           <SettingChip label="Duration" value={`${output.duration}s`} />
           <SettingChip label="Aspect ratio" value={output.aspectRatio} />
-          <SettingChip label="Visual style" value={output.visualStyle} />
+          <SettingChip
+            label="Visual style"
+            value={
+              brief.mode === "historical-documentary"
+                ? historicalVisualStyleLabel(output.visualStyle)
+                : output.visualStyle
+            }
+          />
           <SettingChip label="Narration style" value={output.narrationStyle} />
           <SettingChip
             label="AI narration"

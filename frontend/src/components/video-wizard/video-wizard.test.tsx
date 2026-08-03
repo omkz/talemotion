@@ -4,6 +4,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { VideoProject } from "@/types";
 import type { CreateVideoProjectInput } from "@/lib/api/video-project-api";
+import { HISTORICAL_VISUAL_STYLE_OPTIONS } from "./project-options";
 
 afterEach(cleanup);
 
@@ -251,6 +252,105 @@ describe("Historical VideoWizard", () => {
     await user.click(screen.getByRole("button", { name: "Create project" }));
     expect(createProjectMock.mock.calls[0][0].brief).toMatchObject({
       targetAudience: "Children",
+    });
+  }, 10_000);
+
+  it("offers Historical Visual Style presets and submits their full prompts", async () => {
+    createProjectMock.mockResolvedValue(fakeProject("Dark epic project"));
+    const user = userEvent.setup();
+    render(<VideoWizard />);
+    await completeStory(user);
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Narrative Tone" }),
+    );
+    await user.click(screen.getByRole("option", { name: "Informative" }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    const visualStyle = screen.getByRole("combobox", {
+      name: "Visual style",
+    });
+    expect(visualStyle.textContent).toContain("Cinematic Realism");
+    expect(screen.queryByLabelText("Describe the visual style")).toBeNull();
+    expect(
+      screen.getByText(
+        "Controls the visual look, lighting, colors, realism, and atmosphere.",
+      ),
+    ).toBeTruthy();
+
+    await user.click(visualStyle);
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Cinematic Realism",
+      "Dark Epic",
+      "Historical Realism",
+      "Documentary Natural",
+      "Painterly Epic",
+      "Custom...",
+    ]);
+    await user.click(screen.getByRole("option", { name: "Dark Epic" }));
+
+    expect(screen.getByText("Visual Style: Dark Epic")).toBeTruthy();
+    expect(screen.queryByText(HISTORICAL_VISUAL_STYLE_OPTIONS[1].value)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+
+    expect(createProjectMock.mock.calls[0][0]).toMatchObject({
+      brief: { tone: "informative" },
+      output: { visualStyle: HISTORICAL_VISUAL_STYLE_OPTIONS[1].value },
+    });
+  }, 10_000);
+
+  it("validates, trims, and replaces a Custom Visual Style", async () => {
+    createProjectMock.mockResolvedValue(fakeProject("Custom visual project"));
+    const user = userEvent.setup();
+    render(<VideoWizard />);
+    await completeStory(user);
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    const visualStyle = screen.getByRole("combobox", {
+      name: "Visual style",
+    });
+    await user.click(visualStyle);
+    await user.click(screen.getByRole("option", { name: "Custom..." }));
+    const customStyle = screen.getByLabelText("Describe the visual style");
+    await user.type(customStyle, "   ");
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+    expect(
+      screen.getByText("Describe the visual style when Custom is selected"),
+    ).toBeTruthy();
+
+    await user.clear(customStyle);
+    await user.type(customStyle, "  Cold blue moonlight with fog  ");
+    expect(screen.getByText("Visual Style: Cold blue moonlight with fog")).toBeTruthy();
+
+    await user.click(visualStyle);
+    await user.click(
+      screen.getByRole("option", { name: "Documentary Natural" }),
+    );
+    expect(screen.queryByLabelText("Describe the visual style")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+
+    expect(createProjectMock.mock.calls[0][0].output).toMatchObject({
+      visualStyle: HISTORICAL_VISUAL_STYLE_OPTIONS[3].value,
+    });
+  }, 10_000);
+
+  it("submits a trimmed Custom Visual Style in mock mode", async () => {
+    createProjectMock.mockResolvedValue(fakeProject("Custom visual project"));
+    const user = userEvent.setup();
+    render(<VideoWizard />);
+    await completeStory(user);
+    await user.click(screen.getByRole("button", { name: "Next" }));
+
+    await user.click(screen.getByRole("combobox", { name: "Visual style" }));
+    await user.click(screen.getByRole("option", { name: "Custom..." }));
+    await user.type(
+      screen.getByLabelText("Describe the visual style"),
+      "  Warm tropical realism with golden-hour lighting.  ",
+    );
+    await user.click(screen.getByRole("button", { name: "Create project" }));
+
+    expect(createProjectMock.mock.calls[0][0].output).toMatchObject({
+      visualStyle: "Warm tropical realism with golden-hour lighting.",
     });
   }, 10_000);
 

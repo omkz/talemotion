@@ -18,6 +18,7 @@ import { StepCreativeDirection } from "./step-creative-direction";
 import { StepOutputSettings } from "./step-output-settings";
 import {
   historicalTargetAudienceLabel,
+  historicalVisualStyleLabel,
   LANGUAGE_OPTIONS,
   TONE_OPTIONS,
   optionLabel,
@@ -129,7 +130,7 @@ export function VideoWizard() {
             {step === 2 && <StepCreativeDirection control={form.control} />}
             {step === 3 && (
               <div className="space-y-8">
-                <StepOutputSettings />
+                <StepOutputSettings historical />
                 <ProjectReview values={values as WizardFormValues} />
               </div>
             )}
@@ -188,7 +189,10 @@ function ProjectReview({ values }: { values: WizardFormValues }) {
         </ReviewGroup>
         <ReviewGroup title="Output">
           <p>{values.duration} seconds · {values.aspectRatio}</p>
-          <p className="text-muted-foreground">{values.visualStyle} · {values.narrationStyle}</p>
+          <p className="text-muted-foreground">
+            Visual Style: {historicalVisualStyleLabel(values.visualStyle.trim())}
+          </p>
+          <p className="text-muted-foreground">Narration Style: {values.narrationStyle}</p>
           <p className="text-muted-foreground">
             Narration {values.narrationEnabled ? "on" : "off"} · Captions {values.captionsEnabled ? "on" : "off"} · Music {values.musicEnabled ? "on" : "off"}
           </p>

@@ -3,6 +3,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OutputConfig } from "@/types";
+import { HISTORICAL_VISUAL_STYLE_OPTIONS } from "@/components/video-wizard/project-options";
 import { BriefSection } from "./brief-section";
 
 afterEach(cleanup);
@@ -23,7 +24,7 @@ const output: OutputConfig = {
   language: "en",
   duration: 45,
   aspectRatio: "9:16",
-  visualStyle: "Cinematic Realistic",
+  visualStyle: HISTORICAL_VISUAL_STYLE_OPTIONS[0].value,
   narrationStyle: "Documentary",
   sceneCount: 4,
   narrationEnabled: true,
@@ -43,7 +44,7 @@ describe("mode-aware project brief", () => {
           language: "en",
           targetAudience: "Coffee enthusiasts",
         }}
-        output={output}
+        output={{ ...output, visualStyle: "Cinematic Realistic" }}
         historicalAccuracyNote="Must never appear"
         onSave={vi.fn(async () => true)}
       />,
@@ -185,4 +186,73 @@ describe("mode-aware project brief", () => {
       topic: "A revised topic",
     });
   });
+
+  it("maps preset labels and preserves a legacy Custom Visual Style", async () => {
+    const user = userEvent.setup();
+    const presetSave = vi.fn(async () => true);
+    const { unmount } = render(
+      <BriefSection
+        brief={{
+          mode: "historical-documentary",
+          topic: "The rise of Majapahit",
+          sourceNotes: "A source excerpt",
+          language: "en",
+          tone: "dramatic",
+          targetAudience: "General audience",
+          additionalDirection: "Focus on maritime trade",
+        }}
+        output={{ ...output, visualStyle: HISTORICAL_VISUAL_STYLE_OPTIONS[1].value }}
+        historicalAccuracyNote={null}
+        onSave={presetSave}
+      />,
+    );
+
+    expect(screen.getByText("Dark Epic")).toBeTruthy();
+    expect(screen.queryByText(HISTORICAL_VISUAL_STYLE_OPTIONS[1].value)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(
+      screen.getByRole("combobox", { name: "Visual style" }).textContent,
+    ).toContain("Dark Epic");
+    expect(screen.queryByLabelText("Describe the visual style")).toBeNull();
+    unmount();
+
+    const customStyle = "Cold blue moonlight with fog and desaturated colors.";
+    const customSave = vi.fn(async () => true);
+    render(
+      <BriefSection
+        brief={{
+          mode: "historical-documentary",
+          topic: "The rise of Majapahit",
+          sourceNotes: "A source excerpt",
+          language: "en",
+          tone: "informative",
+          targetAudience: "General audience",
+          additionalDirection: "Focus on maritime trade",
+        }}
+        output={{ ...output, visualStyle: customStyle }}
+        historicalAccuracyNote={null}
+        onSave={customSave}
+      />,
+    );
+
+    expect(screen.getByText(customStyle)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(
+      screen.getByRole("combobox", { name: "Visual style" }).textContent,
+    ).toContain("Custom...");
+    expect(
+      (screen.getByLabelText("Describe the visual style") as HTMLTextAreaElement)
+        .value,
+    ).toBe(customStyle);
+    await user.clear(screen.getByLabelText("Topic"));
+    await user.type(screen.getByLabelText("Topic"), "A revised topic");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(customSave).toHaveBeenCalledTimes(1));
+    expect(customSave.mock.calls[0][0]).toMatchObject({
+      visualStyle: customStyle,
+      toneChanged: false,
+      brief: { tone: "informative" },
+    });
+  }, 10_000);
 });

@@ -7,6 +7,7 @@ import {
   mapPersistedProject,
   type PersistedProjectResponse,
 } from "./persisted-projects";
+import { HISTORICAL_VISUAL_STYLE_OPTIONS } from "@/components/video-wizard/project-options";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -59,7 +60,7 @@ describe("persisted project creation", () => {
       target_audience: "Museum visitors",
       additional_direction: "Gunakan bahasa yang hati-hati.",
       duration_seconds: 30,
-      visual_style: "cinematic historical realism",
+      visual_style: HISTORICAL_VISUAL_STYLE_OPTIONS[1].value,
       narration_style: "informative",
       narration_enabled: false,
       captions_enabled: true,
@@ -76,6 +77,7 @@ describe("persisted project creation", () => {
       language: "id",
       tone: "informative",
       target_audience: "Museum visitors",
+      visual_style: HISTORICAL_VISUAL_STYLE_OPTIONS[1].value,
       narration_enabled: false,
       captions_enabled: true,
       music_enabled: false,

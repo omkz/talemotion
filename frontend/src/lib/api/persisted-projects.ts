@@ -42,7 +42,7 @@ export interface PersistedProjectResponse {
   title: string;
   topic: string;
   source_notes: string | null;
-  content_type: "documentary" | "educational" | "fiction" | "explainer" | "promotional";
+  content_type: "documentary" | "educational" | "explainer";
   tone: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
   target_audience: string;
   additional_direction: string;
@@ -181,7 +181,7 @@ export async function createPersistedHistoricalProject(
     title?: string;
     topic: string;
     source_notes?: string | null;
-    content_type?: "documentary" | "educational" | "fiction" | "explainer" | "promotional";
+    content_type?: "documentary" | "educational" | "explainer";
     tone?: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
     target_audience?: string;
     additional_direction: string;
@@ -229,7 +229,7 @@ export async function updatePersistedProject(
     title?: string;
     topic?: string;
     source_notes?: string | null;
-    content_type?: "documentary" | "educational" | "fiction" | "explainer" | "promotional";
+    content_type?: "documentary" | "educational" | "explainer";
     language?: string;
     tone?: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
     target_audience?: string;

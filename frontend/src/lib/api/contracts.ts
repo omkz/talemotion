@@ -67,7 +67,7 @@ export interface HistoricalDocumentaryBriefDto {
   topic: string;
   additional_direction: string;
   source_notes: string;
-  content_type?: "documentary" | "educational" | "fiction" | "explainer" | "promotional";
+  content_type?: "documentary" | "educational" | "explainer";
   language?: string;
   tone?: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
   target_audience?: string;

@@ -16,7 +16,7 @@ export interface HistoricalDocumentaryBrief {
   mode: "historical-documentary";
   topic: string;
   sourceNotes: string;
-  contentType: "documentary" | "educational" | "fiction" | "explainer" | "promotional";
+  contentType: "documentary" | "educational" | "explainer";
   language: string;
   tone: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
   targetAudience: string;

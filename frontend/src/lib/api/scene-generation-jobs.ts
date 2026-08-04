@@ -12,6 +12,16 @@ export type PersistedJobStatus =
   | "cancel_requested"
   | "cancelled";
 
+const ACTIVE_JOB_STATUSES = new Set<PersistedJobStatus>([
+  "queued",
+  "running",
+  "cancel_requested",
+]);
+
+export function isPersistedJobActive(status: PersistedJobStatus): boolean {
+  return ACTIVE_JOB_STATUSES.has(status);
+}
+
 export interface PersistedJobChild {
   id: string;
   scene_id: string | null;

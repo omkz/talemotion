@@ -219,7 +219,7 @@ describe("useJobQuery", () => {
     expect(getPersistedJobMock).toHaveBeenCalledTimes(1);
   });
 
-  it("exposes a request error without spinning into a fast, uncontrolled polling loop", async () => {
+  it("exposes a request error and does not issue any extra call before backing off", async () => {
     vi.useFakeTimers();
     const client = createTestQueryClient();
     const error = new Error("network down");
@@ -234,17 +234,190 @@ describe("useJobQuery", () => {
     expect(jobState(client, "job_1")?.error).toBe(error);
     expect(getPersistedJobMock).toHaveBeenCalledTimes(1);
 
-    // The next attempt still waits for the full 1500ms interval — no tight
-    // retry loop — and recovering to a terminal status stops polling again.
-    getPersistedJobMock.mockResolvedValueOnce(fakeJob({ status: "completed" }));
+    // retry: false means no internal retry sneaks in an extra call before
+    // the explicit backoff interval elapses.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(100);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits 5000ms after the initial request fails before retrying", async () => {
+    vi.useFakeTimers();
+    const client = createTestQueryClient();
+    const error = new Error("network down");
+    getPersistedJobMock
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(fakeJob({ status: "running" }));
+
+    renderHook(() => useJobQuery("job_1"), { wrapper: wrapperFor(client) });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_999);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
+    expect(jobState(client, "job_1")?.data?.status).toBe("running");
+  });
+
+  it("escalates the backoff across consecutive failures: 5000ms, then 15000ms, then 30000ms and beyond", async () => {
+    vi.useFakeTimers();
+    const client = createTestQueryClient();
+    const error = new Error("network down");
+    getPersistedJobMock
+      .mockRejectedValueOnce(error) // failure 1
+      .mockRejectedValueOnce(error) // failure 2
+      .mockRejectedValueOnce(error) // failure 3
+      .mockRejectedValueOnce(error); // failure 4 — still the 30s tier
+
+    renderHook(() => useJobQuery("job_1"), { wrapper: wrapperFor(client) });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(1);
+
+    // 1st consecutive failure -> waits 5000ms.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_999);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
+
+    // 2nd consecutive failure -> waits 15000ms.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_999);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(3);
+
+    // 3rd consecutive failure -> waits 30000ms.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(29_999);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(4);
+
+    // 4th (3+) consecutive failure -> still waits 30000ms, not longer.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(29_999);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("resets to 1500ms polling once a request succeeds after failures", async () => {
+    vi.useFakeTimers();
+    const client = createTestQueryClient();
+    const error = new Error("network down");
+    getPersistedJobMock
+      .mockRejectedValueOnce(error) // failure 1 -> next wait 5000ms
+      .mockRejectedValueOnce(error) // failure 2 -> next wait 15000ms
+      .mockResolvedValueOnce(fakeJob({ status: "running" }))
+      .mockResolvedValueOnce(fakeJob({ status: "running" }));
+
+    renderHook(() => useJobQuery("job_1"), { wrapper: wrapperFor(client) });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_000);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(3);
+    expect(jobState(client, "job_1")?.data?.status).toBe("running");
+
+    // Back to the normal 1500ms cadence, not another backoff tier.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_499);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("keeps the cached job available after a refetch failure and backs off before retrying", async () => {
+    vi.useFakeTimers();
+    const client = createTestQueryClient();
+    const error = new Error("network down");
+    getPersistedJobMock
+      .mockResolvedValueOnce(fakeJob({ status: "running" }))
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(fakeJob({ status: "running" }));
+
+    renderHook(() => useJobQuery("job_1"), { wrapper: wrapperFor(client) });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(jobState(client, "job_1")?.data?.status).toBe("running");
+
+    // This poll fails; the previously cached job must remain available.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_500);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
+    expect(jobState(client, "job_1")?.status).toBe("error");
+    expect(jobState(client, "job_1")?.data?.status).toBe("running");
+
+    // The next attempt waits the error backoff (5000ms), not 1500ms.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_499);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_501);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(3);
+    expect(jobState(client, "job_1")?.data?.status).toBe("running");
+    expect(jobState(client, "job_1")?.status).toBe("success");
+  });
+
+  it("stops polling once a terminal status is reached, even after prior failures", async () => {
+    vi.useFakeTimers();
+    const client = createTestQueryClient();
+    const error = new Error("network down");
+    getPersistedJobMock
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce(fakeJob({ status: "completed" }));
+
+    renderHook(() => useJobQuery("job_1"), { wrapper: wrapperFor(client) });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
     });
     expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
     expect(jobState(client, "job_1")?.data?.status).toBe("completed");
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10_000);
+      await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
   });

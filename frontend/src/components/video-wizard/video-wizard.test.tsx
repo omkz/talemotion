@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { VideoProject } from "@/types";
 import type { CreateVideoProjectInput } from "@/lib/api/video-project-api";
@@ -85,6 +85,22 @@ describe("Historical VideoWizard", () => {
     expect(
       (screen.getByLabelText("Topic or story idea") as HTMLTextAreaElement).value,
     ).toBe("A documentary about Majapahit maritime power");
+  });
+
+  it("routes an early form submission through Output before creating", async () => {
+    const user = userEvent.setup();
+    render(<VideoWizard />);
+    await completeStory(user);
+
+    fireEvent.submit(
+      screen.getByRole("form", { name: "Historical project creation" }),
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Output", level: 2 }),
+    ).toBeTruthy();
+    expect(createProjectMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Create project" })).toBeTruthy();
   });
 
   it("does not expose Story Approach and submits documentary internally", async () => {

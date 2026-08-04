@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -37,6 +37,7 @@ export function VideoWizard() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [isCreating, setIsCreating] = useState(false);
+  const [isAdvancing, setIsAdvancing] = useState(false);
 
   const form = useForm<WizardFormValues>({
     resolver: zodResolver(wizardSchema),
@@ -46,8 +47,14 @@ export function VideoWizard() {
   const values = useWatch({ control: form.control });
 
   const goNext = async () => {
-    const valid = await form.trigger(STEP_FIELDS[step], { shouldFocus: true });
-    if (valid) setStep((current) => Math.min(3, current + 1));
+    if (isAdvancing) return;
+    setIsAdvancing(true);
+    try {
+      const valid = await form.trigger(STEP_FIELDS[step], { shouldFocus: true });
+      if (valid) setStep((current) => Math.min(3, current + 1));
+    } finally {
+      setIsAdvancing(false);
+    }
   };
 
   const goBack = () => {
@@ -59,6 +66,10 @@ export function VideoWizard() {
   };
 
   const onSubmit = async (submitted: WizardFormValues) => {
+    if (step < 3) {
+      await goNext();
+      return;
+    }
     if (isCreating) return;
     setIsCreating(true);
     form.clearErrors("root.server");
@@ -98,6 +109,19 @@ export function VideoWizard() {
     }
   };
 
+  const handleFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    if (step < 3) {
+      event.preventDefault();
+      void goNext();
+      return;
+    }
+    if (isAdvancing) {
+      event.preventDefault();
+      return;
+    }
+    void form.handleSubmit(onSubmit)(event);
+  };
+
   if (isCreating) {
     return (
       <Card className="flex flex-col items-center gap-4 px-8 py-20 text-center">
@@ -120,7 +144,10 @@ export function VideoWizard() {
       <WizardStepper currentStep={step} />
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)}>
+        <form
+          aria-label="Historical project creation"
+          onSubmit={handleFormSubmit}
+        >
           <Card className="p-5 sm:p-8">
             <h2 className="mb-6 text-lg font-semibold text-foreground">
               {STEP_TITLES[step - 1]}
@@ -148,12 +175,16 @@ export function VideoWizard() {
               </Button>
 
               {step < 3 ? (
-                <Button type="button" onClick={goNext}>
+                <Button key="next" type="button" onClick={goNext} disabled={isAdvancing}>
                   Next
                   <ArrowRight className="size-4" />
                 </Button>
               ) : (
-                <Button type="submit" disabled={isCreating || form.formState.isSubmitting}>
+                <Button
+                  key="submit"
+                  type="submit"
+                  disabled={isCreating || form.formState.isSubmitting}
+                >
                   <Sparkles className="size-4" />
                   Create project
                 </Button>

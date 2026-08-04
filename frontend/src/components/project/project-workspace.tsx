@@ -569,15 +569,14 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
 
       <ConfirmDialog
         open={deleteOpen}
-        onOpenChange={(open) =>
-          !deleteProjectMutation.isPending && setDeleteOpen(open)
-        }
+        onOpenChange={setDeleteOpen}
         title="Delete this project?"
         description={`“${project.output.title}” will be removed from your project list. This action cannot be undone from TaleMotion.`}
         confirmLabel={
           deleteProjectMutation.isPending ? "Deleting…" : "Delete project"
         }
         destructive
+        pending={deleteProjectMutation.isPending}
         onConfirm={() => void handleDeleteProject()}
       />
     </div>

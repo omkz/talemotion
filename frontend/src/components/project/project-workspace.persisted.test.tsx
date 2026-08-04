@@ -277,9 +277,47 @@ describe("ProjectWorkspace (persisted mode)", () => {
     expect(refreshMock).toHaveBeenCalled();
   });
 
-  it("shows an error toast, does not navigate, and leaves the workspace usable on a failed deletion", async () => {
+  it("keeps the dialog open while pending, shows Deleting…, disables confirm/cancel, blocks Escape, and does not duplicate the request", async () => {
+    getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+    const { promise, resolve } = deferred<void>();
+    deletePersistedProjectMock.mockReturnValueOnce(promise);
+    const user = userEvent.setup();
+
+    renderWorkspace();
+    await screen.findByRole("heading", { name: "Majapahit Documentary" });
+
+    await user.click(
+      screen.getByRole("button", { name: "Delete Majapahit Documentary" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Delete project" }));
+
+    // Still visible, confirm label swapped, both actions disabled.
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    const pendingConfirmButton = (await screen.findByRole("button", {
+      name: "Deleting…",
+    })) as HTMLButtonElement;
+    expect(pendingConfirmButton.disabled).toBe(true);
+    const cancelButton = screen.getByRole("button", {
+      name: "Cancel",
+    }) as HTMLButtonElement;
+    expect(cancelButton.disabled).toBe(true);
+
+    // A disabled button does not dispatch a click; no duplicate request.
+    await user.click(pendingConfirmButton);
+    // Escape cannot dismiss the dialog while pending.
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    expect(deletePersistedProjectMock).toHaveBeenCalledTimes(1);
+
+    resolve();
+    await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/projects"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+  });
+
+  it("keeps the dialog open on failure, shows the error toast, re-enables confirm/cancel, and allows a retry that succeeds", async () => {
     getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
     deletePersistedProjectMock.mockRejectedValueOnce(new Error("Delete failed."));
+    deletePersistedProjectMock.mockResolvedValueOnce(undefined);
     const user = userEvent.setup();
 
     renderWorkspace();
@@ -296,46 +334,22 @@ describe("ProjectWorkspace (persisted mode)", () => {
       expect.objectContaining({ description: "Delete failed." }),
     );
     expect(replaceMock).not.toHaveBeenCalled();
-    // Pending state cleared and the workspace (including the delete entry
-    // point, which reopens the confirm dialog) is usable again.
-    expect(screen.getByRole("heading", { name: "Majapahit Documentary" })).toBeTruthy();
-    const retryButton = screen.getByRole("button", {
-      name: "Delete Majapahit Documentary",
+
+    // The dialog itself stayed open (not just the header entry point), and
+    // confirm/cancel are usable again for a retry from the same dialog.
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    const confirmButton = screen.getByRole("button", {
+      name: "Delete project",
     }) as HTMLButtonElement;
-    expect(retryButton).toBeTruthy();
-    expect(retryButton.disabled).toBe(false);
-  });
+    expect(confirmButton.disabled).toBe(false);
+    const cancelButton = screen.getByRole("button", {
+      name: "Cancel",
+    }) as HTMLButtonElement;
+    expect(cancelButton.disabled).toBe(false);
 
-  it("disables the delete entry point while pending, preventing duplicate requests", async () => {
-    getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
-    const { promise, resolve } = deferred<void>();
-    deletePersistedProjectMock.mockReturnValueOnce(promise);
-    const user = userEvent.setup();
+    await user.click(confirmButton);
 
-    renderWorkspace();
-    await screen.findByRole("heading", { name: "Majapahit Documentary" });
-
-    await user.click(
-      screen.getByRole("button", { name: "Delete Majapahit Documentary" }),
-    );
-    await user.click(await screen.findByRole("button", { name: "Delete project" }));
-
-    // The dialog's own confirm action closes it on click (Radix), so the
-    // real protection against a second submission while pending is the
-    // header's delete entry point becoming disabled — it can't be used to
-    // reopen the dialog and confirm again until the mutation settles.
-    await waitFor(() =>
-      expect(
-        (
-          screen.getByRole("button", {
-            name: "Delete Majapahit Documentary",
-          }) as HTMLButtonElement
-        ).disabled,
-      ).toBe(true),
-    );
-
-    resolve();
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/projects"));
-    expect(deletePersistedProjectMock).toHaveBeenCalledTimes(1);
+    expect(deletePersistedProjectMock).toHaveBeenCalledTimes(2);
   });
 });

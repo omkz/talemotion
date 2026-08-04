@@ -2,7 +2,6 @@
 
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -10,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -18,7 +18,8 @@ interface ConfirmDialogProps {
   description: string;
   confirmLabel?: string;
   destructive?: boolean;
-  onConfirm: () => void;
+  pending?: boolean;
+  onConfirm: () => void | Promise<void>;
 }
 
 export function ConfirmDialog({
@@ -28,23 +29,39 @@ export function ConfirmDialog({
   description,
   confirmLabel = "Confirm",
   destructive = false,
+  pending = false,
   onConfirm,
 }: ConfirmDialogProps) {
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
+    <AlertDialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (pending) return;
+        onOpenChange(nextOpen);
+      }}
+    >
+      <AlertDialogContent
+        onEscapeKeyDown={(event) => {
+          if (pending) event.preventDefault();
+        }}
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
+          <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+          {/* A plain Button, not AlertDialogAction: AlertDialogAction renders
+              DialogPrimitive.Close, which closes the dialog immediately on
+              click regardless of how long the async onConfirm takes. */}
+          <Button
+            type="button"
             variant={destructive ? "destructive" : "default"}
+            disabled={pending}
+            onClick={() => void onConfirm()}
           >
             {confirmLabel}
-          </AlertDialogAction>
+          </Button>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

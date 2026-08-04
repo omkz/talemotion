@@ -9,9 +9,10 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { FileWarning } from "lucide-react";
-import { getProject, renderFinalVideo } from "@/lib/mock-api";
+import { renderFinalVideo } from "@/lib/mock-api";
 import { buildInitialRender } from "@/lib/mock-api/render";
 import { replaceProject } from "@/lib/mock-api/projects";
+import { useProjectQuery } from "@/lib/queries/use-project-query";
 import { StoryboardSection } from "@/components/storyboard/storyboard-section";
 import { GenerationSection } from "@/components/generation/generation-section";
 import { FinalVideoSection } from "@/components/final-video/final-video-section";
@@ -52,8 +53,8 @@ function initialTabFor(project: VideoProject): WorkspaceTab {
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const router = useRouter();
   const { estimate, canAfford, refresh: refreshCredits } = useCredits();
+  const projectQuery = useProjectQuery(projectId);
   const [project, setProject] = useState<VideoProject | null>(null);
-  const [notFound, setNotFound] = useState(false);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("brief");
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [render, setRender] = useState<Render | null>(null);
@@ -64,123 +65,138 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [deleting, setDeleting] = useState(false);
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoadedRef = useRef(false);
+  const initializedProjectIdRef = useRef<string | null>(null);
 
+  // Only treat the query's error/not-found state as fatal before the workspace has
+  // ever initialized. Once `project` is loaded, a later background refetch failure
+  // must not blow away the editor or unsaved local changes.
+  const notFound =
+    !project &&
+    (projectQuery.isError ||
+      (projectQuery.isSuccess && projectQuery.data === null));
+
+  // Show one error toast for the initial load failure, not on every rerender and
+  // not for background refetch errors once the workspace is already initialized.
   useEffect(() => {
+    if (project || !projectQuery.isError) return;
+    toast.error(
+      projectQuery.error instanceof Error
+        ? projectQuery.error.message
+        : "Could not load the project.",
+    );
+  }, [project, projectQuery.isError, projectQuery.error]);
+
+  // Run the one-time workspace initialization exactly once per loaded project,
+  // so a background refetch never resets activeTab/render/local edits.
+  useEffect(() => {
+    const data = projectQuery.data;
+    if (!data || initializedProjectIdRef.current === projectId) return;
+    initializedProjectIdRef.current = projectId;
+
     let cancelled = false;
-    const loadProject = realSceneGenerationEnabled
-      ? getPersistedProject(projectId)
-      : getProject(projectId);
-    loadProject
-      .then((data) => {
-        if (cancelled) return;
-        if (!data) {
-          setNotFound(true);
-          return;
-        }
-        setProject(data);
-        if (realSceneGenerationEnabled) {
-          void Promise.all([
-            getLatestProjectRender(projectId).catch((error: unknown) => {
+
+    // Deferred so these setState calls run as a reaction to the resolved
+    // query data (mirroring the previous promise-chain `.then()` shape)
+    // rather than synchronously in the effect body.
+    void Promise.resolve().then(() => {
+      setProject(data);
+      if (realSceneGenerationEnabled) {
+        void Promise.all([
+          getLatestProjectRender(projectId).catch((error: unknown) => {
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : "Could not restore the latest video preview.",
+            );
+            return null;
+          }),
+          listPersistedJobs(projectId),
+        ])
+          .then(async ([latest, jobs]) => {
+            if (cancelled) return;
+            setRender(latest);
+            const activeRender = jobs.find(
+              (job) =>
+                job.type === "render" &&
+                (job.status === "queued" ||
+                  job.status === "running" ||
+                  job.status === "cancel_requested"),
+            );
+            if (!activeRender) {
+              const failedRender = jobs.find(
+                (job) =>
+                  job.type === "render" &&
+                  (job.status === "failed" ||
+                    job.status === "cancelled"),
+              );
+              if (failedRender) {
+                setActiveTab("final");
+                setRenderProgress(failedRender.progress);
+                setRenderStage(failedRender.current_stage);
+                toast.error(
+                  failedRender.error_message ??
+                    "The latest final render did not complete.",
+                );
+              }
+              return;
+            }
+            setActiveTab("final");
+            setIsRendering(true);
+            const completed = await pollPersistedJob(activeRender.id, {
+              onUpdate: (job) => {
+                if (cancelled) return;
+                setRenderProgress(job.progress);
+                setRenderStage(job.current_stage);
+              },
+            });
+            if (cancelled) return;
+            if (completed.status === "completed") {
+              const renderId =
+                typeof completed.result_payload?.render_id === "string"
+                  ? completed.result_payload.render_id
+                  : typeof completed.input_payload.render_id === "string"
+                    ? completed.input_payload.render_id
+                    : null;
+              if (renderId) {
+                const [persisted, previewUrl] = await Promise.all([
+                  getPersistedRender(renderId),
+                  getRenderPreviewUrl(renderId),
+                ]);
+                if (!cancelled) {
+                  setRender(mapPersistedRender(persisted, previewUrl));
+                }
+              }
+            } else {
+              toast.error(
+                completed.error_message ?? "Final rendering failed.",
+              );
+            }
+          })
+          .catch((error: unknown) => {
+            if (!cancelled) {
               toast.error(
                 error instanceof Error
                   ? error.message
-                  : "Could not restore the latest video preview.",
+                  : "Could not restore render state.",
               );
-              return null;
-            }),
-            listPersistedJobs(projectId),
-          ])
-            .then(async ([latest, jobs]) => {
-              if (cancelled) return;
-              setRender(latest);
-              const activeRender = jobs.find(
-                (job) =>
-                  job.type === "render" &&
-                  (job.status === "queued" ||
-                    job.status === "running" ||
-                    job.status === "cancel_requested"),
-              );
-              if (!activeRender) {
-                const failedRender = jobs.find(
-                  (job) =>
-                    job.type === "render" &&
-                    (job.status === "failed" ||
-                      job.status === "cancelled"),
-                );
-                if (failedRender) {
-                  setActiveTab("final");
-                  setRenderProgress(failedRender.progress);
-                  setRenderStage(failedRender.current_stage);
-                  toast.error(
-                    failedRender.error_message ??
-                      "The latest final render did not complete.",
-                  );
-                }
-                return;
-              }
-              setActiveTab("final");
-              setIsRendering(true);
-              const completed = await pollPersistedJob(activeRender.id, {
-                onUpdate: (job) => {
-                  if (cancelled) return;
-                  setRenderProgress(job.progress);
-                  setRenderStage(job.current_stage);
-                },
-              });
-              if (cancelled) return;
-              if (completed.status === "completed") {
-                const renderId =
-                  typeof completed.result_payload?.render_id === "string"
-                    ? completed.result_payload.render_id
-                    : typeof completed.input_payload.render_id === "string"
-                      ? completed.input_payload.render_id
-                      : null;
-                if (renderId) {
-                  const [persisted, previewUrl] = await Promise.all([
-                    getPersistedRender(renderId),
-                    getRenderPreviewUrl(renderId),
-                  ]);
-                  if (!cancelled) {
-                    setRender(mapPersistedRender(persisted, previewUrl));
-                  }
-                }
-              } else {
-                toast.error(
-                  completed.error_message ?? "Final rendering failed.",
-                );
-              }
-            })
-            .catch((error: unknown) => {
-              if (!cancelled) {
-                toast.error(
-                  error instanceof Error
-                    ? error.message
-                    : "Could not restore render state.",
-                );
-              }
-            })
-            .finally(() => {
-              if (!cancelled) {
-                setIsRendering(false);
-                setRenderStage(null);
-              }
-            });
-        } else {
-          setRender(buildInitialRender(data));
-        }
-        setActiveTab(initialTabFor(data));
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setNotFound(true);
-        toast.error(
-          error instanceof Error ? error.message : "Could not load the project.",
-        );
-      });
+            }
+          })
+          .finally(() => {
+            if (!cancelled) {
+              setIsRendering(false);
+              setRenderStage(null);
+            }
+          });
+      } else {
+        setRender(buildInitialRender(data));
+      }
+      setActiveTab(initialTabFor(data));
+    });
+
     return () => {
       cancelled = true;
     };
-  }, [projectId]);
+  }, [projectQuery.data, projectId]);
 
   useEffect(() => {
     if (!project || realSceneGenerationEnabled) return;

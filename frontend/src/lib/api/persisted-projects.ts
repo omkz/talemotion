@@ -301,25 +301,27 @@ export async function deletePersistedProject(
   await client().delete<void>(`/projects/${projectId}`, { signal });
 }
 
+export interface PersistedProjectUpdateInput {
+  title?: string;
+  topic?: string;
+  source_notes?: string | null;
+  content_type?: "documentary" | "educational" | "explainer";
+  language?: string;
+  tone?: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
+  target_audience?: string;
+  additional_direction?: string;
+  duration_seconds?: 30 | 45;
+  visual_style?: string;
+  narration_style?: string;
+  narration_enabled?: boolean;
+  captions_enabled?: boolean;
+  music_enabled?: boolean;
+  historical_accuracy_note?: string | null;
+}
+
 export async function updatePersistedProject(
   projectId: string,
-  patch: {
-    title?: string;
-    topic?: string;
-    source_notes?: string | null;
-    content_type?: "documentary" | "educational" | "explainer";
-    language?: string;
-    tone?: "cinematic" | "informative" | "dramatic" | "inspirational" | "neutral";
-    target_audience?: string;
-    additional_direction?: string;
-    duration_seconds?: 30 | 45;
-    visual_style?: string;
-    narration_style?: string;
-    narration_enabled?: boolean;
-    captions_enabled?: boolean;
-    music_enabled?: boolean;
-    historical_accuracy_note?: string | null;
-  },
+  patch: PersistedProjectUpdateInput,
   signal?: AbortSignal,
 ): Promise<VideoProject> {
   const response = await client().patch<PersistedProjectResponse>(

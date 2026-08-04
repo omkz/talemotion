@@ -58,8 +58,9 @@ vi.mock("@/lib/api/render-jobs", () => ({
   getRenderPreviewUrl: vi.fn(),
   mapPersistedRender: vi.fn(),
 }));
+const deleteProjectApiMock = vi.fn<(id: string) => Promise<void>>();
 vi.mock("@/lib/api/provider", () => ({
-  videoProjectApi: { deleteProject: vi.fn() },
+  videoProjectApi: { deleteProject: (id: string) => deleteProjectApiMock(id) },
 }));
 vi.mock("@/components/credits/credits-provider", () => ({
   useCredits: () => ({
@@ -185,6 +186,7 @@ function deferred<T>() {
 describe("ProjectWorkspace", () => {
   beforeEach(() => {
     getProjectMock.mockReset();
+    deleteProjectApiMock.mockReset();
     pushMock.mockReset();
     replaceMock.mockReset();
     refreshMock.mockReset();
@@ -281,5 +283,29 @@ describe("ProjectWorkspace", () => {
     expect(screen.getByText("Storyboard stub")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Majapahit Documentary" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Updated title" })).toBeTruthy();
+  });
+
+  it("deletes the project via the mock API and redirects on successful mock-mode deletion", async () => {
+    getProjectMock.mockResolvedValueOnce(fakeProject());
+    deleteProjectApiMock.mockResolvedValueOnce(undefined);
+    const user = userEvent.setup();
+
+    renderWorkspace();
+    await screen.findByRole("heading", { name: "Majapahit Documentary" });
+
+    await user.click(
+      screen.getByRole("button", { name: "Delete Majapahit Documentary" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Delete project" }));
+
+    await waitFor(() => expect(deleteProjectApiMock).toHaveBeenCalledWith("proj_1"));
+    expect(toastSuccessMock).toHaveBeenCalledWith(
+      "Project deleted",
+      expect.objectContaining({
+        description: expect.stringContaining("Majapahit Documentary"),
+      }),
+    );
+    expect(replaceMock).toHaveBeenCalledWith("/projects");
+    expect(refreshMock).toHaveBeenCalled();
   });
 });

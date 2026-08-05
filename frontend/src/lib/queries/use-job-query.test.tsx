@@ -74,6 +74,16 @@ function jobState(client: QueryClient, jobId: string) {
   );
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("useJobQuery", () => {
   beforeEach(() => {
     getPersistedJobMock.mockReset();
@@ -420,5 +430,162 @@ describe("useJobQuery", () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("resets the failure streak when jobId changes, instead of inheriting the previous job's backoff", async () => {
+    vi.useFakeTimers();
+    const client = createTestQueryClient();
+    const error = new Error("network down");
+    getPersistedJobMock
+      .mockRejectedValueOnce(error) // job_1 failure 1 -> next wait 5000ms
+      .mockRejectedValueOnce(error); // job_1 failure 2 -> next wait would be 15000ms
+
+    const { rerender } = renderHook(
+      ({ jobId }: { jobId: string | null }) => useJobQuery(jobId),
+      { wrapper: wrapperFor(client), initialProps: { jobId: "job_1" } },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
+    expect(jobState(client, "job_1")?.status).toBe("error");
+
+    // Switch to job_2 well before job_1's next (15000ms) backoff would fire.
+    getPersistedJobMock.mockResolvedValueOnce(
+      fakeJob({ id: "job_2", status: "running" }),
+    );
+    rerender({ jobId: "job_2" });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(3);
+    expect(jobState(client, "job_2")?.data?.status).toBe("running");
+
+    // job_2's next poll uses the normal 1500ms interval, not job_1's backoff.
+    getPersistedJobMock.mockResolvedValueOnce(
+      fakeJob({ id: "job_2", status: "running" }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_499);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("does not count a stale, aborted request from a previous jobId as a failure for the new job", async () => {
+    vi.useFakeTimers();
+    const client = createTestQueryClient();
+    const job1 = deferred<PersistedGenerationJob>();
+    let capturedSignal: AbortSignal | undefined;
+    getPersistedJobMock.mockImplementationOnce((_jobId, signal) => {
+      capturedSignal = signal;
+      return job1.promise;
+    });
+
+    const { rerender } = renderHook(
+      ({ jobId }: { jobId: string | null }) => useJobQuery(jobId),
+      { wrapper: wrapperFor(client), initialProps: { jobId: "job_1" } },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(1);
+    expect(capturedSignal?.aborted).toBe(false);
+
+    getPersistedJobMock.mockResolvedValueOnce(
+      fakeJob({ id: "job_2", status: "running" }),
+    );
+    rerender({ jobId: "job_2" });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(capturedSignal?.aborted).toBe(true);
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
+    expect(jobState(client, "job_2")?.data?.status).toBe("running");
+
+    // The stale job_1 request finally settles as a rejection — it must not
+    // touch job_2's failure counter.
+    await act(async () => {
+      job1.reject(new DOMException("Aborted", "AbortError"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    getPersistedJobMock.mockResolvedValueOnce(
+      fakeJob({ id: "job_2", status: "running" }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_499);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    // job_2 polled again at 1500ms, not 5000ms — the stale rejection did not
+    // start an error backoff for it.
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(3);
+    expect(jobState(client, "job_2")?.status).toBe("success");
+  });
+
+  it("aborts a pending request when jobId is disabled to null, and starts fresh on the next job", async () => {
+    vi.useFakeTimers();
+    const client = createTestQueryClient();
+    const job1 = deferred<PersistedGenerationJob>();
+    let capturedSignal: AbortSignal | undefined;
+    getPersistedJobMock.mockImplementationOnce((_jobId, signal) => {
+      capturedSignal = signal;
+      return job1.promise;
+    });
+
+    const { rerender } = renderHook(
+      ({ jobId }: { jobId: string | null }) => useJobQuery(jobId),
+      {
+        wrapper: wrapperFor(client),
+        initialProps: { jobId: "job_1" as string | null },
+      },
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(capturedSignal?.aborted).toBe(false);
+
+    rerender({ jobId: null });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(capturedSignal?.aborted).toBe(true);
+
+    getPersistedJobMock.mockResolvedValueOnce(
+      fakeJob({ id: "job_3", status: "running" }),
+    );
+    rerender({ jobId: "job_3" });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(jobState(client, "job_3")?.data?.status).toBe("running");
+
+    // Normal 1500ms cadence for the new job.
+    getPersistedJobMock.mockResolvedValueOnce(
+      fakeJob({ id: "job_3", status: "running" }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_499);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(getPersistedJobMock).toHaveBeenCalledTimes(3);
   });
 });

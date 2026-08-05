@@ -10,5 +10,9 @@ export function useProjectJobsQuery(projectId: string, enabled: boolean) {
     queryKey: jobQueryKeys.project(projectId),
     enabled: enabled && Boolean(projectId),
     queryFn: ({ signal }) => listPersistedJobs(projectId, { signal }),
+    // Restoration must inspect a fresh response, not merely whatever the
+    // cache already has (e.g. a stale `[]` from a previous visit) — see
+    // ProjectWorkspace's isFetchedAfterMount/isFetching guard.
+    refetchOnMount: "always",
   });
 }

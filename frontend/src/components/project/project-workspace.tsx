@@ -47,6 +47,7 @@ type ActiveRenderJobSource = "user" | "restored";
 
 interface ActiveRenderJob {
   id: string;
+  projectId: string;
   source: ActiveRenderJobSource;
 }
 
@@ -99,7 +100,12 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [renderStage, setRenderStage] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [activeRenderJob, setActiveRenderJob] = useState<ActiveRenderJob | null>(null);
-  const activeRenderJobId = activeRenderJob?.id ?? null;
+  // Scoped to the current project: a job left over from a previous
+  // `projectId` (same component instance) must never be treated as active —
+  // it should stop polling immediately, even before the reset effect below
+  // has had a chance to clear `activeRenderJob` itself.
+  const activeRenderJobId =
+    activeRenderJob?.projectId === projectId ? activeRenderJob.id : null;
   const [
     latestRenderRestoreSettledProjectId,
     setLatestRenderRestoreSettledProjectId,
@@ -177,6 +183,15 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     void Promise.resolve().then(() => {
       if (cancelled) return;
       setProject(data);
+      // A genuinely new project must never inherit the previous project's
+      // render-runtime state (active job, progress, stage, or preview) —
+      // otherwise a leftover job from project_1 could keep polling, block,
+      // or misreport state for project_2 until its own restoration catches up.
+      setActiveRenderJob(null);
+      setIsRendering(false);
+      setRenderProgress(0);
+      setRenderStage(null);
+      setRender(null);
       if (realSceneGenerationEnabled) {
         void getLatestProjectRender(projectId)
           .then((latest) => {
@@ -220,6 +235,15 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     if (!realSceneGenerationEnabled) return;
     if (!project || project.id !== projectId) return;
     if (latestRenderRestoreSettledProjectId !== projectId) return;
+    // Cached data (e.g. a stale `[]` from a previous visit) can be visible
+    // immediately on mount while a fresh refetch (see refetchOnMount:
+    // "always" on useProjectJobsQuery) is still in flight. Restoration must
+    // wait for that fresh fetch to actually finish, not just for `data` to
+    // exist, or a stale response could unlock rendering / mark this project
+    // as processed before the real jobs list has been inspected.
+    if (!projectJobsQuery.isSuccess) return;
+    if (!projectJobsQuery.isFetchedAfterMount) return;
+    if (projectJobsQuery.isFetching) return;
     if (!projectJobsQuery.data) return;
     if (restoredRenderJobsProjectIdRef.current === projectId) return;
     restoredRenderJobsProjectIdRef.current = projectId;
@@ -236,7 +260,10 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
       // creation-readiness and leave the user's job untouched. Read from the
       // ref (kept in sync outside render) so this reflects the true latest
       // state at the moment this deferred callback actually executes.
-      if (activeRenderJobRef.current?.source === "user") {
+      if (
+        activeRenderJobRef.current?.projectId === projectId &&
+        activeRenderJobRef.current.source === "user"
+      ) {
         setRenderRestorationReadyProjectId(projectId);
         return;
       }
@@ -251,7 +278,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         setIsRendering(true);
         setRenderProgress(result.job.progress);
         setRenderStage(result.job.current_stage ?? result.job.status);
-        setActiveRenderJob({ id: result.job.id, source: "restored" });
+        setActiveRenderJob({ id: result.job.id, projectId, source: "restored" });
       } else if (result.kind === "failed") {
         setActiveTab("final");
         setRenderProgress(result.job.progress);
@@ -271,6 +298,9 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     project,
     projectId,
     latestRenderRestoreSettledProjectId,
+    projectJobsQuery.isSuccess,
+    projectJobsQuery.isFetchedAfterMount,
+    projectJobsQuery.isFetching,
     projectJobsQuery.data,
     queryClient,
   ]);
@@ -355,6 +385,11 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     handledRenderJobIdRef.current = job.id;
 
     const source = activeRenderJob?.source ?? "user";
+    // Captured up front so the async work below can be verified against the
+    // *live* project at the moment each step actually completes, not just at
+    // the moment it started — `projectId` itself is a closed-over prop value
+    // and would always trivially match its own effect run.
+    const terminalProjectId = activeRenderJob?.projectId ?? projectId;
     let cancelled = false;
 
     void (async () => {
@@ -371,7 +406,9 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
             getPersistedRender(renderId),
             getRenderPreviewUrl(renderId),
           ]);
-          if (cancelled) return;
+          if (cancelled || initializedProjectIdRef.current !== terminalProjectId) {
+            return;
+          }
           handleRenderChange(mapPersistedRender(persisted, previewUrl));
           if (source === "user") {
             toast.success(`Rendered v${persisted.version}`, {
@@ -382,18 +419,22 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           toast.error(job.error_message ?? "Final video rendering failed.");
         }
       } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : "Final rendering failed.",
-        );
+        if (!cancelled && initializedProjectIdRef.current === terminalProjectId) {
+          toast.error(
+            error instanceof Error ? error.message : "Final rendering failed.",
+          );
+        }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && initializedProjectIdRef.current === terminalProjectId) {
           if (source === "user") {
             await refreshCredits();
           }
           setIsRendering(false);
           setRenderStage(null);
           setActiveRenderJob((current) =>
-            current?.id === job.id ? null : current,
+            current?.id === job.id && current.projectId === terminalProjectId
+              ? null
+              : current,
           );
         }
       }
@@ -406,8 +447,10 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     renderJobQuery.data,
     activeRenderJobId,
     activeRenderJob?.source,
+    activeRenderJob?.projectId,
     project?.output.title,
     refreshCredits,
+    projectId,
   ]);
 
   if (notFound) {
@@ -577,7 +620,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           captions_enabled: project.output.captionsEnabled,
           music_enabled: project.output.musicEnabled,
         });
-        setActiveRenderJob({ id: queued.id, source: "user" });
+        setActiveRenderJob({ id: queued.id, projectId, source: "user" });
         setRenderProgress(queued.progress);
         setRenderStage(queued.current_stage ?? queued.status);
         await refreshCredits();

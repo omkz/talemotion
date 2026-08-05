@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -76,6 +76,18 @@ function classifyRenderRestoration(
   return { kind: "empty" };
 }
 
+// Pure, module-level (mirrors `syncPollingState` in use-job-query.ts) so
+// event handlers and deferred async callbacks can check whether they still
+// belong to the current project without directly dereferencing a ref inside
+// a function that the lint config treats as reachable during render (e.g. an
+// `onClick` handler built in the render body).
+function isProjectIdCurrent(
+  ref: RefObject<string | null>,
+  projectId: string,
+): boolean {
+  return ref.current === projectId;
+}
+
 function initialTabFor(project: VideoProject): WorkspaceTab {
   if (project.status === "draft") return "brief";
   if (project.status === "ready") return "final";
@@ -99,6 +111,14 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [renderProgress, setRenderProgress] = useState(0);
   const [renderStage, setRenderStage] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // Tracks which project a real-mode create-render request belongs to, from
+  // the moment `handleStartRender` fires it until a dedicated effect (below)
+  // applies its outcome. Kept as state rather than a ref: `handleStartRender`
+  // is fed into `primaryActionFor`'s returned object, and this project's lint
+  // config forbids any ref access — even a write — inside a function that
+  // escapes into a plain object like that on its way into JSX.
+  const [pendingRenderCreationProjectId, setPendingRenderCreationProjectId] =
+    useState<string | null>(null);
   const [activeRenderJob, setActiveRenderJob] = useState<ActiveRenderJob | null>(null);
   // Scoped to the current project: a job left over from a previous
   // `projectId` (same component instance) must never be treated as active —
@@ -392,6 +412,19 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     const terminalProjectId = activeRenderJob?.projectId ?? projectId;
     let cancelled = false;
 
+    // Rereads the live ref (kept in sync outside render, see effect above)
+    // right before every state update below, since a project switch — or a
+    // newer render job replacing this one in the same project — can happen
+    // at any `await` boundary. Only when this job is still both the current
+    // project's *and* the current job may shared render state be touched.
+    const isTerminalStillCurrent = () => {
+      if (cancelled || initializedProjectIdRef.current !== terminalProjectId) {
+        return false;
+      }
+      const current = activeRenderJobRef.current;
+      return current?.id === job.id && current.projectId === terminalProjectId;
+    };
+
     void (async () => {
       try {
         if (job.status === "completed") {
@@ -406,36 +439,38 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
             getPersistedRender(renderId),
             getRenderPreviewUrl(renderId),
           ]);
-          if (cancelled || initializedProjectIdRef.current !== terminalProjectId) {
-            return;
-          }
+          if (!isTerminalStillCurrent()) return;
           handleRenderChange(mapPersistedRender(persisted, previewUrl));
           if (source === "user") {
             toast.success(`Rendered v${persisted.version}`, {
               description: `${project?.output.title ?? "Your video"} is ready to preview.`,
             });
           }
-        } else {
+        } else if (isTerminalStillCurrent()) {
           toast.error(job.error_message ?? "Final video rendering failed.");
         }
       } catch (error) {
-        if (!cancelled && initializedProjectIdRef.current === terminalProjectId) {
+        if (isTerminalStillCurrent()) {
           toast.error(
             error instanceof Error ? error.message : "Final rendering failed.",
           );
         }
       } finally {
-        if (!cancelled && initializedProjectIdRef.current === terminalProjectId) {
+        if (isTerminalStillCurrent()) {
           if (source === "user") {
             await refreshCredits();
           }
-          setIsRendering(false);
-          setRenderStage(null);
-          setActiveRenderJob((current) =>
-            current?.id === job.id && current.projectId === terminalProjectId
-              ? null
-              : current,
-          );
+          // The project or the active job may have changed while the credit
+          // refresh above was pending — recheck before clearing anything.
+          if (isTerminalStillCurrent()) {
+            setIsRendering(false);
+            setRenderStage(null);
+            setActiveRenderJob((current) =>
+              current?.id === job.id && current.projectId === terminalProjectId
+                ? null
+                : current,
+            );
+          }
         }
       }
     })();
@@ -451,6 +486,74 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     project?.output.title,
     refreshCredits,
     projectId,
+  ]);
+
+  // Applies the outcome of a real-mode create-render request once it
+  // settles. `handleStartRender` only fires the mutation and records which
+  // project it belongs to (see `pendingRenderCreationProjectId`) — this
+  // effect does the actual identity-sensitive work, since it (unlike that
+  // handler) is allowed to read refs. The user may switch projects while the
+  // request or the queue-time credit refresh is still in flight, so identity
+  // is verified again after each await.
+  useEffect(() => {
+    if (!pendingRenderCreationProjectId) return;
+    if (createFinalRenderMutation.isPending) return;
+    if (!createFinalRenderMutation.isSuccess && !createFinalRenderMutation.isError) {
+      return;
+    }
+
+    const operationProjectId = pendingRenderCreationProjectId;
+    const succeeded = createFinalRenderMutation.isSuccess;
+    const queued = createFinalRenderMutation.data;
+    const mutationError = createFinalRenderMutation.error;
+    let cancelled = false;
+
+    void (async () => {
+      // Reset immediately so this settlement is never reprocessed by a later
+      // render while the async work below is still pending.
+      createFinalRenderMutation.reset();
+      setPendingRenderCreationProjectId(null);
+
+      if (succeeded && queued) {
+        // The server accepted the render regardless; only the stale local UI
+        // update is discarded here, never the job itself.
+        if (isProjectIdCurrent(initializedProjectIdRef, operationProjectId)) {
+          setActiveRenderJob({ id: queued.id, projectId: operationProjectId, source: "user" });
+          setRenderProgress(queued.progress);
+          setRenderStage(queued.current_stage ?? queued.status);
+        }
+        await refreshCredits();
+        if (cancelled || !isProjectIdCurrent(initializedProjectIdRef, operationProjectId)) {
+          return;
+        }
+        // No further project-specific state updates today, but the identity
+        // check above keeps this boundary explicit for future changes.
+      } else {
+        // A stale error toast must not appear once the user has moved on.
+        if (isProjectIdCurrent(initializedProjectIdRef, operationProjectId)) {
+          toast.error(
+            mutationError instanceof Error
+              ? mutationError.message
+              : "Final rendering failed.",
+          );
+        }
+        // Credits are account-wide, not project-scoped, so always refresh.
+        await refreshCredits();
+        if (cancelled || !isProjectIdCurrent(initializedProjectIdRef, operationProjectId)) {
+          return;
+        }
+        setIsRendering(false);
+        setRenderStage(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    pendingRenderCreationProjectId,
+    createFinalRenderMutation,
+    refreshCredits,
   ]);
 
   if (notFound) {
@@ -614,24 +717,17 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     setRenderStage("queued");
 
     if (realSceneGenerationEnabled) {
-      try {
-        const queued = await createFinalRenderMutation.mutateAsync({
-          narration_enabled: project.output.narrationEnabled !== false,
-          captions_enabled: project.output.captionsEnabled,
-          music_enabled: project.output.musicEnabled,
-        });
-        setActiveRenderJob({ id: queued.id, projectId, source: "user" });
-        setRenderProgress(queued.progress);
-        setRenderStage(queued.current_stage ?? queued.status);
-        await refreshCredits();
-      } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : "Final rendering failed.",
-        );
-        await refreshCredits();
-        setIsRendering(false);
-        setRenderStage(null);
-      }
+      // The request is fired here, but its outcome is applied by a dedicated
+      // effect (see below) instead of inline in this handler — this handler
+      // must stay ref-free (see `pendingRenderCreationProjectId` above),
+      // while the effect can safely verify project identity via refs across
+      // every await, including the queue-time credit refresh.
+      setPendingRenderCreationProjectId(projectId);
+      createFinalRenderMutation.mutate({
+        narration_enabled: project.output.narrationEnabled !== false,
+        captions_enabled: project.output.captionsEnabled,
+        music_enabled: project.output.musicEnabled,
+      });
       return;
     }
 

@@ -1494,4 +1494,354 @@ describe("ProjectWorkspace (persisted mode)", () => {
       expect(refreshCreditsMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe("asynchronous render operations remain scoped to their project", () => {
+    function fakeProjectTwo(): VideoProject {
+      return fakeProject({
+        id: "proj_2",
+        output: { ...fakeProject().output, title: "Second Project" },
+      });
+    }
+
+    it("does not attach a stale create-render success response to a different project after switching", async () => {
+      getPersistedProjectMock.mockImplementation(async (id: string) =>
+        id === "proj_1" ? fakeProject({ id: "proj_1" }) : fakeProjectTwo(),
+      );
+      getLatestProjectRenderMock.mockResolvedValue(null);
+      listPersistedJobsMock.mockResolvedValueOnce([]); // proj_1 restoration: nothing active
+      const { promise: createPromise, resolve: resolveCreate } =
+        deferred<PersistedGenerationJob>();
+      createFinalRenderMock.mockReturnValueOnce(createPromise);
+      const user = userEvent.setup();
+
+      const client = createTestQueryClient();
+      const { rerender } = render(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_1" />
+        </QueryClientProvider>,
+      );
+      await startOnFinalTab(user);
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+
+      // Switch to project_2 before project_1's create-render request settles.
+      listPersistedJobsMock.mockResolvedValueOnce([]); // proj_2 restoration: nothing active
+      rerender(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_2" />
+        </QueryClientProvider>,
+      );
+      await screen.findByRole("heading", { name: "Second Project" });
+      await user.click(screen.getByRole("tab", { name: "4. Final Video" }));
+      await waitFor(() =>
+        expect(screen.getByText("renderStartDisabled: false")).toBeTruthy(),
+      );
+
+      // Now resolve project_1's stale create-render request successfully.
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      resolveCreate(queuedJob);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(screen.getByText("isRendering: false")).toBeTruthy();
+      expect(screen.getByText("renderProgress: 0")).toBeTruthy();
+      expect(screen.getByText("renderStage: null")).toBeTruthy();
+      // The mutation hook's own onSuccess seeds the job-detail cache because
+      // the request genuinely succeeded server-side — that is expected and
+      // harmless. The workspace must simply never attach it to project_2.
+      expect(
+        client.getQueryData<PersistedGenerationJob>(jobQueryKeys.detail("job_1")),
+      ).toEqual(queuedJob);
+      expect(getPersistedJobMock).not.toHaveBeenCalledWith(
+        "job_1",
+        expect.anything(),
+      );
+
+      // project_2 must still be free to start its own render.
+      const secondJob = fakeJob({ id: "job_2", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(secondJob);
+      getPersistedJobMock.mockResolvedValue(secondJob);
+      await user.click(screen.getByRole("button", { name: "Start Render" }));
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(2));
+    });
+
+    it("does not show a stale error toast or disturb a different project's render state when a create-render request fails after switching", async () => {
+      getPersistedProjectMock.mockImplementation(async (id: string) =>
+        id === "proj_1" ? fakeProject({ id: "proj_1" }) : fakeProjectTwo(),
+      );
+      getLatestProjectRenderMock.mockResolvedValue(null);
+      listPersistedJobsMock.mockResolvedValueOnce([]); // proj_1 restoration: nothing active
+      const { promise: createPromise, reject: rejectCreate } =
+        deferred<PersistedGenerationJob>();
+      createFinalRenderMock.mockReturnValueOnce(createPromise);
+      const user = userEvent.setup();
+
+      const client = createTestQueryClient();
+      const { rerender } = render(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_1" />
+        </QueryClientProvider>,
+      );
+      await startOnFinalTab(user);
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+
+      // Switch to project_2 and restore an active render there, so we can
+      // verify the stale project_1 failure doesn't disturb it.
+      const proj2ActiveJob = fakeJob({
+        id: "job_2",
+        status: "running",
+        progress: 70,
+      });
+      listPersistedJobsMock.mockResolvedValueOnce([proj2ActiveJob]);
+      getPersistedJobMock.mockResolvedValue(proj2ActiveJob);
+      rerender(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_2" />
+        </QueryClientProvider>,
+      );
+      await screen.findByRole("heading", { name: "Second Project" });
+      await waitFor(() => expect(screen.getByText("isRendering: true")).toBeTruthy());
+      await user.click(screen.getByRole("tab", { name: "4. Final Video" }));
+      expect(screen.getByText("renderProgress: 70")).toBeTruthy();
+
+      // Now reject project_1's stale create-render request.
+      rejectCreate(new Error("Server rejected the render request."));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(toastErrorMock).not.toHaveBeenCalled();
+      expect(screen.getByText("isRendering: true")).toBeTruthy();
+      expect(screen.getByText("renderProgress: 70")).toBeTruthy();
+    });
+
+    it("keeps project_2 rendering intact when project_1's queue-time credit refresh resolves after switching", async () => {
+      getPersistedProjectMock.mockImplementation(async (id: string) =>
+        id === "proj_1" ? fakeProject({ id: "proj_1" }) : fakeProjectTwo(),
+      );
+      getLatestProjectRenderMock.mockResolvedValue(null);
+      listPersistedJobsMock.mockResolvedValueOnce([]); // proj_1 restoration: nothing active
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      const { promise: creditsPromise, resolve: resolveCredits } =
+        deferred<void>();
+      refreshCreditsMock.mockReturnValueOnce(creditsPromise);
+      const user = userEvent.setup();
+
+      const client = createTestQueryClient();
+      const { rerender } = render(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_1" />
+        </QueryClientProvider>,
+      );
+      await startOnFinalTab(user);
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+      // project_1's queue-time credit refresh is now pending (deferred).
+
+      // Switch to project_2 and restore an active render there.
+      const proj2ActiveJob = fakeJob({
+        id: "job_2",
+        status: "running",
+        progress: 55,
+        current_stage: "rendering_video",
+      });
+      listPersistedJobsMock.mockResolvedValueOnce([proj2ActiveJob]);
+      getPersistedJobMock.mockResolvedValue(proj2ActiveJob);
+      rerender(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_2" />
+        </QueryClientProvider>,
+      );
+      await screen.findByRole("heading", { name: "Second Project" });
+      await waitFor(() => expect(screen.getByText("isRendering: true")).toBeTruthy());
+      await user.click(screen.getByRole("tab", { name: "4. Final Video" }));
+      expect(screen.getByText("renderProgress: 55")).toBeTruthy();
+      expect(screen.getByText("renderStage: rendering_video")).toBeTruthy();
+
+      // Now resolve project_1's stale queue-time credit refresh.
+      resolveCredits();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(screen.getByText("isRendering: true")).toBeTruthy();
+      expect(screen.getByText("renderProgress: 55")).toBeTruthy();
+      expect(screen.getByText("renderStage: rendering_video")).toBeTruthy();
+    });
+
+    it("keeps project_2 rendering intact when project_1's terminal credit refresh resolves after switching", async () => {
+      getPersistedProjectMock.mockImplementation(async (id: string) =>
+        id === "proj_1" ? fakeProject({ id: "proj_1" }) : fakeProjectTwo(),
+      );
+      getLatestProjectRenderMock.mockResolvedValue(null);
+      listPersistedJobsMock.mockResolvedValueOnce([]); // proj_1 restoration: nothing active
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      const user = userEvent.setup();
+
+      const client = createTestQueryClient();
+      const { rerender } = render(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_1" />
+        </QueryClientProvider>,
+      );
+      await startOnFinalTab(user);
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(refreshCreditsMock).toHaveBeenCalledTimes(1));
+
+      // job_1 completes; defer the terminal credit refresh this time.
+      const { promise: creditsPromise, resolve: resolveCredits } =
+        deferred<void>();
+      refreshCreditsMock.mockReturnValueOnce(creditsPromise);
+      getPersistedRenderMock.mockResolvedValueOnce(
+        fakePersistedRender({ id: "render_1", version: 3 }),
+      );
+      getRenderPreviewUrlMock.mockResolvedValueOnce("https://cdn.example/v3");
+      mapPersistedRenderMock.mockReturnValueOnce(
+        fakeRender({ version: 3, shareUrl: "https://cdn.example/v3" }),
+      );
+      const completedJob = fakeJob({
+        id: "job_1",
+        status: "completed",
+        result_payload: { render_id: "render_1" },
+      });
+      client.setQueryData(jobQueryKeys.detail("job_1"), completedJob);
+      await waitFor(() => expect(refreshCreditsMock).toHaveBeenCalledTimes(2));
+      // The success toast for project_1's own completion is legitimate —
+      // it fired while the user was still on project_1, before any switch.
+      expect(toastSuccessMock).toHaveBeenCalledTimes(1);
+
+      // Switch to project_2 and restore an active render there.
+      const proj2ActiveJob = fakeJob({
+        id: "job_2",
+        status: "running",
+        progress: 20,
+      });
+      listPersistedJobsMock.mockResolvedValueOnce([proj2ActiveJob]);
+      getPersistedJobMock.mockResolvedValue(proj2ActiveJob);
+      rerender(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_2" />
+        </QueryClientProvider>,
+      );
+      await screen.findByRole("heading", { name: "Second Project" });
+      await waitFor(() => expect(screen.getByText("isRendering: true")).toBeTruthy());
+      await user.click(screen.getByRole("tab", { name: "4. Final Video" }));
+      expect(screen.getByText("renderProgress: 20")).toBeTruthy();
+      expect(screen.getByText("render: none")).toBeTruthy();
+
+      // Resolve project_1's stale terminal credit refresh.
+      resolveCredits();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(screen.getByText("isRendering: true")).toBeTruthy();
+      expect(screen.getByText("renderProgress: 20")).toBeTruthy();
+      expect(screen.getByText("render: none")).toBeTruthy();
+      // No extra toast from the stale project_1 credit-refresh resolution.
+      expect(toastSuccessMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not show a stale project_1 terminal failure toast while viewing project_2", async () => {
+      getPersistedProjectMock.mockImplementation(async (id: string) =>
+        id === "proj_1" ? fakeProject({ id: "proj_1" }) : fakeProjectTwo(),
+      );
+      getLatestProjectRenderMock.mockResolvedValue(null);
+      listPersistedJobsMock.mockResolvedValueOnce([]); // proj_1 restoration: nothing active
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      const user = userEvent.setup();
+
+      const client = createTestQueryClient();
+      const { rerender } = render(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_1" />
+        </QueryClientProvider>,
+      );
+      await startOnFinalTab(user);
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+
+      // Switch to project_2 while job_1 is still active/polling.
+      listPersistedJobsMock.mockResolvedValueOnce([]); // proj_2 restoration: nothing active
+      rerender(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_2" />
+        </QueryClientProvider>,
+      );
+      await screen.findByRole("heading", { name: "Second Project" });
+
+      // job_1 fails only after the switch — the workspace no longer even
+      // observes job_1's query once it belongs to a different project.
+      const failedJob = fakeJob({
+        id: "job_1",
+        status: "failed",
+        error_message: "GPU exploded",
+      });
+      client.setQueryData(jobQueryKeys.detail("job_1"), failedJob);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(toastErrorMock).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("tab", { name: "4. Final Video" }));
+      expect(screen.getByText("isRendering: false")).toBeTruthy();
+    });
+
+    // A literal "job_2 replaces job_1 in the same project while job_1's
+    // terminal credit refresh is still pending" cannot actually happen
+    // through the UI: `activeRenderJob` stays non-null (blocking a new
+    // render) until job_1's own cleanup nulls it out, and that null-out is
+    // exactly the last step gated behind the credit refresh. The defensive
+    // job-identity check in the cleanup (see isTerminalStillCurrent) still
+    // guards against it, but the closest genuinely reachable regression is
+    // the sequencing invariant below: the gate reopens only after the first
+    // job's cleanup fully resolves, and the next job in the same project
+    // then gets fully independent state.
+    it("only reopens the render gate after the previous job's terminal cleanup fully resolves, and the next job gets independent state", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      getLatestProjectRenderMock.mockResolvedValueOnce(null);
+      listPersistedJobsMock.mockResolvedValueOnce([]);
+      const firstJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(firstJob);
+      getPersistedJobMock.mockResolvedValue(firstJob);
+      const user = userEvent.setup();
+
+      const { client } = renderWorkspace();
+      await startOnFinalTab(user);
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(refreshCreditsMock).toHaveBeenCalledTimes(1));
+
+      const { promise: creditsPromise, resolve: resolveCredits } =
+        deferred<void>();
+      refreshCreditsMock.mockReturnValueOnce(creditsPromise);
+      const failedJob = fakeJob({
+        id: "job_1",
+        status: "failed",
+        error_message: "boom",
+      });
+      client.setQueryData(jobQueryKeys.detail("job_1"), failedJob);
+      await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("boom"));
+
+      // While job_1's terminal credit refresh is still pending, the render
+      // gate must still be closed for this project.
+      await user.click(screen.getByRole("button", { name: "Start Render" }));
+      expect(createFinalRenderMock).toHaveBeenCalledTimes(1);
+
+      resolveCredits();
+      await waitFor(() => expect(screen.getByText("isRendering: false")).toBeTruthy());
+
+      // Only now is a fresh render for the same project allowed, and it gets
+      // its own independent state, unaffected by job_1's finished cleanup.
+      const secondJob = fakeJob({ id: "job_2", status: "queued", progress: 0 });
+      createFinalRenderMock.mockResolvedValueOnce(secondJob);
+      getPersistedJobMock.mockResolvedValue(secondJob);
+      await user.click(screen.getByRole("button", { name: "Start Render" }));
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(screen.getByText("isRendering: true")).toBeTruthy());
+
+      const runningSecondJob = fakeJob({
+        id: "job_2",
+        status: "running",
+        progress: 30,
+        current_stage: "rendering_video",
+      });
+      client.setQueryData(jobQueryKeys.detail("job_2"), runningSecondJob);
+      await waitFor(() => expect(screen.getByText("renderProgress: 30")).toBeTruthy());
+      expect(screen.getByText("renderStage: rendering_video")).toBeTruthy();
+    });
+  });
 });

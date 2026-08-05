@@ -3,9 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { VideoProject } from "@/types";
+import type { Render, VideoProject } from "@/types";
 import type { PersistedProjectUpdateInput } from "@/lib/api/persisted-projects";
+import type {
+  CreateFinalRenderInput,
+  PersistedRender,
+} from "@/lib/api/render-jobs";
+import type { PersistedGenerationJob } from "@/lib/api/scene-generation-jobs";
 import { projectQueryKeys } from "@/lib/queries/project-query-keys";
+import { jobQueryKeys } from "@/lib/queries/job-query-keys";
 
 afterEach(cleanup);
 
@@ -25,10 +31,25 @@ const replaceMock = vi.fn();
 const refreshMock = vi.fn();
 const toastSuccessMock = vi.fn();
 const toastErrorMock = vi.fn();
+const refreshCreditsMock = vi.fn().mockResolvedValue(undefined);
 const getPersistedProjectMock = vi.fn<(id: string) => Promise<VideoProject | null>>();
 const updatePersistedProjectMock =
   vi.fn<(id: string, patch: PersistedProjectUpdateInput) => Promise<VideoProject>>();
 const deletePersistedProjectMock = vi.fn<(id: string) => Promise<void>>();
+const getPersistedJobMock =
+  vi.fn<(jobId: string, signal?: AbortSignal) => Promise<PersistedGenerationJob>>();
+const createFinalRenderMock = vi.fn<
+  (
+    projectId: string,
+    input: CreateFinalRenderInput,
+    signal?: AbortSignal,
+    idempotencyKey?: string,
+  ) => Promise<PersistedGenerationJob>
+>();
+const getPersistedRenderMock = vi.fn<(renderId: string) => Promise<PersistedRender>>();
+const getRenderPreviewUrlMock = vi.fn<(renderId: string) => Promise<string>>();
+const mapPersistedRenderMock =
+  vi.fn<(render: PersistedRender, previewUrl: string) => Render>();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock, replace: replaceMock, refresh: refreshMock }),
@@ -57,17 +78,32 @@ vi.mock("@/lib/api/persisted-projects", () => ({
     updatePersistedProjectMock(id, patch),
   deletePersistedProject: (id: string) => deletePersistedProjectMock(id),
 }));
-vi.mock("@/lib/api/scene-generation-jobs", () => ({
-  realSceneGenerationEnabled: true,
-  listPersistedJobs: vi.fn().mockResolvedValue([]),
-  pollPersistedJob: vi.fn(),
-}));
+// isPersistedJobActive is kept real (both project-workspace.tsx and
+// useJobQuery rely on its actual logic); only the network calls are mocked.
+vi.mock("@/lib/api/scene-generation-jobs", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/api/scene-generation-jobs")>();
+  return {
+    ...actual,
+    realSceneGenerationEnabled: true,
+    listPersistedJobs: vi.fn().mockResolvedValue([]),
+    pollPersistedJob: vi.fn(),
+    getPersistedJob: (jobId: string, signal?: AbortSignal) =>
+      getPersistedJobMock(jobId, signal),
+  };
+});
 vi.mock("@/lib/api/render-jobs", () => ({
-  createFinalRender: vi.fn(),
+  createFinalRender: (
+    projectId: string,
+    input: CreateFinalRenderInput,
+    signal?: AbortSignal,
+    idempotencyKey?: string,
+  ) => createFinalRenderMock(projectId, input, signal, idempotencyKey),
   getLatestProjectRender: vi.fn().mockResolvedValue(null),
-  getPersistedRender: vi.fn(),
-  getRenderPreviewUrl: vi.fn(),
-  mapPersistedRender: vi.fn(),
+  getPersistedRender: (renderId: string) => getPersistedRenderMock(renderId),
+  getRenderPreviewUrl: (renderId: string) => getRenderPreviewUrlMock(renderId),
+  mapPersistedRender: (render: PersistedRender, previewUrl: string) =>
+    mapPersistedRenderMock(render, previewUrl),
 }));
 // Real mode never calls videoProjectApi, but it is still statically imported.
 vi.mock("@/lib/api/provider", () => ({
@@ -75,9 +111,9 @@ vi.mock("@/lib/api/provider", () => ({
 }));
 vi.mock("@/components/credits/credits-provider", () => ({
   useCredits: () => ({
-    estimate: () => 0,
+    estimate: () => 5,
     canAfford: () => true,
-    refresh: vi.fn(),
+    refresh: refreshCreditsMock,
   }),
 }));
 
@@ -124,7 +160,28 @@ vi.mock("@/components/generation/generation-section", () => ({
   GenerationSection: () => <div>Generation stub</div>,
 }));
 vi.mock("@/components/final-video/final-video-section", () => ({
-  FinalVideoSection: () => <div>Final video stub</div>,
+  FinalVideoSection: ({
+    isRendering,
+    renderProgress,
+    renderStage,
+    render,
+    onStartRender,
+  }: {
+    isRendering: boolean;
+    renderProgress: number;
+    renderStage: string | null;
+    render: Render | null;
+    onStartRender: () => void;
+  }) => (
+    <div>
+      <p>Final video stub</p>
+      <p>isRendering: {String(isRendering)}</p>
+      <p>renderProgress: {renderProgress}</p>
+      <p>renderStage: {renderStage ?? "null"}</p>
+      <p>render: {render ? `v${render.version} ${render.shareUrl}` : "none"}</p>
+      <button onClick={onStartRender}>Start Render</button>
+    </div>
+  ),
 }));
 
 const { ProjectWorkspace } = await import("./project-workspace");
@@ -165,6 +222,63 @@ function fakeProject(overrides: Partial<VideoProject> = {}): VideoProject {
   };
 }
 
+function fakeJob(overrides: Partial<PersistedGenerationJob> = {}): PersistedGenerationJob {
+  return {
+    id: "job_1",
+    project_id: "proj_1",
+    scene_id: null,
+    parent_job_id: null,
+    type: "render",
+    status: "queued",
+    progress: 0,
+    current_stage: null,
+    input_payload: {},
+    result_payload: null,
+    error_code: null,
+    error_message: null,
+    children: [],
+    ...overrides,
+  };
+}
+
+function fakePersistedRender(overrides: Partial<PersistedRender> = {}): PersistedRender {
+  return {
+    id: "render_1",
+    project_id: "proj_1",
+    job_id: "job_1",
+    version: 1,
+    status: "completed",
+    asset_id: "asset_1",
+    duration_seconds: 45,
+    file_size_bytes: 1_000_000,
+    narration_enabled: true,
+    captions_enabled: false,
+    music_enabled: false,
+    created_at: "2026-01-01T00:00:00.000Z",
+    completed_at: "2026-01-01T00:05:00.000Z",
+    ...overrides,
+  };
+}
+
+function fakeRender(overrides: Partial<Render> = {}): Render {
+  return {
+    id: "render_1",
+    projectId: "proj_1",
+    version: 1,
+    status: "rendered",
+    resolution: "1080 × 1920",
+    durationSeconds: 45,
+    fileSizeMb: 1,
+    captionsBurned: false,
+    narrationIncluded: true,
+    musicIncluded: false,
+    thumbnailUrl: null,
+    shareUrl: "https://cdn.example/preview",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 function createTestQueryClient() {
   return new QueryClient({
     defaultOptions: {
@@ -195,16 +309,28 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+async function startOnFinalTab(user: ReturnType<typeof userEvent.setup>) {
+  await screen.findByRole("heading", { name: "Majapahit Documentary" });
+  await user.click(screen.getByRole("tab", { name: "4. Final Video" }));
+  await user.click(await screen.findByRole("button", { name: "Start Render" }));
+}
+
 describe("ProjectWorkspace (persisted mode)", () => {
   beforeEach(() => {
     getPersistedProjectMock.mockReset();
     updatePersistedProjectMock.mockReset();
     deletePersistedProjectMock.mockReset();
+    getPersistedJobMock.mockReset();
+    createFinalRenderMock.mockReset();
+    getPersistedRenderMock.mockReset();
+    getRenderPreviewUrlMock.mockReset();
+    mapPersistedRenderMock.mockReset();
     pushMock.mockReset();
     replaceMock.mockReset();
     refreshMock.mockReset();
     toastSuccessMock.mockReset();
     toastErrorMock.mockReset();
+    refreshCreditsMock.mockReset().mockResolvedValue(undefined);
   });
 
   it("writes the updated project to the detail cache and invalidates the list query on a successful update", async () => {
@@ -351,5 +477,263 @@ describe("ProjectWorkspace (persisted mode)", () => {
 
     await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/projects"));
     expect(deletePersistedProjectMock).toHaveBeenCalledTimes(2);
+  });
+
+  describe("final render", () => {
+    it("starts a render via the mutation, caches the queued job, refreshes credits, and never calls pollPersistedJob", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      const queuedJob = fakeJob({ id: "job_1", status: "queued", progress: 0 });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      const user = userEvent.setup();
+
+      const { client } = renderWorkspace();
+      await startOnFinalTab(user);
+
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+      expect(createFinalRenderMock).toHaveBeenCalledWith(
+        "proj_1",
+        { narration_enabled: true, captions_enabled: false, music_enabled: false },
+        undefined,
+        expect.any(String),
+      );
+      expect(screen.getByText("isRendering: true")).toBeTruthy();
+      expect(
+        client.getQueryData<PersistedGenerationJob>(jobQueryKeys.detail("job_1")),
+      ).toEqual(queuedJob);
+      await waitFor(() => expect(refreshCreditsMock).toHaveBeenCalledTimes(1));
+
+      const { pollPersistedJob } = await import("@/lib/api/scene-generation-jobs");
+      expect(pollPersistedJob).not.toHaveBeenCalled();
+    });
+
+    it("updates progress and stage as the active render job polls from queued to running", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      const queuedJob = fakeJob({ id: "job_1", status: "queued", progress: 0, current_stage: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      const user = userEvent.setup();
+
+      const { client } = renderWorkspace();
+      await startOnFinalTab(user);
+
+      await waitFor(() => expect(screen.getByText("renderStage: queued")).toBeTruthy());
+      expect(screen.getByText("isRendering: true")).toBeTruthy();
+
+      const runningJob = fakeJob({
+        id: "job_1",
+        status: "running",
+        progress: 42,
+        current_stage: "rendering_video",
+      });
+      client.setQueryData(jobQueryKeys.detail("job_1"), runningJob);
+
+      await waitFor(() => expect(screen.getByText("renderProgress: 42")).toBeTruthy());
+      expect(screen.getByText("renderStage: rendering_video")).toBeTruthy();
+      expect(screen.getByText("isRendering: true")).toBeTruthy();
+    });
+
+    it("on completion: resolves the render id, fetches persisted render + preview, maps it, updates readiness, shows one success toast, refreshes credits again, and clears rendering/active job", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      const persistedRender = fakePersistedRender({ id: "render_1", version: 3 });
+      getPersistedRenderMock.mockResolvedValueOnce(persistedRender);
+      getRenderPreviewUrlMock.mockResolvedValueOnce("https://cdn.example/preview");
+      mapPersistedRenderMock.mockReturnValueOnce(
+        fakeRender({ version: 3, shareUrl: "https://cdn.example/preview" }),
+      );
+      const user = userEvent.setup();
+
+      const { client } = renderWorkspace();
+      await startOnFinalTab(user);
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(refreshCreditsMock).toHaveBeenCalledTimes(1));
+
+      const completedJob = fakeJob({
+        id: "job_1",
+        status: "completed",
+        progress: 100,
+        result_payload: { render_id: "render_1" },
+      });
+      client.setQueryData(jobQueryKeys.detail("job_1"), completedJob);
+
+      await waitFor(() => expect(getPersistedRenderMock).toHaveBeenCalledWith("render_1"));
+      expect(getRenderPreviewUrlMock).toHaveBeenCalledWith("render_1");
+      await waitFor(() =>
+        expect(
+          screen.getByText("render: v3 https://cdn.example/preview"),
+        ).toBeTruthy(),
+      );
+      expect(toastSuccessMock).toHaveBeenCalledTimes(1);
+      expect(toastSuccessMock).toHaveBeenCalledWith(
+        "Rendered v3",
+        expect.objectContaining({
+          description: expect.stringContaining("Majapahit Documentary"),
+        }),
+      );
+      await waitFor(() => expect(refreshCreditsMock).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(screen.getByText("isRendering: false")).toBeTruthy());
+    });
+
+    it("processes a completed job exactly once even if the cache notifies twice in quick succession", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      getPersistedRenderMock.mockResolvedValueOnce(fakePersistedRender());
+      getRenderPreviewUrlMock.mockResolvedValueOnce("https://cdn.example/preview");
+      mapPersistedRenderMock.mockReturnValueOnce(fakeRender());
+      const user = userEvent.setup();
+
+      const { client } = renderWorkspace();
+      await startOnFinalTab(user);
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+
+      const completedJob = fakeJob({
+        id: "job_1",
+        status: "completed",
+        result_payload: { render_id: "render_1" },
+      });
+      // Two distinct object references, same content, set back to back
+      // before the first terminal effect run has a chance to finish.
+      client.setQueryData(jobQueryKeys.detail("job_1"), { ...completedJob });
+      client.setQueryData(jobQueryKeys.detail("job_1"), { ...completedJob });
+
+      await waitFor(() => expect(getPersistedRenderMock).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(toastSuccessMock).toHaveBeenCalledTimes(1));
+    });
+
+    it("on failed: shows the server error, does not fetch render details, stops rendering, refreshes credits, and allows a new attempt", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      const user = userEvent.setup();
+
+      const { client } = renderWorkspace();
+      await startOnFinalTab(user);
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(refreshCreditsMock).toHaveBeenCalledTimes(1));
+
+      const failedJob = fakeJob({
+        id: "job_1",
+        status: "failed",
+        error_message: "GPU exploded",
+      });
+      client.setQueryData(jobQueryKeys.detail("job_1"), failedJob);
+
+      await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith("GPU exploded"));
+      expect(getPersistedRenderMock).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.getByText("isRendering: false")).toBeTruthy());
+      await waitFor(() => expect(refreshCreditsMock).toHaveBeenCalledTimes(2));
+
+      const secondQueuedJob = fakeJob({ id: "job_2", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(secondQueuedJob);
+      getPersistedJobMock.mockResolvedValue(secondQueuedJob);
+      await user.click(screen.getByRole("button", { name: "Start Render" }));
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(2));
+    });
+
+    it("on cancelled: behaves as a terminal failure using the provided error message", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      const user = userEvent.setup();
+
+      const { client } = renderWorkspace();
+      await startOnFinalTab(user);
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+
+      const cancelledJob = fakeJob({
+        id: "job_1",
+        status: "cancelled",
+        error_message: "Cancelled by user",
+      });
+      client.setQueryData(jobQueryKeys.detail("job_1"), cancelledJob);
+
+      await waitFor(() =>
+        expect(toastErrorMock).toHaveBeenCalledWith("Cancelled by user"),
+      );
+      expect(getPersistedRenderMock).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.getByText("isRendering: false")).toBeTruthy());
+    });
+
+    it("when createFinalRender rejects: shows an error toast, never starts polling, clears rendering state, refreshes credits once, and allows retry", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      createFinalRenderMock.mockRejectedValueOnce(
+        new Error("Server rejected the render request."),
+      );
+      const user = userEvent.setup();
+
+      renderWorkspace();
+      await startOnFinalTab(user);
+
+      await waitFor(() =>
+        expect(toastErrorMock).toHaveBeenCalledWith(
+          "Server rejected the render request.",
+        ),
+      );
+      expect(getPersistedJobMock).not.toHaveBeenCalled();
+      await waitFor(() => expect(screen.getByText("isRendering: false")).toBeTruthy());
+      expect(refreshCreditsMock).toHaveBeenCalledTimes(1);
+
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      await user.click(screen.getByRole("button", { name: "Start Render" }));
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(2));
+    });
+
+    it("prevents duplicate render requests while creating or an active job is polling", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      const { promise, resolve } = deferred<PersistedGenerationJob>();
+      createFinalRenderMock.mockReturnValueOnce(promise);
+      const user = userEvent.setup();
+
+      renderWorkspace();
+      await screen.findByRole("heading", { name: "Majapahit Documentary" });
+      await user.click(screen.getByRole("tab", { name: "4. Final Video" }));
+      const startButton = screen.getByRole("button", { name: "Start Render" });
+
+      await user.click(startButton);
+      await user.click(startButton);
+      await user.click(startButton);
+
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      resolve(queuedJob);
+
+      await waitFor(() => expect(screen.getByText("isRendering: true")).toBeTruthy());
+      expect(createFinalRenderMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("a recoverable getPersistedJob error does not stop rendering, clear the active job, or show a terminal error toast", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValueOnce(queuedJob);
+      const user = userEvent.setup();
+
+      const { client } = renderWorkspace();
+      await startOnFinalTab(user);
+      await waitFor(() => expect(screen.getByText("isRendering: true")).toBeTruthy());
+
+      getPersistedJobMock.mockRejectedValueOnce(new Error("network blip"));
+      await client.refetchQueries({ queryKey: jobQueryKeys.detail("job_1") });
+
+      expect(screen.getByText("isRendering: true")).toBeTruthy();
+      expect(toastErrorMock).not.toHaveBeenCalled();
+      // Last-known-good data survives the background refetch error.
+      expect(
+        client.getQueryData<PersistedGenerationJob>(jobQueryKeys.detail("job_1")),
+      ).toEqual(queuedJob);
+      expect(
+        client.getQueryState<PersistedGenerationJob>(jobQueryKeys.detail("job_1"))
+          ?.status,
+      ).toBe("error");
+    });
   });
 });

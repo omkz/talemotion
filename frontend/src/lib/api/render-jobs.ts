@@ -33,13 +33,15 @@ function client(): ApiClient {
   );
 }
 
+export interface CreateFinalRenderInput {
+  narration_enabled: boolean;
+  captions_enabled: boolean;
+  music_enabled: boolean;
+}
+
 export function createFinalRender(
   projectId: string,
-  options: {
-    narration_enabled: boolean;
-    captions_enabled: boolean;
-    music_enabled: boolean;
-  },
+  options: CreateFinalRenderInput,
   signal?: AbortSignal,
   idempotencyKey?: string,
 ): Promise<PersistedGenerationJob> {

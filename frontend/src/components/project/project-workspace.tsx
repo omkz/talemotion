@@ -15,18 +15,20 @@ import { replaceProject } from "@/lib/mock-api/projects";
 import { useProjectQuery } from "@/lib/queries/use-project-query";
 import { useUpdateProjectMutation } from "@/lib/queries/use-update-project-mutation";
 import { useDeleteProjectMutation } from "@/lib/queries/use-delete-project-mutation";
+import { useCreateFinalRenderMutation } from "@/lib/queries/use-create-final-render-mutation";
+import { useJobQuery } from "@/lib/queries/use-job-query";
 import { StoryboardSection } from "@/components/storyboard/storyboard-section";
 import { GenerationSection } from "@/components/generation/generation-section";
 import { FinalVideoSection } from "@/components/final-video/final-video-section";
 import { MAJAPAHIT_REGENERATION_EXAMPLE } from "@/lib/mock-data";
 import { getPersistedProject } from "@/lib/api/persisted-projects";
 import {
+  isPersistedJobActive,
   listPersistedJobs,
   pollPersistedJob,
   realSceneGenerationEnabled,
 } from "@/lib/api/scene-generation-jobs";
 import {
-  createFinalRender,
   getLatestProjectRender,
   getPersistedRender,
   getRenderPreviewUrl,
@@ -53,6 +55,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const projectQuery = useProjectQuery(projectId);
   const updateProjectMutation = useUpdateProjectMutation(projectId);
   const deleteProjectMutation = useDeleteProjectMutation(projectId);
+  const createFinalRenderMutation = useCreateFinalRenderMutation(projectId);
   const [project, setProject] = useState<VideoProject | null>(null);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>("brief");
   const [saveState, setSaveState] = useState<SaveState>("saved");
@@ -61,9 +64,14 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [renderProgress, setRenderProgress] = useState(0);
   const [renderStage, setRenderStage] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [activeRenderJobId, setActiveRenderJobId] = useState<string | null>(null);
+  const renderJobQuery = useJobQuery(
+    realSceneGenerationEnabled ? activeRenderJobId : null,
+  );
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoadedRef = useRef(false);
   const initializedProjectIdRef = useRef<string | null>(null);
+  const handledRenderJobIdRef = useRef<string | null>(null);
 
   // Only treat the query's error/not-found state as fatal before the workspace has
   // ever initialized. Once `project` is loaded, a later background refetch failure
@@ -218,6 +226,88 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     saveTimeoutRef.current = setTimeout(() => setSaveState("saved"), 700);
   };
 
+  const handleRenderChange = (nextRender: Render) => {
+    setRender(nextRender);
+    setProject((prev) =>
+      prev ? { ...prev, status: "ready", generationProgress: 100, updatedAt: new Date().toISOString() } : prev
+    );
+  };
+
+  // Mirror progress/stage from the active render job's polled data. Guarded
+  // by job id so a stale or previously-completed job can never update the
+  // current render UI, and left alone entirely while the query is merely
+  // recovering from a transient polling error (no isRendering/toast here).
+  useEffect(() => {
+    const job = renderJobQuery.data;
+    if (!job || job.id !== activeRenderJobId) return;
+    void Promise.resolve().then(() => {
+      setRenderProgress(job.progress);
+      setRenderStage(job.current_stage ?? job.status);
+    });
+  }, [renderJobQuery.data, activeRenderJobId]);
+
+  // Clear the terminal-processing guard whenever a fresh render job becomes
+  // active, so the new job's terminal status is never mistaken for already
+  // handled. (Job ids are unique per render anyway, but this keeps the
+  // guard explicit rather than relying on that alone.)
+  useEffect(() => {
+    if (activeRenderJobId) {
+      handledRenderJobIdRef.current = null;
+    }
+  }, [activeRenderJobId]);
+
+  // Process the active render job's terminal outcome exactly once, even
+  // across rerenders/extra cache notifications, via handledRenderJobIdRef.
+  useEffect(() => {
+    const job = renderJobQuery.data;
+    if (!job || job.id !== activeRenderJobId) return;
+    if (isPersistedJobActive(job.status)) return;
+    if (handledRenderJobIdRef.current === job.id) return;
+    handledRenderJobIdRef.current = job.id;
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        if (job.status === "completed") {
+          const renderId =
+            typeof job.result_payload?.render_id === "string"
+              ? job.result_payload.render_id
+              : typeof job.input_payload.render_id === "string"
+                ? job.input_payload.render_id
+                : null;
+          if (!renderId) throw new Error("The completed render ID is missing.");
+          const [persisted, previewUrl] = await Promise.all([
+            getPersistedRender(renderId),
+            getRenderPreviewUrl(renderId),
+          ]);
+          if (cancelled) return;
+          handleRenderChange(mapPersistedRender(persisted, previewUrl));
+          toast.success(`Rendered v${persisted.version}`, {
+            description: `${project?.output.title ?? "Your video"} is ready to preview.`,
+          });
+        } else {
+          toast.error(job.error_message ?? "Final video rendering failed.");
+        }
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Final rendering failed.",
+        );
+      } finally {
+        if (!cancelled) {
+          await refreshCredits();
+          setIsRendering(false);
+          setRenderStage(null);
+          setActiveRenderJobId(null);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [renderJobQuery.data, activeRenderJobId, project?.output.title, refreshCredits]);
+
   if (notFound) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-16">
@@ -361,55 +451,43 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     return true;
   };
 
-  const handleRenderChange = (nextRender: Render) => {
-    setRender(nextRender);
-    setProject((prev) =>
-      prev ? { ...prev, status: "ready", generationProgress: 100, updatedAt: new Date().toISOString() } : prev
-    );
-  };
-
   const allScenesGenerated = scenes.length > 0 && completedCount === scenes.length;
 
   const handleStartRender = async () => {
+    if (
+      isRendering ||
+      createFinalRenderMutation.isPending ||
+      activeRenderJobId
+    ) {
+      return;
+    }
     setIsRendering(true);
     setRenderProgress(0);
     setRenderStage("queued");
-    try {
-      if (realSceneGenerationEnabled) {
-        const queued = await createFinalRender(project.id, {
+
+    if (realSceneGenerationEnabled) {
+      try {
+        const queued = await createFinalRenderMutation.mutateAsync({
           narration_enabled: project.output.narrationEnabled !== false,
           captions_enabled: project.output.captionsEnabled,
           music_enabled: project.output.musicEnabled,
-        }, undefined, crypto.randomUUID());
+        });
+        setActiveRenderJobId(queued.id);
+        setRenderProgress(queued.progress);
+        setRenderStage(queued.current_stage ?? queued.status);
         await refreshCredits();
-        const completed = await pollPersistedJob(queued.id, {
-          onUpdate: (job) => {
-            setRenderProgress(job.progress);
-            setRenderStage(job.current_stage);
-          },
-        });
-        if (completed.status !== "completed") {
-          throw new Error(
-            completed.error_message ?? "Final video rendering failed.",
-          );
-        }
-        const renderId =
-          typeof completed.result_payload?.render_id === "string"
-            ? completed.result_payload.render_id
-            : typeof completed.input_payload.render_id === "string"
-              ? completed.input_payload.render_id
-              : null;
-        if (!renderId) throw new Error("The completed render ID is missing.");
-        const [persisted, previewUrl] = await Promise.all([
-          getPersistedRender(renderId),
-          getRenderPreviewUrl(renderId),
-        ]);
-        handleRenderChange(mapPersistedRender(persisted, previewUrl));
-        toast.success(`Rendered v${persisted.version}`, {
-          description: `${project.output.title} is ready to preview.`,
-        });
-        return;
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : "Final rendering failed.",
+        );
+        await refreshCredits();
+        setIsRendering(false);
+        setRenderStage(null);
       }
+      return;
+    }
+
+    try {
       const next = await renderFinalVideo({
         project,
         previousVersion: render?.version ?? 0,
@@ -424,9 +502,6 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         error instanceof Error ? error.message : "Final rendering failed.",
       );
     } finally {
-      if (realSceneGenerationEnabled) {
-        await refreshCredits();
-      }
       setIsRendering(false);
       setRenderStage(null);
     }

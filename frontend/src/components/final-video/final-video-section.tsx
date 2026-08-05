@@ -24,8 +24,10 @@ interface FinalVideoSectionProps {
   renderProgress: number;
   renderStage?: string | null;
   onStartRender: () => void;
-  /** True while initial render-state restoration hasn't finished yet. */
+  /** True while restoration, a create request, its settlement, or an active job blocks starting a new render. */
   renderStartDisabled?: boolean;
+  /** Optional explanation for why `renderStartDisabled` is true right now. */
+  renderStartDisabledReason?: string;
 }
 
 export function FinalVideoSection({
@@ -39,6 +41,7 @@ export function FinalVideoSection({
   renderStage,
   onStartRender,
   renderStartDisabled = false,
+  renderStartDisabledReason,
 }: FinalVideoSectionProps) {
   const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
   const { credits, estimate, canAfford } = useCredits();
@@ -167,8 +170,8 @@ export function FinalVideoSection({
                   insufficientCredits
                 }
                 title={
-                  renderStartDisabled
-                    ? "Restoring render state…"
+                  renderStartDisabled && renderStartDisabledReason
+                    ? renderStartDisabledReason
                     : insufficientCredits
                       ? `Requires ${renderEstimate} credits; ${credits?.available ?? 0} available`
                       : undefined

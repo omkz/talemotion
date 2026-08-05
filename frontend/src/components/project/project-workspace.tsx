@@ -148,6 +148,18 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   // has had a chance to clear `activeRenderJob` itself.
   const activeRenderJobId =
     activeRenderJob?.projectId === projectId ? activeRenderJob.id : null;
+  // Everything that must block starting a new render right now, regardless
+  // of *why* — a mock-mode render in flight, a create-render request still
+  // in flight, its settlement/credit-refresh cleanup still running, or an
+  // already-active job. Deliberately excludes eligibility conditions
+  // (credits, incomplete scenes, restoration readiness) that are evaluated
+  // separately, since those explain *why* rendering can't start yet rather
+  // than *whether an operation is currently in progress*.
+  const renderStartInProgress =
+    isRendering ||
+    isCreatingFinalRender ||
+    pendingRenderCreation !== null ||
+    activeRenderJob !== null;
   const [
     latestRenderRestoreSettledProjectId,
     setLatestRenderRestoreSettledProjectId,
@@ -162,6 +174,22 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   // previous project incorrectly unlock a newly opened one.
   const renderRestorationReady =
     !realSceneGenerationEnabled || renderRestorationReadyProjectId === projectId;
+  // Explains *why* the Final Video entry points are disabled, in the same
+  // priority order a user would want it resolved: restoration first (nothing
+  // else can be trusted until it settles), then the create request itself,
+  // then its settlement/credit-refresh cleanup, then an already-active job.
+  // Mock mode never blocks on any of this, so it has no reason to report.
+  const renderStartDisabledReason = !realSceneGenerationEnabled
+    ? undefined
+    : !renderRestorationReady
+      ? "Restoring render state…"
+      : isCreatingFinalRender
+        ? "Starting final render…"
+        : pendingRenderCreation
+          ? "Finalizing render request…"
+          : activeRenderJob
+            ? "A final render is already in progress."
+            : undefined;
   const projectJobsQuery = useProjectJobsQuery(
     projectId,
     realSceneGenerationEnabled &&
@@ -764,12 +792,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     if (realSceneGenerationEnabled && !renderRestorationReady) {
       return;
     }
-    if (
-      isRendering ||
-      isCreatingFinalRender ||
-      pendingRenderCreation !== null ||
-      activeRenderJob !== null
-    ) {
+    if (renderStartInProgress) {
       return;
     }
     setIsRendering(true);
@@ -842,9 +865,12 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           onClick: handleStartRender,
           disabled:
             !allScenesGenerated ||
-            isRendering ||
+            renderStartInProgress ||
             (realSceneGenerationEnabled &&
               (!renderRestorationReady || !canAfford(renderEstimate))),
+          // Only actively rendering shows the loading spinner — a settling
+          // mutation, pending credit refresh, or stale cleanup keeps the
+          // action disabled without implying progress is being made.
           loading: isRendering,
         };
     }
@@ -943,8 +969,13 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
               renderStage={renderStage}
               onStartRender={handleStartRender}
               renderStartDisabled={
-                realSceneGenerationEnabled && !renderRestorationReady
+                realSceneGenerationEnabled &&
+                (!renderRestorationReady ||
+                  isCreatingFinalRender ||
+                  pendingRenderCreation !== null ||
+                  activeRenderJob !== null)
               }
+              renderStartDisabledReason={renderStartDisabledReason}
             />
           </TabsContent>
         </Tabs>

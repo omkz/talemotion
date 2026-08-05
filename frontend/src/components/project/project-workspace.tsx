@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -17,6 +18,8 @@ import { useUpdateProjectMutation } from "@/lib/queries/use-update-project-mutat
 import { useDeleteProjectMutation } from "@/lib/queries/use-delete-project-mutation";
 import { useCreateFinalRenderMutation } from "@/lib/queries/use-create-final-render-mutation";
 import { useJobQuery } from "@/lib/queries/use-job-query";
+import { useProjectJobsQuery } from "@/lib/queries/use-project-jobs-query";
+import { jobQueryKeys } from "@/lib/queries/job-query-keys";
 import { StoryboardSection } from "@/components/storyboard/storyboard-section";
 import { GenerationSection } from "@/components/generation/generation-section";
 import { FinalVideoSection } from "@/components/final-video/final-video-section";
@@ -24,8 +27,6 @@ import { MAJAPAHIT_REGENERATION_EXAMPLE } from "@/lib/mock-data";
 import { getPersistedProject } from "@/lib/api/persisted-projects";
 import {
   isPersistedJobActive,
-  listPersistedJobs,
-  pollPersistedJob,
   realSceneGenerationEnabled,
 } from "@/lib/api/scene-generation-jobs";
 import {
@@ -41,6 +42,12 @@ import { useCredits } from "@/components/credits/credits-provider";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 
 type WorkspaceTab = "brief" | "storyboard" | "generate" | "final";
+type ActiveRenderJobSource = "user" | "restored";
+
+interface ActiveRenderJob {
+  id: string;
+  source: ActiveRenderJobSource;
+}
 
 function initialTabFor(project: VideoProject): WorkspaceTab {
   if (project.status === "draft") return "brief";
@@ -51,6 +58,7 @@ function initialTabFor(project: VideoProject): WorkspaceTab {
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const { estimate, canAfford, refresh: refreshCredits } = useCredits();
   const projectQuery = useProjectQuery(projectId);
   const updateProjectMutation = useUpdateProjectMutation(projectId);
@@ -64,7 +72,18 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const [renderProgress, setRenderProgress] = useState(0);
   const [renderStage, setRenderStage] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [activeRenderJobId, setActiveRenderJobId] = useState<string | null>(null);
+  const [activeRenderJob, setActiveRenderJob] = useState<ActiveRenderJob | null>(null);
+  const activeRenderJobId = activeRenderJob?.id ?? null;
+  const [
+    latestRenderRestoreSettledProjectId,
+    setLatestRenderRestoreSettledProjectId,
+  ] = useState<string | null>(null);
+  const projectJobsQuery = useProjectJobsQuery(
+    projectId,
+    realSceneGenerationEnabled &&
+      projectQuery.isSuccess &&
+      projectQuery.data !== null,
+  );
   const renderJobQuery = useJobQuery(
     realSceneGenerationEnabled ? activeRenderJobId : null,
   );
@@ -72,6 +91,8 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const hasLoadedRef = useRef(false);
   const initializedProjectIdRef = useRef<string | null>(null);
   const handledRenderJobIdRef = useRef<string | null>(null);
+  const restoredRenderJobsProjectIdRef = useRef<string | null>(null);
+  const renderJobsErrorProjectIdRef = useRef<string | null>(null);
 
   // Only treat the query's error/not-found state as fatal before the workspace has
   // ever initialized. Once `project` is loaded, a later background refetch failure
@@ -93,7 +114,12 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   }, [project, projectQuery.isError, projectQuery.error]);
 
   // Run the one-time workspace initialization exactly once per loaded project,
-  // so a background refetch never resets activeTab/render/local edits.
+  // so a background refetch never resets activeTab/render/local edits. This
+  // only restores local project state, the initial tab, and the latest
+  // *completed* render preview — active/failed job restoration is handled by
+  // a separate effect below, gated on this one having settled first (see
+  // latestRenderRestoreSettledProjectId) to avoid a slower preview response
+  // overwriting a render that already completed during restoration.
   useEffect(() => {
     const data = projectQuery.data;
     if (!data || initializedProjectIdRef.current === projectId) return;
@@ -108,90 +134,22 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
       if (cancelled) return;
       setProject(data);
       if (realSceneGenerationEnabled) {
-        void Promise.all([
-          getLatestProjectRender(projectId).catch((error: unknown) => {
-            toast.error(
-              error instanceof Error
-                ? error.message
-                : "Could not restore the latest video preview.",
-            );
-            return null;
-          }),
-          listPersistedJobs(projectId),
-        ])
-          .then(async ([latest, jobs]) => {
-            if (cancelled) return;
-            setRender(latest);
-            const activeRender = jobs.find(
-              (job) =>
-                job.type === "render" &&
-                (job.status === "queued" ||
-                  job.status === "running" ||
-                  job.status === "cancel_requested"),
-            );
-            if (!activeRender) {
-              const failedRender = jobs.find(
-                (job) =>
-                  job.type === "render" &&
-                  (job.status === "failed" ||
-                    job.status === "cancelled"),
-              );
-              if (failedRender) {
-                setActiveTab("final");
-                setRenderProgress(failedRender.progress);
-                setRenderStage(failedRender.current_stage);
-                toast.error(
-                  failedRender.error_message ??
-                    "The latest final render did not complete.",
-                );
-              }
-              return;
-            }
-            setActiveTab("final");
-            setIsRendering(true);
-            const completed = await pollPersistedJob(activeRender.id, {
-              onUpdate: (job) => {
-                if (cancelled) return;
-                setRenderProgress(job.progress);
-                setRenderStage(job.current_stage);
-              },
-            });
-            if (cancelled) return;
-            if (completed.status === "completed") {
-              const renderId =
-                typeof completed.result_payload?.render_id === "string"
-                  ? completed.result_payload.render_id
-                  : typeof completed.input_payload.render_id === "string"
-                    ? completed.input_payload.render_id
-                    : null;
-              if (renderId) {
-                const [persisted, previewUrl] = await Promise.all([
-                  getPersistedRender(renderId),
-                  getRenderPreviewUrl(renderId),
-                ]);
-                if (!cancelled) {
-                  setRender(mapPersistedRender(persisted, previewUrl));
-                }
-              }
-            } else {
-              toast.error(
-                completed.error_message ?? "Final rendering failed.",
-              );
-            }
+        void getLatestProjectRender(projectId)
+          .then((latest) => {
+            if (!cancelled) setRender(latest);
           })
           .catch((error: unknown) => {
             if (!cancelled) {
               toast.error(
                 error instanceof Error
                   ? error.message
-                  : "Could not restore render state.",
+                  : "Could not restore the latest video preview.",
               );
             }
           })
           .finally(() => {
             if (!cancelled) {
-              setIsRendering(false);
-              setRenderStage(null);
+              setLatestRenderRestoreSettledProjectId(projectId);
             }
           });
       } else {
@@ -204,6 +162,82 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
       cancelled = true;
     };
   }, [projectQuery.data, projectId]);
+
+  // Restore an active/failed render job exactly once per project, once the
+  // latest-preview restoration above has settled and the project jobs list
+  // has loaded. Seeds the job-detail cache so useJobQuery takes over polling
+  // immediately without an extra redundant getPersistedJob call.
+  useEffect(() => {
+    if (!realSceneGenerationEnabled) return;
+    if (!project || project.id !== projectId) return;
+    if (latestRenderRestoreSettledProjectId !== projectId) return;
+    if (!projectJobsQuery.data) return;
+    if (restoredRenderJobsProjectIdRef.current === projectId) return;
+    restoredRenderJobsProjectIdRef.current = projectId;
+
+    const jobs = projectJobsQuery.data;
+    let cancelled = false;
+
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      const activeRender = jobs.find(
+        (job) => job.type === "render" && isPersistedJobActive(job.status),
+      );
+      if (activeRender) {
+        queryClient.setQueryData(
+          jobQueryKeys.detail(activeRender.id),
+          activeRender,
+        );
+        setActiveTab("final");
+        setIsRendering(true);
+        setRenderProgress(activeRender.progress);
+        setRenderStage(activeRender.current_stage ?? activeRender.status);
+        setActiveRenderJob({ id: activeRender.id, source: "restored" });
+        return;
+      }
+
+      const failedRender = jobs.find(
+        (job) =>
+          job.type === "render" &&
+          (job.status === "failed" || job.status === "cancelled"),
+      );
+      if (failedRender) {
+        setActiveTab("final");
+        setRenderProgress(failedRender.progress);
+        setRenderStage(failedRender.current_stage);
+        toast.error(
+          failedRender.error_message ??
+            "The latest final render did not complete.",
+        );
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    project,
+    projectId,
+    latestRenderRestoreSettledProjectId,
+    projectJobsQuery.data,
+    queryClient,
+  ]);
+
+  // Show one restoration-error toast per project if the initial project-jobs
+  // request fails; a later successful refetch still lets restoration above
+  // proceed normally (it only bails while projectJobsQuery.data is absent).
+  useEffect(() => {
+    if (!realSceneGenerationEnabled) return;
+    if (!project || project.id !== projectId) return;
+    if (!projectJobsQuery.isError) return;
+    if (renderJobsErrorProjectIdRef.current === projectId) return;
+    renderJobsErrorProjectIdRef.current = projectId;
+    toast.error(
+      projectJobsQuery.error instanceof Error
+        ? projectJobsQuery.error.message
+        : "Could not restore render state.",
+    );
+  }, [project, projectId, projectJobsQuery.isError, projectJobsQuery.error]);
 
   useEffect(() => {
     if (!project || realSceneGenerationEnabled) return;
@@ -258,6 +292,9 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
 
   // Process the active render job's terminal outcome exactly once, even
   // across rerenders/extra cache notifications, via handledRenderJobIdRef.
+  // A restored job (found already in progress on page load) never produces
+  // a "Rendered v…" toast or a credits refresh — the user didn't initiate it
+  // in this session — while a user-triggered job keeps that feedback.
   useEffect(() => {
     const job = renderJobQuery.data;
     if (!job || job.id !== activeRenderJobId) return;
@@ -265,6 +302,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     if (handledRenderJobIdRef.current === job.id) return;
     handledRenderJobIdRef.current = job.id;
 
+    const source = activeRenderJob?.source ?? "user";
     let cancelled = false;
 
     void (async () => {
@@ -283,9 +321,11 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           ]);
           if (cancelled) return;
           handleRenderChange(mapPersistedRender(persisted, previewUrl));
-          toast.success(`Rendered v${persisted.version}`, {
-            description: `${project?.output.title ?? "Your video"} is ready to preview.`,
-          });
+          if (source === "user") {
+            toast.success(`Rendered v${persisted.version}`, {
+              description: `${project?.output.title ?? "Your video"} is ready to preview.`,
+            });
+          }
         } else {
           toast.error(job.error_message ?? "Final video rendering failed.");
         }
@@ -295,10 +335,14 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
         );
       } finally {
         if (!cancelled) {
-          await refreshCredits();
+          if (source === "user") {
+            await refreshCredits();
+          }
           setIsRendering(false);
           setRenderStage(null);
-          setActiveRenderJobId(null);
+          setActiveRenderJob((current) =>
+            current?.id === job.id ? null : current,
+          );
         }
       }
     })();
@@ -306,7 +350,13 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [renderJobQuery.data, activeRenderJobId, project?.output.title, refreshCredits]);
+  }, [
+    renderJobQuery.data,
+    activeRenderJobId,
+    activeRenderJob?.source,
+    project?.output.title,
+    refreshCredits,
+  ]);
 
   if (notFound) {
     return (
@@ -457,7 +507,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     if (
       isRendering ||
       createFinalRenderMutation.isPending ||
-      activeRenderJobId
+      activeRenderJob !== null
     ) {
       return;
     }
@@ -472,7 +522,7 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           captions_enabled: project.output.captionsEnabled,
           music_enabled: project.output.musicEnabled,
         });
-        setActiveRenderJobId(queued.id);
+        setActiveRenderJob({ id: queued.id, source: "user" });
         setRenderProgress(queued.progress);
         setRenderStage(queued.current_stage ?? queued.status);
         await refreshCredits();

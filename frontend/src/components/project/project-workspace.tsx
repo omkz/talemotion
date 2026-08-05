@@ -28,6 +28,7 @@ import { getPersistedProject } from "@/lib/api/persisted-projects";
 import {
   isPersistedJobActive,
   realSceneGenerationEnabled,
+  type PersistedGenerationJob,
 } from "@/lib/api/scene-generation-jobs";
 import {
   getLatestProjectRender,
@@ -47,6 +48,31 @@ type ActiveRenderJobSource = "user" | "restored";
 interface ActiveRenderJob {
   id: string;
   source: ActiveRenderJobSource;
+}
+
+type RenderRestorationResult =
+  | { kind: "active"; job: PersistedGenerationJob }
+  | { kind: "failed"; job: PersistedGenerationJob }
+  | { kind: "empty" };
+
+// Preserves the original selection: the first active render job wins, else
+// the first failed/cancelled one, in the order the jobs list was returned.
+function classifyRenderRestoration(
+  jobs: PersistedGenerationJob[],
+): RenderRestorationResult {
+  const activeRender = jobs.find(
+    (job) => job.type === "render" && isPersistedJobActive(job.status),
+  );
+  if (activeRender) return { kind: "active", job: activeRender };
+
+  const failedRender = jobs.find(
+    (job) =>
+      job.type === "render" &&
+      (job.status === "failed" || job.status === "cancelled"),
+  );
+  if (failedRender) return { kind: "failed", job: failedRender };
+
+  return { kind: "empty" };
 }
 
 function initialTabFor(project: VideoProject): WorkspaceTab {
@@ -78,6 +104,16 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
     latestRenderRestoreSettledProjectId,
     setLatestRenderRestoreSettledProjectId,
   ] = useState<string | null>(null);
+  const [
+    renderRestorationReadyProjectId,
+    setRenderRestorationReadyProjectId,
+  ] = useState<string | null>(null);
+  // Mock mode never restores anything, so it's immediately "ready"; real mode
+  // is only ready once this exact project's preview + jobs restoration have
+  // both completed. A plain boolean would let stale async work from a
+  // previous project incorrectly unlock a newly opened one.
+  const renderRestorationReady =
+    !realSceneGenerationEnabled || renderRestorationReadyProjectId === projectId;
   const projectJobsQuery = useProjectJobsQuery(
     projectId,
     realSceneGenerationEnabled &&
@@ -93,6 +129,14 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const handledRenderJobIdRef = useRef<string | null>(null);
   const restoredRenderJobsProjectIdRef = useRef<string | null>(null);
   const renderJobsErrorProjectIdRef = useRef<string | null>(null);
+  // Kept in sync outside render (see effect below) so the deferred
+  // restoration callback can check, at the moment it actually runs, whether
+  // a user-triggered render has since become active — without reading a ref
+  // during render, which this project's lint config forbids.
+  const activeRenderJobRef = useRef<ActiveRenderJob | null>(null);
+  useEffect(() => {
+    activeRenderJobRef.current = activeRenderJob;
+  }, [activeRenderJob]);
 
   // Only treat the query's error/not-found state as fatal before the workspace has
   // ever initialized. Once `project` is loaded, a later background refetch failure
@@ -136,7 +180,12 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
       if (realSceneGenerationEnabled) {
         void getLatestProjectRender(projectId)
           .then((latest) => {
-            if (!cancelled) setRender(latest);
+            // Belt-and-suspenders alongside `cancelled`: a response must
+            // only apply while it still belongs to the project this effect
+            // instance was initialized for.
+            if (!cancelled && initializedProjectIdRef.current === projectId) {
+              setRender(latest);
+            }
           })
           .catch((error: unknown) => {
             if (!cancelled) {
@@ -180,36 +229,39 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
 
     void Promise.resolve().then(() => {
       if (cancelled) return;
-      const activeRender = jobs.find(
-        (job) => job.type === "render" && isPersistedJobActive(job.status),
-      );
-      if (activeRender) {
-        queryClient.setQueryData(
-          jobQueryKeys.detail(activeRender.id),
-          activeRender,
-        );
-        setActiveTab("final");
-        setIsRendering(true);
-        setRenderProgress(activeRender.progress);
-        setRenderStage(activeRender.current_stage ?? activeRender.status);
-        setActiveRenderJob({ id: activeRender.id, source: "restored" });
+
+      // Defensive: if a user-triggered render has become active since this
+      // effect was scheduled, never let (now-stale) restoration replace it,
+      // overwrite its progress/stage, or reseed the job cache — just unlock
+      // creation-readiness and leave the user's job untouched. Read from the
+      // ref (kept in sync outside render) so this reflects the true latest
+      // state at the moment this deferred callback actually executes.
+      if (activeRenderJobRef.current?.source === "user") {
+        setRenderRestorationReadyProjectId(projectId);
         return;
       }
 
-      const failedRender = jobs.find(
-        (job) =>
-          job.type === "render" &&
-          (job.status === "failed" || job.status === "cancelled"),
-      );
-      if (failedRender) {
+      const result = classifyRenderRestoration(jobs);
+      if (result.kind === "active") {
+        queryClient.setQueryData(
+          jobQueryKeys.detail(result.job.id),
+          result.job,
+        );
         setActiveTab("final");
-        setRenderProgress(failedRender.progress);
-        setRenderStage(failedRender.current_stage);
+        setIsRendering(true);
+        setRenderProgress(result.job.progress);
+        setRenderStage(result.job.current_stage ?? result.job.status);
+        setActiveRenderJob({ id: result.job.id, source: "restored" });
+      } else if (result.kind === "failed") {
+        setActiveTab("final");
+        setRenderProgress(result.job.progress);
+        setRenderStage(result.job.current_stage);
         toast.error(
-          failedRender.error_message ??
+          result.job.error_message ??
             "The latest final render did not complete.",
         );
       }
+      setRenderRestorationReadyProjectId(projectId);
     });
 
     return () => {
@@ -504,6 +556,9 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
   const allScenesGenerated = scenes.length > 0 && completedCount === scenes.length;
 
   const handleStartRender = async () => {
+    if (realSceneGenerationEnabled && !renderRestorationReady) {
+      return;
+    }
     if (
       isRendering ||
       createFinalRenderMutation.isPending ||
@@ -589,7 +644,8 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
           disabled:
             !allScenesGenerated ||
             isRendering ||
-            (realSceneGenerationEnabled && !canAfford(renderEstimate)),
+            (realSceneGenerationEnabled &&
+              (!renderRestorationReady || !canAfford(renderEstimate))),
           loading: isRendering,
         };
     }
@@ -687,6 +743,9 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
               renderProgress={renderProgress}
               renderStage={renderStage}
               onStartRender={handleStartRender}
+              renderStartDisabled={
+                realSceneGenerationEnabled && !renderRestorationReady
+              }
             />
           </TabsContent>
         </Tabs>

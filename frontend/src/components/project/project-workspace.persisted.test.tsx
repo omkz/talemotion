@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Render, VideoProject } from "@/types";
+import type { Render, Scene, VideoProject } from "@/types";
 import type { PersistedProjectUpdateInput } from "@/lib/api/persisted-projects";
 import type {
   CreateFinalRenderInput,
@@ -178,12 +178,14 @@ vi.mock("@/components/final-video/final-video-section", () => ({
     renderStage,
     render,
     onStartRender,
+    renderStartDisabled,
   }: {
     isRendering: boolean;
     renderProgress: number;
     renderStage: string | null;
     render: Render | null;
     onStartRender: () => void;
+    renderStartDisabled?: boolean;
   }) => (
     <div>
       <p>Final video stub</p>
@@ -191,7 +193,10 @@ vi.mock("@/components/final-video/final-video-section", () => ({
       <p>renderProgress: {renderProgress}</p>
       <p>renderStage: {renderStage ?? "null"}</p>
       <p>render: {render ? `v${render.version} ${render.shareUrl}` : "none"}</p>
-      <button onClick={onStartRender}>Start Render</button>
+      <p>renderStartDisabled: {String(Boolean(renderStartDisabled))}</p>
+      <button onClick={onStartRender} disabled={renderStartDisabled || isRendering}>
+        Start Render
+      </button>
     </div>
   ),
 }));
@@ -287,6 +292,23 @@ function fakeRender(overrides: Partial<Render> = {}): Render {
     thumbnailUrl: null,
     shareUrl: "https://cdn.example/preview",
     createdAt: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function fakeCompletedScene(overrides: Partial<Scene> = {}): Scene {
+  return {
+    id: "scene_1",
+    position: 0,
+    title: "Scene 1",
+    narration: "",
+    visualPrompt: "",
+    durationSeconds: 5,
+    status: "completed",
+    activeVersion: 1,
+    versions: [],
+    currentJob: null,
+    approved: true,
     ...overrides,
   };
 }
@@ -992,6 +1014,230 @@ describe("ProjectWorkspace (persisted mode)", () => {
       expect(screen.getByText("isRendering: false")).toBeTruthy();
       expect(
         client.getQueryData<PersistedGenerationJob>(jobQueryKeys.detail("job_new")),
+      ).toBeUndefined();
+    });
+  });
+
+  describe("render creation locked until restoration completes", () => {
+    async function goToFinalTab(user: ReturnType<typeof userEvent.setup>) {
+      await screen.findByRole("heading", { name: "Majapahit Documentary" });
+      await user.click(screen.getByRole("tab", { name: "4. Final Video" }));
+    }
+
+    function primaryRenderButton() {
+      return screen.getByRole("button", {
+        name: /Render (Final Video|New Version)/,
+      }) as HTMLButtonElement;
+    }
+
+    it("keeps both render entry points disabled while the latest-preview request is still pending", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      const { promise: latestPromise } = deferred<Render | null>();
+      getLatestProjectRenderMock.mockReturnValueOnce(latestPromise);
+      listPersistedJobsMock.mockResolvedValueOnce([
+        fakeJob({ id: "job_1", status: "running" }),
+      ]);
+      const user = userEvent.setup();
+
+      renderWorkspace();
+      await goToFinalTab(user);
+
+      expect(screen.getByText("renderStartDisabled: true")).toBeTruthy();
+      expect(primaryRenderButton().disabled).toBe(true);
+
+      await user.click(screen.getByRole("button", { name: "Start Render" }));
+      await user.click(primaryRenderButton());
+      expect(createFinalRenderMock).not.toHaveBeenCalled();
+    });
+
+    it("keeps render creation disabled while the project jobs request is still pending, even after the preview settles", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      getLatestProjectRenderMock.mockResolvedValueOnce(null);
+      const { promise: jobsPromise } = deferred<PersistedGenerationJob[]>();
+      listPersistedJobsMock.mockReturnValueOnce(jobsPromise);
+      const user = userEvent.setup();
+
+      renderWorkspace();
+      await goToFinalTab(user);
+
+      await waitFor(() =>
+        expect(screen.getByText("renderStartDisabled: true")).toBeTruthy(),
+      );
+      expect(primaryRenderButton().disabled).toBe(true);
+      await user.click(screen.getByRole("button", { name: "Start Render" }));
+      expect(createFinalRenderMock).not.toHaveBeenCalled();
+    });
+
+    it("keeps render creation locked after a jobs-query failure, with the error toast shown once", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      getLatestProjectRenderMock.mockResolvedValueOnce(null);
+      listPersistedJobsMock.mockRejectedValueOnce(new Error("jobs endpoint down"));
+      const user = userEvent.setup();
+
+      renderWorkspace();
+      await goToFinalTab(user);
+
+      await waitFor(() =>
+        expect(toastErrorMock).toHaveBeenCalledWith("jobs endpoint down"),
+      );
+      expect(toastErrorMock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText("renderStartDisabled: true")).toBeTruthy();
+      expect(primaryRenderButton().disabled).toBe(true);
+
+      await user.click(screen.getByRole("button", { name: "Start Render" }));
+      expect(createFinalRenderMock).not.toHaveBeenCalled();
+    });
+
+    it("unlocks render creation once preview and jobs restoration both complete successfully with no active job", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(
+        fakeProject({
+          chapters: [
+            { id: "ch1", title: "Main", position: 0, scenes: [fakeCompletedScene()] },
+          ],
+        }),
+      );
+      getLatestProjectRenderMock.mockResolvedValueOnce(null);
+      listPersistedJobsMock.mockResolvedValueOnce([]);
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      const user = userEvent.setup();
+
+      renderWorkspace();
+      await goToFinalTab(user);
+
+      await waitFor(() =>
+        expect(screen.getByText("renderStartDisabled: false")).toBeTruthy(),
+      );
+      expect(primaryRenderButton().disabled).toBe(false);
+
+      await user.click(screen.getByRole("button", { name: "Start Render" }));
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+    });
+
+    it("keeps render start disabled while an existing active render is restored, and never starts a duplicate mutation", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      getLatestProjectRenderMock.mockResolvedValueOnce(null);
+      const activeJob = fakeJob({ id: "job_1", status: "running" });
+      listPersistedJobsMock.mockResolvedValueOnce([activeJob]);
+      getPersistedJobMock.mockResolvedValue(activeJob);
+
+      renderWorkspace();
+      await screen.findByRole("heading", { name: "Majapahit Documentary" });
+
+      await waitFor(() => expect(screen.getByText("isRendering: true")).toBeTruthy());
+      // Restoration itself completed (jobs were inspected), but the button
+      // stays disabled because a render is already actively in progress.
+      const startButton = screen.getByRole("button", {
+        name: "Start Render",
+      }) as HTMLButtonElement;
+      expect(startButton.disabled).toBe(true);
+      expect(createFinalRenderMock).not.toHaveBeenCalled();
+    });
+
+    it("does not let a deferred old preview overwrite a completed user-triggered render", async () => {
+      getPersistedProjectMock.mockResolvedValueOnce(fakeProject());
+      const { promise: latestPromise, resolve: resolveLatest } =
+        deferred<Render | null>();
+      getLatestProjectRenderMock.mockReturnValueOnce(latestPromise);
+      listPersistedJobsMock.mockResolvedValueOnce([]);
+      const queuedJob = fakeJob({ id: "job_1", status: "queued" });
+      createFinalRenderMock.mockResolvedValueOnce(queuedJob);
+      getPersistedJobMock.mockResolvedValue(queuedJob);
+      getPersistedRenderMock.mockResolvedValueOnce(
+        fakePersistedRender({ id: "render_1", version: 7 }),
+      );
+      getRenderPreviewUrlMock.mockResolvedValueOnce("https://cdn.example/v7");
+      mapPersistedRenderMock.mockReturnValueOnce(
+        fakeRender({ version: 7, shareUrl: "https://cdn.example/v7" }),
+      );
+      const user = userEvent.setup();
+
+      const { client } = renderWorkspace();
+      await goToFinalTab(user);
+
+      // Locked while the old preview request is still pending.
+      expect(screen.getByText("renderStartDisabled: true")).toBeTruthy();
+      await user.click(screen.getByRole("button", { name: "Start Render" }));
+      expect(createFinalRenderMock).not.toHaveBeenCalled();
+
+      // Old preview settles (with nothing); jobs were already empty -> unlocked.
+      resolveLatest(null);
+      await waitFor(() =>
+        expect(screen.getByText("renderStartDisabled: false")).toBeTruthy(),
+      );
+
+      await user.click(screen.getByRole("button", { name: "Start Render" }));
+      await waitFor(() => expect(createFinalRenderMock).toHaveBeenCalledTimes(1));
+
+      const completedJob = fakeJob({
+        id: "job_1",
+        status: "completed",
+        result_payload: { render_id: "render_1" },
+      });
+      client.setQueryData(jobQueryKeys.detail("job_1"), completedJob);
+
+      await waitFor(() =>
+        expect(
+          screen.getByText("render: v7 https://cdn.example/v7"),
+        ).toBeTruthy(),
+      );
+      expect(toastSuccessMock).toHaveBeenCalledWith(
+        "Rendered v7",
+        expect.anything(),
+      );
+    });
+
+    it("isolates restoration readiness across a project change: a new project stays locked until its own restoration completes", async () => {
+      getPersistedProjectMock.mockImplementation(async (id: string) =>
+        id === "proj_1"
+          ? fakeProject({ id: "proj_1" })
+          : fakeProject({
+              id: "proj_2",
+              output: { ...fakeProject().output, title: "Second Project" },
+            }),
+      );
+      const latest1 = deferred<Render | null>();
+      getLatestProjectRenderMock.mockReturnValueOnce(latest1.promise);
+      const jobs1 = deferred<PersistedGenerationJob[]>();
+      listPersistedJobsMock.mockReturnValueOnce(jobs1.promise);
+
+      const client = createTestQueryClient();
+      const { rerender } = render(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_1" />
+        </QueryClientProvider>,
+      );
+      await screen.findByRole("heading", { name: "Majapahit Documentary" });
+
+      // Switch to project_2 while project_1's restoration is still pending.
+      getLatestProjectRenderMock.mockResolvedValueOnce(null);
+      listPersistedJobsMock.mockResolvedValueOnce([]);
+      rerender(
+        <QueryClientProvider client={client}>
+          <ProjectWorkspace projectId="proj_2" />
+        </QueryClientProvider>,
+      );
+      await screen.findByRole("heading", { name: "Second Project" });
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("tab", { name: "4. Final Video" }));
+      await waitFor(() =>
+        expect(screen.getByText("renderStartDisabled: false")).toBeTruthy(),
+      );
+
+      // Resolve project_1's stale requests now — they must not affect project_2.
+      latest1.resolve(fakeRender({ id: "stale_render", version: 99 }));
+      jobs1.resolve([fakeJob({ id: "stale_job", status: "running" })]);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(screen.getByText("renderStartDisabled: false")).toBeTruthy();
+      expect(screen.getByText("isRendering: false")).toBeTruthy();
+      expect(screen.getByText("render: none")).toBeTruthy();
+      expect(
+        client.getQueryData<PersistedGenerationJob>(
+          jobQueryKeys.detail("stale_job"),
+        ),
       ).toBeUndefined();
     });
   });

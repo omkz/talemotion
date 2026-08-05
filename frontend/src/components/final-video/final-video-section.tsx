@@ -24,6 +24,8 @@ interface FinalVideoSectionProps {
   renderProgress: number;
   renderStage?: string | null;
   onStartRender: () => void;
+  /** True while initial render-state restoration hasn't finished yet. */
+  renderStartDisabled?: boolean;
 }
 
 export function FinalVideoSection({
@@ -36,6 +38,7 @@ export function FinalVideoSection({
   renderProgress,
   renderStage,
   onStartRender,
+  renderStartDisabled = false,
 }: FinalVideoSectionProps) {
   const [isGeneratingThumbnail, setIsGeneratingThumbnail] = useState(false);
   const { credits, estimate, canAfford } = useCredits();
@@ -157,11 +160,18 @@ export function FinalVideoSection({
             <div className="mt-5 flex flex-wrap items-center gap-2">
               <Button
                 onClick={onStartRender}
-                disabled={isRendering || !allScenesReady || insufficientCredits}
-                title={
+                disabled={
+                  renderStartDisabled ||
+                  isRendering ||
+                  !allScenesReady ||
                   insufficientCredits
-                    ? `Requires ${renderEstimate} credits; ${credits?.available ?? 0} available`
-                    : undefined
+                }
+                title={
+                  renderStartDisabled
+                    ? "Restoring render state…"
+                    : insufficientCredits
+                      ? `Requires ${renderEstimate} credits; ${credits?.available ?? 0} available`
+                      : undefined
                 }
               >
                 {isRendering ? (
